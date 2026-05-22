@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "opportunity_id": "calc-001",
+  "revision": 1,
+  "blueprint": {
+    "app_name": "简易计算器",
+    "accepted": true,
+    "summary": "简易计算器：1 个功能屏，持久化 UserDefaults",
+    "estimated_complexity": "low"
+  },
+  "agent_b_status": "accepted",
+  "reasons": [],
+  "suggested_rules": [],
+  "created_at": "2026-05-16T13:37:54Z"
+}

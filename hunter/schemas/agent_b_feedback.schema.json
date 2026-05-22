@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AgentBFeedback",
+  "type": "object",
+  "required": ["opportunity_id", "agent_b_status", "reasons"],
+  "properties": {
+    "opportunity_id": { "type": "string" },
+    "blueprint": { "type": "object" },
+    "agent_b_status": {
+      "type": "string",
+      "description": "如 implementation_ok | implementation_failed | rejected_scope"
+    },
+    "reasons": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "suggested_rules": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "notes": { "type": "string" },
+    "created_at": { "type": "string" }
+  }
+}

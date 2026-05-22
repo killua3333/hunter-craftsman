@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0",
+  "opportunity_id": "calc-001",
+  "revision": 1,
+  "blueprint": {
+    "app_name": "简易计算器",
+    "accepted": true,
+    "summary": "Demo 产物已生成"
+  },
+  "agent_b_status": "ready_for_release",
+  "reasons": [
+    "当前主机不支持 xcodebuild，已切换为 Demo 产物模式； system=Windows python=3.11.9"
+  ],
+  "suggested_rules": [],
+  "created_at": "2026-05-16T13:40:21Z",
+  "run_id": "22bb9860-b56b-470b-8e32-03ba2e3badd8",
+  "artifacts": {
+    "workspace": "E:\\agent\\craftsman\\workspace\\22bb9860-b56b-470b-8e32-03ba2e3badd8",
+    "icon": "E:\\agent\\craftsman\\workspace\\22bb9860-b56b-470b-8e32-03ba2e3badd8\\artifacts\\AppIcon.png",
+    "screenshots": [
+      "E:\\agent\\craftsman\\workspace\\22bb9860-b56b-470b-8e32-03ba2e3badd8\\artifacts\\screenshots\\screenshot_1.png",
+      "E:\\agent\\craftsman\\workspace\\22bb9860-b56b-470b-8e32-03ba2e3badd8\\artifacts\\screenshots\\screenshot_2.png",
+      "E:\\agent\\craftsman\\workspace\\22bb9860-b56b-470b-8e32-03ba2e3badd8\\artifacts\\screenshots\\screenshot_3.png"
+    ],
+    "project": "E:\\agent\\craftsman\\workspace\\22bb9860-b56b-470b-8e32-03ba2e3badd8\\project",
+    "demo_html": "E:\\agent\\craftsman\\workspace\\22bb9860-b56b-470b-8e32-03ba2e3badd8\\artifacts\\demo.html"
+  }
+}

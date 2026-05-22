@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://craftsman.local/schemas/craftsman-feedback.v1.json",
+  "title": "Craftsman Feedback to Agent A",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "opportunity_id",
+    "revision",
+    "blueprint",
+    "agent_b_status",
+    "reasons",
+    "suggested_rules",
+    "created_at"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0" },
+    "opportunity_id": { "type": "string" },
+    "revision": { "type": "integer" },
+    "run_id": { "type": "string" },
+    "blueprint": {
+      "type": "object",
+      "required": ["app_name", "accepted"],
+      "properties": {
+        "app_name": { "type": "string" },
+        "accepted": { "type": "boolean" },
+        "summary": { "type": "string" },
+        "estimated_complexity": {
+          "type": "string",
+          "enum": ["low", "medium", "high"]
+        },
+        "open_questions": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "agent_b_status": {
+      "type": "string",
+      "enum": [
+        "needs_clarification",
+        "rejected",
+        "accepted",
+        "in_progress",
+        "implementation_failed",
+        "ready_for_release",
+        "submitted",
+        "platform_unavailable"
+      ]
+    },
+    "reasons": { "type": "array", "items": { "type": "string" } },
+    "suggested_rules": { "type": "array", "items": { "type": "string" } },
+    "created_at": { "type": "string", "format": "date-time" },
+    "artifacts": { "type": "object" }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "opportunity_id": "bad-001",
+  "revision": 1,
+  "blueprint": {
+    "app_name": "Bad",
+    "accepted": false,
+    "summary": "Bad：1 个功能屏",
+    "estimated_complexity": "low",
+    "open_questions": [
+      "请落实规则: core_logic.persistence 必填: none | UserDefaults | SwiftData",
+      "请落实规则: ui_layout.navigation 必填: stack | tab | single",
+      "请落实规则: store.privacy_url 必填（App Store 审核）",
+      "请落实规则: branding.primary_color 必填，格式 #RRGGBB"
+    ]
+  },
+  "agent_b_status": "needs_clarification",
+  "reasons": [
+    "core_logic 未说明存储方式",
+    "ui_layout 未定义导航结构",
+    "store 缺少 privacy_url",
+    "branding 缺少 primary_color"
+  ],
+  "suggested_rules": [
+    "core_logic.persistence 必填: none | UserDefaults | SwiftData",
+    "ui_layout.navigation 必填: stack | tab | single",
+    "store.privacy_url 必填（App Store 审核）",
+    "branding.primary_color 必填，格式 #RRGGBB"
+  ],
+  "created_at": "2026-05-16T13:37:54Z"
+}

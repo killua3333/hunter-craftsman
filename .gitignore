@@ -1,0 +1,34 @@
+# Python
+**/.venv/
+**/venv/
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/*.egg-info/
+**/dist/
+
+# Secrets（切勿提交）
+**/.env
+**/.env.local
+
+# Agent B 运行时产物
+craftsman/workspace/
+craftsman/callbacks/
+craftsman/*.db
+
+# Hunter 反馈（保留 examples）
+hunter/feedback/*.json
+!hunter/feedback/examples/
+
+# IDE / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
+
+# LangGraph / 备份
+**/.langgraph_api/
+**/*.bak

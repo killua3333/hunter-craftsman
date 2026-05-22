@@ -1,0 +1,15 @@
+name: {{ app_name }}
+options:
+  bundleIdPrefix: {{ bundle_id_prefix }}
+  deploymentTarget:
+    iOS: "{{ min_ios }}"
+targets:
+  {{ app_name }}:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+    info:
+      path: Info.plist
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: {{ bundle_id }}

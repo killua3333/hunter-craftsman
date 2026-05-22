@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hunter.local/schemas/agent_a_output.json",
+  "title": "AppOpportunityBlueprint",
+  "description": "Hunter Agent A 输出，作为 Agent B 的输入契约",
+  "type": "object",
+  "required": ["accepted"],
+  "properties": {
+    "accepted": { "type": "boolean" },
+    "rejection_reason": { "type": ["string", "null"] },
+    "app_name": { "type": "string" },
+    "core_logic": { "type": "string" },
+    "ui_layout": { "type": "string" },
+    "keywords": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "data_quality": {
+      "type": "string",
+      "enum": ["measured", "assumption", "mixed"]
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["query", "source", "snippet"],
+        "properties": {
+          "query": { "type": "string" },
+          "source": { "type": "string" },
+          "snippet": { "type": "string" }
+        }
+      }
+    },
+    "requirement": {
+      "type": "object",
+      "required": ["app", "features", "core_logic", "ui_layout", "branding", "store"],
+      "properties": {
+        "app": {
+          "type": "object",
+          "required": ["name", "bundle_id"],
+          "properties": {
+            "name": { "type": "string" },
+            "bundle_id": { "type": "string" },
+            "version": { "type": "string" },
+            "build": { "type": "string" },
+            "min_ios": { "type": "string" }
+          }
+        },
+        "features": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["id", "type", "title"],
+            "properties": {
+              "id": { "type": "string" },
+              "type": { "enum": ["list", "form", "detail", "tab_root"] },
+              "title": { "type": "string" },
+              "items": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "core_logic": {
+          "type": "object",
+          "required": ["persistence", "description"],
+          "properties": {
+            "persistence": { "enum": ["none", "UserDefaults", "SwiftData"] },
+            "description": { "type": "string" }
+          }
+        },
+        "ui_layout": {
+          "type": "object",
+          "required": ["navigation"],
+          "properties": {
+            "navigation": { "enum": ["stack", "tab", "single"] },
+            "screens": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "branding": {
+          "type": "object",
+          "required": ["primary_color", "icon_text"],
+          "properties": {
+            "primary_color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+            "accent_color": { "type": "string" },
+            "icon_text": { "type": "string", "maxLength": 2 }
+          }
+        },
+        "store": {
+          "type": "object",
+          "required": ["subtitle", "description", "keywords", "privacy_url"],
+          "properties": {
+            "subtitle": { "type": "string" },
+            "description": { "type": "string" },
+            "keywords": { "type": "array", "items": { "type": "string" } },
+            "privacy_url": { "type": "string", "format": "uri" }
+          }
+        },
+        "budget": {
+          "type": "object",
+          "properties": {
+            "max_features": { "type": "integer" },
+            "max_hours": { "type": "number" }
+          }
+        }
+      }
+    }
+  },
+  "if": { "properties": { "accepted": { "const": true } } },
+  "then": {
+    "required": [
+      "app_name",
+      "core_logic",
+      "ui_layout",
+      "keywords",
+      "data_quality",
+      "evidence",
+      "requirement"
+    ],
+    "properties": {
+      "keywords": { "minItems": 1, "maxItems": 8 },
+      "evidence": { "minItems": 1 }
+    }
+  },
+  "else": {
+    "required": ["rejection_reason"]
+  }
+}

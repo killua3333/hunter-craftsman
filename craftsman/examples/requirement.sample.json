@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0",
+  "opportunity_id": "calc-001",
+  "revision": 1,
+  "data_quality": "assumption",
+  "evidence": [
+    {
+      "query": "计算器 无广告 极简",
+      "source": "assumption://示例需求",
+      "snippet": "用户需要轻量四则运算与历史记录"
+    }
+  ],
+  "app": {
+    "name": "简易计算器",
+    "bundle_id": "com.craftsman.calculator",
+    "version": "1.0.0",
+    "build": "1",
+    "min_ios": "17.0"
+  },
+  "features": [
+    {
+      "id": "home",
+      "type": "list",
+      "title": "首页",
+      "items": ["1+1=2", "2×3=6", "历史"]
+    }
+  ],
+  "core_logic": {
+    "persistence": "UserDefaults",
+    "description": "计算历史存入 UserDefaults"
+  },
+  "ui_layout": {
+    "navigation": "stack"
+  },
+  "branding": {
+    "primary_color": "#007AFF",
+    "icon_text": "计"
+  },
+  "store": {
+    "subtitle": "轻量计算",
+    "description": "四则运算与历史记录。",
+    "keywords": ["计算器", "工具"],
+    "privacy_url": "https://example.com/privacy"
+  },
+  "budget": {
+    "max_features": 8,
+    "max_hours": 2
+  }
+}

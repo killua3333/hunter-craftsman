@@ -1,0 +1,31 @@
+import SwiftUI
+{% if persistence == "SwiftData" %}
+import SwiftData
+{% endif %}
+
+struct ContentView: View {
+    {% if persistence == "UserDefaults" %}
+    @AppStorage("craftsman_seed") private var seed: String = ""
+    {% endif %}
+    @State private var items: [String] = [
+        {% for feature in features %}
+        {% for item in feature['items'] | default([]) %}
+        "{{ item }}",
+        {% endfor %}
+        {% endfor %}
+    ]
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("{{ display_name }}") {
+                    ForEach(items.indices, id: \.self) { index in
+                        Text(items[index])
+                    }
+                }
+            }
+            .navigationTitle("{{ display_name }}")
+            .tint(.brandPrimary)
+        }
+    }
+}

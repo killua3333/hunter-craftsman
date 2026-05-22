@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ app_name }}</title>
+  <style>
+    :root { --primary: {{ primary_color }}; --bg: #F2F2F7; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #1a1a2e; min-height: 100vh; display: flex;
+      align-items: center; justify-content: center; padding: 24px;
+    }
+    .phone {
+      width: 390px; max-width: 100%; background: var(--bg);
+      border-radius: 40px; box-shadow: 0 24px 80px rgba(0,0,0,.45);
+      padding: 48px 16px 24px; display: flex; flex-direction: column; gap: 12px;
+    }
+    .display {
+      background: #fff; border-radius: 12px; padding: 20px 16px;
+      font-size: 36px; font-weight: 600; text-align: right; min-height: 72px;
+      word-break: break-all; color: #000;
+    }
+    .keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    .keys button {
+      height: 56px; border: none; border-radius: 12px; font-size: 22px;
+      cursor: pointer; background: #fff; color: #000;
+    }
+    .keys button.op { background: #E5E5EA; }
+    .keys button.eq { background: var(--primary); color: #fff; grid-column: span 2; }
+    .keys button.fn { color: var(--primary); }
+    .history { margin-top: 8px; }
+    .history h3 { font-size: 13px; color: #8E8E93; margin-bottom: 8px; }
+    .hist-item {
+      background: #fff; padding: 10px 12px; border-radius: 8px; margin-bottom: 6px;
+      font-size: 14px; display: flex; justify-content: space-between;
+    }
+    .title { font-size: 22px; font-weight: 700; color: var(--primary); text-align: center; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <div class="phone">
+    <div class="title">{{ app_name }}</div>
+    <div class="display" id="display">0</div>
+    <div class="keys" id="keys"></div>
+    <div class="history">
+      <h3>历史记录</h3>
+      <div id="histList"></div>
+    </div>
+  </div>
+  <script>
+    const STORAGE = 'craftsman_calc_history';
+    let expr = '0';
+    const layout = [
+      ['C', '⌫', '%', '÷'],
+      ['7', '8', '9', '×'],
+      ['4', '5', '6', '-'],
+      ['1', '2', '3', '+'],
+      ['0', '.', '='],
+    ];
+    const ops = { '÷': '/', '×': '*', '+': '+', '-': '-' };
+
+    function renderKeys() {
+      const el = document.getElementById('keys');
+      layout.flat().forEach(key => {
+        const b = document.createElement('button');
+        b.textContent = key;
+        if ('÷×+-%.'.includes(key)) b.className = 'op';
+        if (key === '=') b.className = 'eq';
+        if (key === 'C' || key === '⌫') b.className = 'fn';
+        b.onclick = () => onKey(key);
+        el.appendChild(b);
+      });
+    }
+
+    function updateDisplay() {
+      document.getElementById('display').textContent = expr || '0';
+    }
+
+    function loadHistory() {
+      return JSON.parse(localStorage.getItem(STORAGE) || '[]');
+    }
+
+    function saveHistory(entry) {
+      const h = loadHistory();
+      h.unshift(entry);
+      localStorage.setItem(STORAGE, JSON.stringify(h.slice(0, 20)));
+      renderHistory();
+    }
+
+    function renderHistory() {
+      const el = document.getElementById('histList');
+      el.innerHTML = loadHistory().map(e => `
+        <div class="hist-item"><span>${e.expr}</span><strong>${e.result}</strong></div>
+      `).join('');
+    }
+
+    function onKey(key) {
+      if (key === 'C') { expr = '0'; updateDisplay(); return; }
+      if (key === '⌫') { expr = expr.length > 1 ? expr.slice(0, -1) : '0'; updateDisplay(); return; }
+      if (key === '=') {
+        try {
+          const normalized = expr.replace(/÷/g,'/').replace(/×/g,'*');
+          const result = Function(`"use strict"; return (${normalized})`)();
+          const entry = { expr, result: String(result) };
+          saveHistory(entry);
+          expr = String(result);
+        } catch { expr = '错误'; }
+        updateDisplay();
+        return;
+      }
+      if (expr === '0' || expr === '错误') expr = key;
+      else expr += key;
+      updateDisplay();
+    }
+
+    renderKeys();
+    renderHistory();
+  </script>
+</body>
+</html>

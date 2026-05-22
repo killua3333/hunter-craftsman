@@ -1,0 +1,20 @@
+{
+  "opportunity_id": "calc-no-ads-001",
+  "agent_b_status": "implementation_failed",
+  "reasons": [
+    "core_logic 未说明是否使用 UserDefaults",
+    "实际 UI 实现超过单屏，与 ui_layout 描述不一致"
+  ],
+  "suggested_rules": [
+    "ui_layout 必须写明单屏组件列表及是否可滚动",
+    "core_logic 需点名本地存储方案（UserDefaults / 纯内存）"
+  ],
+  "blueprint": {
+    "accepted": true,
+    "app_name": "纯净计算器",
+    "core_logic": "四则运算",
+    "ui_layout": "显示区+键盘",
+    "keywords": ["计算器", "无广告"]
+  },
+  "notes": "复制到 feedback/ 根目录后执行 hunter feedback save"
+}

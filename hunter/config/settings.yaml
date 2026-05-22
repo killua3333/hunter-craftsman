@@ -1,0 +1,31 @@
+# 模型与 agent 默认配置（可用环境变量覆盖）
+model:
+  # openai | deepseek（deepseek 使用 OpenAI 兼容接口）
+  provider: deepseek
+  # 做 agent + 工具调用请用 deepseek-chat（勿用 reasoner / v4-pro 等思考模型）
+  name: deepseek-chat
+  temperature: 0.2
+  # provider=deepseek 时的 API 地址（一般无需改）
+  base_url: https://api.deepseek.com/v1
+
+# Tavily（工具 web_search，密钥在 .env 的 TAVILY_API_KEY）
+tavily:
+  default_max_results: 5
+  default_search_depth: basic
+  default_topic: general
+
+agent:
+  # 对应 prompts/ 目录下的文件名（不含扩展名）
+  system_prompt: specialist_system
+  # 输出契约（Pydantic）：AppOpportunityBlueprint；DeepSeek 从助手 JSON 文本解析
+  output_schema: AppOpportunityBlueprint
+  # ReAct 循环最大步数（防止无限调工具）
+  max_iterations: 16
+
+# 方案 B：每周从 feedback/ 归纳，主要更新 specialist_learnings.md
+learning:
+  learnings_prompt: specialist_learnings
+  min_feedback_count: 1
+
+# Agent B callbacks 目录（可用 CRAFTSMAN_CALLBACK_DIR 环境变量覆盖）
+craftsman_callbacks_dir: ../craftsman/callbacks

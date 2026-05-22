@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>{{ app_name }}</title>
+  <style>
+    :root {
+      --brand-primary: {{ primary_color }};
+      --brand-accent: {{ accent_color }};
+      --break-blue: {{ break_color }};
+      --warning-orange: {{ warning_color }};
+      --bg: #F2F2F7;
+      --text-gray: #8E8E93;
+      --overlay: rgba(0, 0, 0, 0.4);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: #1a1a2e;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .phone {
+      width: 390px;
+      max-width: 100%;
+      height: 844px;
+      max-height: 90vh;
+      background: var(--bg);
+      border-radius: 40px;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .nav-bar {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding: 56px 20px 8px;
+      flex-shrink: 0;
+    }
+
+    .gear-btn {
+      width: 44px;
+      height: 44px;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+    }
+
+    .gear-btn:hover { background: rgba(0, 0, 0, 0.06); }
+
+    .gear-btn svg { width: 22px; height: 22px; fill: #000; }
+
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 0 20px 40px;
+    }
+
+    .spacer { flex: 1; min-height: 16px; }
+
+    .timer {
+      font-size: 64px;
+      font-weight: 700;
+      color: var(--brand-primary);
+      letter-spacing: -1px;
+      line-height: 1;
+    }
+
+    .status {
+      margin-top: 20px;
+      font-size: 18px;
+      color: var(--text-gray);
+    }
+
+    .buttons {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .btn {
+      width: 120px;
+      height: 44px;
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 16px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+
+    .btn:hover { opacity: 0.9; }
+    .btn:active { transform: scale(0.97); }
+
+    .btn-start { background: var(--brand-accent); }
+    .btn-pause { background: var(--warning-orange); }
+    .btn-break { background: var(--break-blue); }
+    .btn-reset { background: var(--brand-primary); }
+
+    .stats {
+      font-size: 14px;
+      color: var(--text-gray);
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    /* Modal overlay */
+    .overlay {
+      position: absolute;
+      inset: 0;
+      background: var(--overlay);
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+      z-index: 10;
+      border-radius: 40px;
+    }
+
+    .overlay.show { display: flex; }
+
+    .overlay.center {
+      align-items: center;
+      padding: 24px;
+    }
+
+    .sheet {
+      background: #fff;
+      width: 100%;
+      border-radius: 16px 16px 0 0;
+      padding: 24px;
+      max-height: 70%;
+      overflow-y: auto;
+      animation: slideUp 0.25s ease;
+    }
+
+    @keyframes slideUp {
+      from { transform: translateY(100%); }
+      to { transform: translateY(0); }
+    }
+
+    .sheet-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+    }
+
+    .sheet-title {
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .done-btn {
+      border: none;
+      background: none;
+      color: #007AFF;
+      font-size: 17px;
+      cursor: pointer;
+      padding: 4px 8px;
+    }
+
+    .setting-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .setting-row label {
+      flex-shrink: 0;
+      font-size: 16px;
+    }
+
+    .setting-row input[type="range"] {
+      flex: 1;
+      max-width: 150px;
+      accent-color: var(--brand-primary);
+    }
+
+    .setting-value {
+      width: 70px;
+      text-align: right;
+      font-size: 15px;
+      color: var(--text-gray);
+    }
+
+    .divider {
+      height: 1px;
+      background: #E5E5EA;
+      margin: 8px 0 20px;
+    }
+
+    .reset-stats-btn {
+      border: none;
+      background: none;
+      color: var(--brand-primary);
+      font-size: 16px;
+      cursor: pointer;
+      padding: 4px 0;
+    }
+
+    /* Alert dialog */
+    .alert-box {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(20px);
+      border-radius: 14px;
+      width: 270px;
+      text-align: center;
+      overflow: hidden;
+      animation: popIn 0.2s ease;
+    }
+
+    @keyframes popIn {
+      from { transform: scale(0.9); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+
+    .alert-title {
+      padding: 20px 16px 8px;
+      font-size: 17px;
+      font-weight: 600;
+    }
+
+    .alert-message {
+      padding: 0 16px 20px;
+      font-size: 13px;
+      color: var(--text-gray);
+    }
+
+    .alert-actions {
+      display: flex;
+      border-top: 1px solid rgba(60, 60, 67, 0.18);
+    }
+
+    .alert-actions button {
+      flex: 1;
+      padding: 12px;
+      border: none;
+      background: none;
+      font-size: 17px;
+      cursor: pointer;
+      color: #007AFF;
+    }
+
+    .alert-actions button + button {
+      border-left: 1px solid rgba(60, 60, 67, 0.18);
+    }
+
+    .alert-actions button.destructive { color: var(--brand-primary); font-weight: 600; }
+    .alert-actions button.cancel { color: var(--text-gray); }
+  </style>
+</head>
+<body>
+  <div class="phone" id="app">
+    <div class="nav-bar">
+      <button class="gear-btn" id="btnSettings" aria-label="设置">
+        <svg viewBox="0 0 24 24"><path d="M12 15.5A3.5 3.5 0 0 1 8.5 12 3.5 3.5 0 0 1 12 8.5a3.5 3.5 0 0 1 3.5 3.5 3.5 3.5 0 0 1-3.5 3.5m7.43-2.53c.04-.32.07-.64.07-.97 0-.33-.03-.66-.07-1l2.11-1.63c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.31-.61-.22l-2.49 1c-.52-.4-1.06-.73-1.69-.98l-.37-2.65A.506.506 0 0 0 14 2h-4c-.25 0-.46.18-.5.42l-.37 2.65c-.63.25-1.17.59-1.69.98l-2.49-1c-.22-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64L4.57 11c-.04.34-.07.67-.07 1 0 .33.03.65.07.97l-2.11 1.66c-.19.15-.25.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1.01c.52.4 1.06.74 1.69.99l.37 2.63c.04.24.25.42.5.42h4c.25 0 .46-.18.5-.42l.37-2.63c.63-.26 1.17-.59 1.69-.99l2.49 1.01c.22.08.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.66Z"/></svg>
+      </button>
+    </div>
+
+    <div class="main">
+      <div class="spacer"></div>
+      <div class="timer" id="timerDisplay">00:00</div>
+      <div class="status" id="statusText">准备开始</div>
+      <div class="spacer"></div>
+
+      <div class="buttons">
+        <button class="btn btn-start" id="btnStartPause">开始</button>
+        <button class="btn btn-break" id="btnBreak">休息</button>
+        <button class="btn btn-reset" id="btnReset">重置</button>
+      </div>
+
+      <div class="spacer"></div>
+      <div class="stats">
+        <span id="todayStats">今日完成: 0 个番茄 🍅</span>
+        <span>|</span>
+        <span id="streakStats">连续 0 天</span>
+      </div>
+      <div class="spacer"></div>
+    </div>
+
+    <!-- Settings sheet -->
+    <div class="overlay" id="settingsOverlay">
+      <div class="sheet">
+        <div class="sheet-header">
+          <span class="sheet-title">设置</span>
+          <button class="done-btn" id="btnSettingsDone">完成</button>
+        </div>
+        <div class="setting-row">
+          <label>专注时长</label>
+          <input type="range" id="focusSlider" min="15" max="45" step="5" />
+          <span class="setting-value" id="focusValue">25 分钟</span>
+        </div>
+        <div class="setting-row">
+          <label>休息时长</label>
+          <input type="range" id="breakSlider" min="3" max="15" step="1" />
+          <span class="setting-value" id="breakValue">5 分钟</span>
+        </div>
+        <div class="divider"></div>
+        <button class="reset-stats-btn" id="btnResetStats">重置今日统计</button>
+      </div>
+    </div>
+
+    <!-- Alert overlay -->
+    <div class="overlay center" id="alertOverlay" style="display:none">
+      <div class="alert-box" id="alertBox"></div>
+    </div>
+  </div>
+
+  <script>
+    const PREFIX = 'craftsman_timer_{{ app_name | replace(" ", "_") }}_';
+    const STORAGE = {
+      focusDuration: PREFIX + 'focusDuration',
+      breakDuration: PREFIX + 'breakDuration',
+      todayCount: PREFIX + 'todayCount',
+      streakDays: PREFIX + 'streakDays',
+      lastDate: PREFIX + 'lastDate',
+    };
+
+    const Mode = { idle: 'idle', focus: 'focus', break: 'break' };
+
+    const state = {
+      remainingSeconds: 0,
+      mode: Mode.idle,
+      isRunning: false,
+      todayCount: 0,
+      streakDays: 0,
+      focusDurationMinutes: 25,
+      breakDurationMinutes: 5,
+    };
+
+    let intervalId = null;
+
+    function loadSettings() {
+      const get = (key, def) => {
+        const v = localStorage.getItem(key);
+        return v !== null && v !== '' ? parseInt(v, 10) : def;
+      };
+      const fd = get(STORAGE.focusDuration, 0);
+      const bd = get(STORAGE.breakDuration, 0);
+      state.focusDurationMinutes = fd !== 0 ? fd : 25;
+      state.breakDurationMinutes = bd !== 0 ? bd : 5;
+      state.todayCount = get(STORAGE.todayCount, 0);
+      state.streakDays = get(STORAGE.streakDays, 0);
+    }
+
+    function save(key, value) {
+      localStorage.setItem(key, String(value));
+    }
+
+    function formatDate(d) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+
+    function yesterdayString() {
+      const d = new Date();
+      d.setDate(d.getDate() - 1);
+      return formatDate(d);
+    }
+
+    function checkStreakOnAppLaunch() {
+      const today = formatDate(new Date());
+      const lastDate = localStorage.getItem(STORAGE.lastDate) || '';
+      if (lastDate === yesterdayString()) {
+        state.streakDays += 1;
+      } else if (lastDate !== today && lastDate !== '') {
+        state.streakDays = 1;
+      }
+      save(STORAGE.streakDays, state.streakDays);
+    }
+
+    function totalFocusSeconds() {
+      return state.focusDurationMinutes * 60;
+    }
+
+    function totalBreakSeconds() {
+      return state.breakDurationMinutes * 60;
+    }
+
+    function timeString(seconds) {
+      const mins = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+
+    function statusText() {
+      if (state.mode === Mode.idle) return '准备开始';
+      if (state.isRunning) return state.mode === Mode.focus ? '专注中' : '休息中';
+      return '已暂停';
+    }
+
+    function playSound() {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = 880;
+        gain.gain.setValueAtTime(0.3, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.5);
+      } catch (_) {}
+    }
+
+    function stopTimer() {
+      if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+    }
+
+    function startTimer() {
+      stopTimer();
+      intervalId = setInterval(() => {
+        if (state.remainingSeconds > 0) {
+          state.remainingSeconds -= 1;
+          render();
+        } else {
+          timerCompleted();
+        }
+      }, 1000);
+    }
+
+    function timerCompleted() {
+      stopTimer();
+      state.isRunning = false;
+      if (state.mode === Mode.focus) {
+        state.todayCount += 1;
+        save(STORAGE.todayCount, state.todayCount);
+        save(STORAGE.lastDate, formatDate(new Date()));
+        playSound();
+        showAlert({
+          title: '专注完成！休息一下吧',
+          message: '专注完成！休息一下吧',
+          actions: [{ label: '确定', primary: true, onClick: () => {
+            dismissFocusComplete();
+          }}],
+        });
+      } else if (state.mode === Mode.break) {
+        playSound();
+        showAlert({
+          title: '休息结束！开始新的专注？',
+          message: '休息结束！开始新的专注？',
+          actions: [
+            { label: '确定', primary: true, onClick: () => dismissBreakComplete(true) },
+            { label: '取消', cancel: true, onClick: () => dismissBreakComplete(false) },
+          ],
+        });
+      }
+      render();
+    }
+
+    function startPause() {
+      if (state.isRunning) {
+        stopTimer();
+        state.isRunning = false;
+      } else {
+        if (state.mode === Mode.idle) {
+          state.mode = Mode.focus;
+          state.remainingSeconds = totalFocusSeconds();
+        }
+        state.isRunning = true;
+        startTimer();
+      }
+      render();
+    }
+
+    function startBreak() {
+      stopTimer();
+      state.mode = Mode.break;
+      state.remainingSeconds = totalBreakSeconds();
+      state.isRunning = true;
+      startTimer();
+      render();
+    }
+
+    function reset() {
+      stopTimer();
+      state.isRunning = false;
+      state.mode = Mode.idle;
+      state.remainingSeconds = 0;
+      render();
+    }
+
+    function dismissFocusComplete() {
+      startBreak();
+    }
+
+    function dismissBreakComplete() {
+      state.mode = Mode.idle;
+      state.remainingSeconds = 0;
+      state.isRunning = false;
+      render();
+    }
+
+    function resetTodayStats() {
+      state.todayCount = 0;
+      state.streakDays = 0;
+      save(STORAGE.todayCount, 0);
+      save(STORAGE.streakDays, 0);
+      render();
+    }
+
+    // UI
+    const $ = (id) => document.getElementById(id);
+
+    function render() {
+      $('timerDisplay').textContent = timeString(state.remainingSeconds);
+      $('statusText').textContent = statusText();
+      $('todayStats').textContent = `今日完成: ${state.todayCount} 个番茄 🍅`;
+      $('streakStats').textContent = `连续 ${state.streakDays} 天`;
+
+      const btn = $('btnStartPause');
+      if (state.isRunning) {
+        btn.textContent = '暂停';
+        btn.className = 'btn btn-pause';
+      } else {
+        btn.textContent = '开始';
+        btn.className = 'btn btn-start';
+      }
+
+      $('focusSlider').value = state.focusDurationMinutes;
+      $('breakSlider').value = state.breakDurationMinutes;
+      $('focusValue').textContent = `${state.focusDurationMinutes} 分钟`;
+      $('breakValue').textContent = `${state.breakDurationMinutes} 分钟`;
+    }
+
+    function showAlert({ title, message, actions }) {
+      const box = $('alertBox');
+      box.innerHTML = `
+        <div class="alert-title">${title}</div>
+        ${message !== title ? `<div class="alert-message">${message}</div>` : ''}
+        <div class="alert-actions" id="alertActions"></div>
+      `;
+      const actionsEl = box.querySelector('#alertActions');
+      actions.forEach((a) => {
+        const btn = document.createElement('button');
+        btn.textContent = a.label;
+        if (a.primary) btn.classList.add('primary');
+        if (a.destructive) btn.classList.add('destructive');
+        if (a.cancel) btn.classList.add('cancel');
+        btn.onclick = () => {
+          hideAlert();
+          a.onClick?.();
+        };
+        actionsEl.appendChild(btn);
+      });
+      const overlay = $('alertOverlay');
+      overlay.style.display = 'flex';
+      overlay.classList.add('show');
+    }
+
+    function hideAlert() {
+      const overlay = $('alertOverlay');
+      overlay.style.display = 'none';
+      overlay.classList.remove('show');
+    }
+
+    function showSettings() {
+      $('settingsOverlay').classList.add('show');
+    }
+
+    function hideSettings() {
+      $('settingsOverlay').classList.remove('show');
+    }
+
+    // Events
+    $('btnStartPause').onclick = startPause;
+    $('btnBreak').onclick = startBreak;
+    $('btnReset').onclick = () => {
+      showAlert({
+        title: '确定重置当前倒计时？',
+        message: '确定重置当前倒计时？',
+        actions: [
+          { label: '确定', destructive: true, onClick: reset },
+          { label: '取消', cancel: true },
+        ],
+      });
+    };
+    $('btnSettings').onclick = showSettings;
+    $('btnSettingsDone').onclick = hideSettings;
+    $('settingsOverlay').onclick = (e) => {
+      if (e.target === $('settingsOverlay')) hideSettings();
+    };
+
+    $('focusSlider').oninput = (e) => {
+      const stepped = Math.round(Number(e.target.value) / 5) * 5;
+      state.focusDurationMinutes = stepped;
+      save(STORAGE.focusDuration, stepped);
+      if (!state.isRunning) state.remainingSeconds = 0;
+      render();
+    };
+
+    $('breakSlider').oninput = (e) => {
+      const val = Math.round(Number(e.target.value));
+      state.breakDurationMinutes = val;
+      save(STORAGE.breakDuration, val);
+      render();
+    };
+
+    $('btnResetStats').onclick = () => {
+      showAlert({
+        title: '重置统计？',
+        message: '将清零今日完成数和连续天数，确定？',
+        actions: [
+          { label: '确定', destructive: true, onClick: resetTodayStats },
+          { label: '取消', cancel: true },
+        ],
+      });
+    };
+
+    loadSettings();
+    checkStreakOnAppLaunch();
+    render();
+  </script>
+</body>
+</html>
