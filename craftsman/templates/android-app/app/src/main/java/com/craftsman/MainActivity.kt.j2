@@ -1,0 +1,119 @@
+package com.craftsman
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            MaterialTheme {
+                var selectedItem by remember { mutableStateOf<String?>(null) }
+                var secondsLeft by remember { mutableIntStateOf(25 * 60) }
+                var running by remember { mutableStateOf(false) }
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(16.dp),
+                ) {
+                    Text(text = "{{ display_name }}", style = MaterialTheme.typography.headlineMedium)
+                    Text(
+                        text = "Persistence: {{ persistence }}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+{% if has_timer %}
+                    Text(
+                        text = "Timer MVP",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+                    Text(
+                        text = "%02d:%02d".format(secondsLeft / 60, secondsLeft % 60),
+                        style = MaterialTheme.typography.headlineLarge,
+                        modifier = Modifier.padding(vertical = 8.dp),
+                    )
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Button(
+                            onClick = {
+                                running = !running
+                                if (running && secondsLeft <= 0) secondsLeft = 25 * 60
+                            },
+                            modifier = Modifier.padding(end = 8.dp),
+                        ) {
+                            Text(if (running) "Pause" else "Start")
+                        }
+                        Button(onClick = { secondsLeft = 25 * 60; running = false }) {
+                            Text("Reset")
+                        }
+                    }
+                    if (running && secondsLeft > 0) {
+                        LaunchedEffect(secondsLeft, running) {
+                            delay(1000)
+                            if (running) secondsLeft -= 1
+                        }
+                    }
+{% endif %}
+{% for feat in features %}
+                    Text(
+                        text = "{{ feat.title }}",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+{% for item in feat.get('items', [])[:5] %}
+                    Text(
+                        text = "• {{ item }}",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { selectedItem = "{{ item }}" }
+                            .padding(vertical = 4.dp),
+                    )
+{% endfor %}
+{% else %}
+                    Text(
+                        text = "核心功能",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+                    Text(
+                        text = "• 本地 MVP",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.clickable { selectedItem = "本地 MVP" },
+                    )
+{% endfor %}
+                    selectedItem?.let { picked ->
+                        Text(
+                            text = "Selected: $picked",
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.padding(top = 16.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}

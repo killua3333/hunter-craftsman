@@ -1,0 +1,35 @@
+# Android builder: Gradle compile + optional smoke test
+# Build: docker build -f docker/Dockerfile.android-ci -t hunter-craftsman/android-builder .
+
+FROM eclipse-temurin:17-jdk-jammy
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    ANDROID_HOME=/opt/android-sdk \
+    ANDROID_SDK_ROOT=/opt/android-sdk \
+    WORKDIR=/workspace/project \
+    PATH="${PATH}:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/opt/android-sdk/emulator"
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl unzip git libpulse0 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p "${ANDROID_HOME}/cmdline-tools" \
+    && curl -fsSL https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -o /tmp/cmdline-tools.zip \
+    && unzip -q /tmp/cmdline-tools.zip -d "${ANDROID_HOME}/cmdline-tools" \
+    && mv "${ANDROID_HOME}/cmdline-tools/cmdline-tools" "${ANDROID_HOME}/cmdline-tools/latest" \
+    && rm /tmp/cmdline-tools.zip
+
+RUN yes | sdkmanager --licenses >/dev/null \
+    && sdkmanager \
+        "platform-tools" \
+        "platforms;android-34" \
+        "build-tools;34.0.0" \
+        "emulator" \
+        "system-images;android-34;google_apis;x86_64"
+
+COPY docker/gradle-run.sh /opt/builder/gradle-run.sh
+COPY docker/smoke-run.sh /opt/builder/smoke-run.sh
+RUN chmod +x /opt/builder/gradle-run.sh /opt/builder/smoke-run.sh
+
+WORKDIR /workspace/project
+ENTRYPOINT ["/opt/builder/gradle-run.sh"]

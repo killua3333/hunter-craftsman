@@ -25,15 +25,23 @@
         }
       }
     },
+    "platform": {
+      "type": "object",
+      "properties": {
+        "target": { "type": "string", "enum": ["android", "ios"] }
+      }
+    },
     "app": {
       "type": "object",
       "required": ["name", "bundle_id"],
       "properties": {
         "name": { "type": "string" },
         "bundle_id": { "type": "string", "pattern": "^[a-zA-Z0-9.-]+$" },
+        "application_id": { "type": "string", "pattern": "^[a-zA-Z0-9._]+$" },
         "version": { "type": "string", "default": "1.0.0" },
         "build": { "type": "string", "default": "1" },
-        "min_ios": { "type": "string", "default": "17.0" }
+        "min_ios": { "type": "string", "default": "17.0" },
+        "min_android_sdk": { "type": "string", "default": "24" }
       }
     },
     "features": {
@@ -55,7 +63,7 @@
       "properties": {
         "persistence": {
           "type": "string",
-          "enum": ["none", "UserDefaults", "SwiftData"]
+          "enum": ["none", "UserDefaults", "SwiftData", "SharedPreferences"]
         },
         "description": { "type": "string" }
       }

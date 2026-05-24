@@ -12,6 +12,7 @@
 # Secrets（切勿提交）
 **/.env
 **/.env.local
+**/secrets/
 
 # Agent B 运行时产物
 craftsman/workspace/
@@ -21,6 +22,9 @@ craftsman/*.db
 # Hunter 反馈（保留 examples）
 hunter/feedback/*.json
 !hunter/feedback/examples/
+
+# Autopilot 运行时追加的 learnings（可删，会自动再生）
+hunter/prompts/inline_learnings.md
 
 # IDE / OS
 .DS_Store

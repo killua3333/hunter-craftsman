@@ -9,8 +9,10 @@ from tests.conftest import sample_blueprint
 def test_accepted_blueprint():
     bp = sample_blueprint()
     agent_b = blueprint_for_agent_b(bp)
+    assert agent_b["platform"]["target"] == "android"
     assert agent_b["app"]["name"] == "离线番茄钟"
     assert agent_b["core_logic"]["persistence"] == "UserDefaults"
+    assert "accent_color" not in agent_b["branding"]
 
 
 def test_rejected_blueprint():

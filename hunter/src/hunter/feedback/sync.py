@@ -47,6 +47,7 @@ def sync_callbacks(
         "rejected",
         "accepted",
         "implementation_failed",
+        "implementation_complete",
         "ready_for_release",
         "submitted",
         "platform_unavailable",

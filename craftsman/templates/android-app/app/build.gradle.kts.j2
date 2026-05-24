@@ -1,0 +1,54 @@
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+}
+
+android {
+    namespace = "com.craftsman"
+    compileSdk = 34
+
+    defaultConfig {
+        applicationId = "{{ application_id }}"
+        minSdk = {{ min_android_sdk }}
+        targetSdk = 34
+        versionCode = {{ build }}
+        versionName = "{{ version }}"
+    }
+
+    buildFeatures {
+        compose = true
+    }
+    composeOptions {
+        kotlinCompilerExtensionVersion = "1.5.14"
+    }
+
+    signingConfigs {
+        create("release") {
+            val keystorePropsFile = rootProject.file("keystore.properties")
+            if (keystorePropsFile.exists()) {
+                val keystoreProps = java.util.Properties()
+                keystoreProps.load(keystorePropsFile.inputStream())
+                storeFile = file(keystoreProps["storeFile"] as String)
+                storePassword = keystoreProps["storePassword"] as String
+                keyAlias = keystoreProps["keyAlias"] as String
+                keyPassword = keystoreProps["keyPassword"] as String
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            val keystorePropsFile = rootProject.file("keystore.properties")
+            if (keystorePropsFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
+    }
+}
+
+dependencies {
+    implementation("androidx.activity:activity-compose:1.9.2")
+    implementation("androidx.compose.material3:material3:1.3.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+}

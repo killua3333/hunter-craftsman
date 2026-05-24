@@ -26,9 +26,21 @@ class EvidenceItem(BaseModel):
 class BlueprintApp(BaseModel):
     name: str
     bundle_id: str = Field(pattern=r"^[a-zA-Z0-9.-]+$")
+    application_id: str | None = Field(default=None, pattern=r"^[a-zA-Z0-9._]+$")
     version: str = "1.0.0"
     build: str = "1"
-    min_ios: str = "17.0"
+    min_ios: str | None = "17.0"
+    min_android_sdk: str | None = "24"
+
+    @model_validator(mode="after")
+    def _fill_platform_app_defaults(self) -> BlueprintApp:
+        if not (self.application_id or "").strip():
+            self.application_id = self.bundle_id
+        return self
+
+
+class BlueprintPlatform(BaseModel):
+    target: Literal["android", "ios"] = "android"
 
 
 class BlueprintFeature(BaseModel):
@@ -39,7 +51,7 @@ class BlueprintFeature(BaseModel):
 
 
 class BlueprintCoreLogic(BaseModel):
-    persistence: Literal["none", "UserDefaults", "SwiftData"]
+    persistence: Literal["none", "UserDefaults", "SwiftData", "SharedPreferences"]
     description: str
 
 
@@ -69,6 +81,7 @@ class BlueprintBudget(BaseModel):
 class BlueprintRequirement(BaseModel):
     """与 Craftsman requirement.v1 对齐的详细需求（accepted=true 时必填）。"""
 
+    platform: BlueprintPlatform = Field(default_factory=BlueprintPlatform)
     app: BlueprintApp
     features: list[BlueprintFeature] = Field(min_length=1)
     core_logic: BlueprintCoreLogic
@@ -241,12 +254,13 @@ def blueprint_for_agent_b(blueprint: AppOpportunityBlueprint) -> dict[str, Any]:
         raise ValueError(blueprint.rejection_reason or "机会未通过护栏")
     if blueprint.requirement is None:
         raise ValueError("accepted=true 但缺少 requirement")
-    return blueprint.requirement.model_dump()
+    # Agent B 契约不接受 null，外发 payload 统一去除 None 字段。
+    return blueprint.requirement.model_dump(exclude_none=True)
 
 
 def format_blueprint_json(blueprint: AppOpportunityBlueprint) -> str:
     """美化打印用。"""
-    return json.dumps(blueprint.model_dump(), ensure_ascii=False, indent=2)
+    return json.dumps(blueprint.model_dump(exclude_none=True), ensure_ascii=False, indent=2)
 
 
 def extract_blueprint_from_text(text: str) -> AppOpportunityBlueprint:

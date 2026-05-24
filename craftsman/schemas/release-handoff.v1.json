@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://craftsman.local/schemas/release-handoff.v1.json",
+  "title": "Release Handoff for Future Publisher Agent",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "run_id",
+    "opportunity_id",
+    "revision",
+    "requirement_digest",
+    "release_bundle",
+    "build_provenance",
+    "compliance_metadata",
+    "agent_b_status"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0" },
+    "run_id": { "type": "string" },
+    "opportunity_id": { "type": "string" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "platform": {
+      "type": "object",
+      "properties": {
+        "target": { "type": "string", "enum": ["android", "ios"] }
+      }
+    },
+    "requirement_digest": { "type": "string", "minLength": 8 },
+    "release_bundle": {
+      "type": "object",
+      "required": ["project_path"],
+      "properties": {
+        "project_path": { "type": "string" },
+        "aab_path": { "type": "string" },
+        "ipa_path": { "type": "string" },
+        "dsym_path": { "type": "string" },
+        "icon": { "type": "string" },
+        "screenshots": { "type": "array", "items": { "type": "string" } },
+        "metadata_path": { "type": "string" }
+      }
+    },
+    "build_provenance": {
+      "type": "object",
+      "required": ["backend", "backend_target", "craftsman_version", "codegen_model"],
+      "properties": {
+        "backend": { "type": "string" },
+        "backend_target": { "type": "string" },
+        "craftsman_version": { "type": "string" },
+        "codegen_model": { "type": "string" },
+        "platform_note": { "type": "string" }
+      }
+    },
+    "compliance_metadata": {
+      "type": "object",
+      "required": ["subtitle", "description", "keywords", "privacy_url"],
+      "properties": {
+        "subtitle": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "keywords": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "privacy_url": { "type": "string", "minLength": 1 }
+      }
+    },
+    "agent_b_status": {
+      "type": "string",
+      "enum": ["implementation_complete"]
+    }
+  }
+}

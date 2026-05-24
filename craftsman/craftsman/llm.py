@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from contextvars import ContextVar
 from typing import Any
 
 from craftsman.config import ROOT, settings
@@ -11,7 +12,9 @@ logger = logging.getLogger(__name__)
 
 _HIG_PATH = ROOT / "context" / "hig-swiftui-lite.md"
 _CODEGEN_SYSTEM = "craftsman_codegen_system"
+_ANDROID_CODEGEN_SYSTEM = "craftsman_android_codegen_system"
 _GATE_SYSTEM = "craftsman_gate_system"
+_USAGE_EVENTS: ContextVar[list[dict[str, Any]] | None] = ContextVar("craftsman_llm_usage_events", default=None)
 
 
 def _client():
@@ -20,7 +23,63 @@ def _client():
         return None
     from openai import OpenAI
 
-    return OpenAI(api_key=api_key, base_url=settings.resolved_api_base())
+    return OpenAI(
+        api_key=api_key,
+        base_url=settings.resolved_api_base(),
+        timeout=float(settings.llm_request_timeout_seconds),
+    )
+
+
+def _unit_prices_per_1k(model: str) -> tuple[float, float]:
+    if model == settings.deepseek_chat_model:
+        return settings.llm_price_chat_input_per_1k, settings.llm_price_chat_output_per_1k
+    if model == settings.deepseek_pro_model:
+        return settings.llm_price_pro_input_per_1k, settings.llm_price_pro_output_per_1k
+    return 0.0, 0.0
+
+
+def reset_usage_events() -> None:
+    _USAGE_EVENTS.set([])
+
+
+def usage_summary() -> dict[str, Any]:
+    events = _USAGE_EVENTS.get() or []
+    by_model: dict[str, dict[str, Any]] = {}
+    total_prompt = 0
+    total_completion = 0
+    total_cost = 0.0
+    for event in events:
+        model = str(event.get("model") or "unknown")
+        bucket = by_model.setdefault(
+            model,
+            {
+                "calls": 0,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "estimated_cost_usd": 0.0,
+            },
+        )
+        prompt_tokens = int(event.get("prompt_tokens") or 0)
+        completion_tokens = int(event.get("completion_tokens") or 0)
+        total_tokens = int(event.get("total_tokens") or 0)
+        cost = float(event.get("estimated_cost_usd") or 0.0)
+        bucket["calls"] += 1
+        bucket["prompt_tokens"] += prompt_tokens
+        bucket["completion_tokens"] += completion_tokens
+        bucket["total_tokens"] += total_tokens
+        bucket["estimated_cost_usd"] += cost
+        total_prompt += prompt_tokens
+        total_completion += completion_tokens
+        total_cost += cost
+    return {
+        "calls": len(events),
+        "prompt_tokens": total_prompt,
+        "completion_tokens": total_completion,
+        "total_tokens": total_prompt + total_completion,
+        "estimated_cost_usd": round(total_cost, 6),
+        "by_model": by_model,
+    }
 
 
 def _chat_json(
@@ -43,6 +102,26 @@ def _chat_json(
             response_format={"type": "json_object"},
             temperature=temperature,
         )
+        usage = getattr(resp, "usage", None)
+        prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+        completion_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+        total_tokens = int(getattr(usage, "total_tokens", prompt_tokens + completion_tokens) or 0)
+        input_per_1k, output_per_1k = _unit_prices_per_1k(model)
+        estimated_cost_usd = (
+            (prompt_tokens / 1000.0) * input_per_1k
+            + (completion_tokens / 1000.0) * output_per_1k
+        )
+        events = _USAGE_EVENTS.get()
+        if events is not None:
+            events.append(
+                {
+                    "model": model,
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": total_tokens,
+                    "estimated_cost_usd": round(estimated_cost_usd, 6),
+                }
+            )
         content = resp.choices[0].message.content or "{}"
         return json.loads(content)
     except Exception as exc:
@@ -85,9 +164,15 @@ def analyze_requirement_llm(req: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
-def generate_code_llm(req: dict[str, Any]) -> dict[str, str] | None:
-    """根据 requirement 生成 Swift 源码 — 使用 deepseek-v4-pro。"""
-    system = load_prompt(_CODEGEN_SYSTEM)
+def generate_code_llm(req: dict[str, Any], *, platform: str = "ios") -> dict[str, str] | None:
+    """根据 requirement 生成源码 — 使用 deepseek-v4-pro。"""
+    target = platform.strip().lower()
+    if target == "android":
+        system = load_prompt(_ANDROID_CODEGEN_SYSTEM)
+        required = {"app/src/main/java/com/craftsman/MainActivity.kt"}
+    else:
+        system = load_prompt(_CODEGEN_SYSTEM)
+        required = {"Sources/App.swift", "Sources/ContentView.swift", "Sources/Color+Hex.swift"}
     user = json.dumps(req, ensure_ascii=False, indent=2)
     data = _chat_json(
         model=settings.deepseek_pro_model,
@@ -98,10 +183,10 @@ def generate_code_llm(req: dict[str, Any]) -> dict[str, str] | None:
     files = _files_from_response(data)
     if not files:
         return None
-    required_swift = {"Sources/App.swift", "Sources/ContentView.swift", "Sources/Color+Hex.swift"}
-    if not required_swift.issubset(files.keys()):
+    if not required.issubset(files.keys()):
         logger.warning(
-            "codegen missing required Swift files, got: %s",
+            "codegen missing required %s files, got: %s",
+            target,
             sorted(files.keys()),
         )
         return None
@@ -113,13 +198,22 @@ def fix_code_llm(
     files: dict[str, str],
     errors: list[dict[str, Any]],
     round_num: int,
+    *,
+    platform: str = "ios",
 ) -> dict[str, str] | None:
     """Reflexion 修错 — 使用 deepseek-v4-pro。"""
-    system = (
-        "你是 Swift/SwiftUI 编译错误修复专家。"
-        "只返回 JSON: {\"files\":[{\"path\":\"相对路径\",\"content\":\"全文\"}]}。"
-        "仅修改必要文件，保持与需求一致。"
-    )
+    if platform.strip().lower() == "android":
+        system = (
+            "你是 Android Kotlin/Compose 编译错误修复专家。"
+            '只返回 JSON: {"files":[{"path":"相对路径","content":"全文"}]}。'
+            "只修改出错的 Kotlin 文件，保持 package com.craftsman 不变；不要输出 Swift 语法。"
+        )
+    else:
+        system = (
+            "你是 Swift/SwiftUI 编译错误修复专家。"
+            '只返回 JSON: {"files":[{"path":"相对路径","content":"全文"}]}。'
+            "仅修改必要文件，保持与需求一致。"
+        )
     user = (
         f"轮次: {round_num}\n"
         f"应用: {req.get('app', {}).get('name')}\n"

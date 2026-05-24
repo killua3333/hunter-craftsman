@@ -94,6 +94,12 @@ def normalize_blueprint_dict(data: dict[str, Any]) -> dict[str, Any]:
         return out
 
     req = dict(req)
+    platform = req.get("platform")
+    if not isinstance(platform, dict):
+        req["platform"] = {"target": "android"}
+    else:
+        target = str(platform.get("target") or "").strip().lower()
+        req["platform"] = {"target": target if target in {"android", "ios"} else "android"}
     if "data_quality" in req and not out.get("data_quality"):
         out["data_quality"] = req.pop("data_quality")
     if "evidence" in req and not out.get("evidence"):
@@ -109,8 +115,16 @@ def normalize_blueprint_dict(data: dict[str, Any]) -> dict[str, Any]:
             out["keywords"] = list(store.get("keywords") or [])
 
     app = req.get("app")
-    if isinstance(app, dict) and app.get("name") and not str(out.get("app_name") or "").strip():
-        out["app_name"] = app["name"]
+    if isinstance(app, dict):
+        app = dict(app)
+        if app.get("bundle_id") and not app.get("application_id"):
+            app["application_id"] = app["bundle_id"]
+        target = (req.get("platform") or {}).get("target")
+        if target == "android" and not app.get("min_android_sdk"):
+            app["min_android_sdk"] = "24"
+        req["app"] = app
+        if app.get("name") and not str(out.get("app_name") or "").strip():
+            out["app_name"] = app["name"]
 
     core = req.get("core_logic")
     if isinstance(core, dict) and core.get("description") and not str(out.get("core_logic") or "").strip():

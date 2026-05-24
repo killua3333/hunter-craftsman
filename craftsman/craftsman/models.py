@@ -13,6 +13,7 @@ class AgentBStatus(StrEnum):
     ACCEPTED = "accepted"
     IN_PROGRESS = "in_progress"
     IMPLEMENTATION_FAILED = "implementation_failed"
+    IMPLEMENTATION_COMPLETE = "implementation_complete"
     READY_FOR_RELEASE = "ready_for_release"
     SUBMITTED = "submitted"
     PLATFORM_UNAVAILABLE = "platform_unavailable"
@@ -37,6 +38,8 @@ class CraftsmanFeedback(BaseModel):
     created_at: datetime
     run_id: str | None = None
     artifacts: dict[str, Any] | None = None
+    release_handoff: dict[str, Any] | None = None
+    verification: str | None = None
 
     def to_agent_a_dict(self) -> dict[str, Any]:
         data = self.model_dump(mode="json", exclude_none=True)
@@ -57,6 +60,7 @@ class RequirementPayload(BaseModel):
     schema_version: str
     opportunity_id: str
     revision: int
+    platform: dict[str, Any] | None = None
     app: dict[str, Any]
     features: list[dict[str, Any]]
     data_quality: str | None = None
@@ -84,3 +88,17 @@ class RunRecord(BaseModel):
     error_message: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class ReleaseHandoff(BaseModel):
+    """Reserved handoff contract for future release agent."""
+
+    schema_version: str = "1.0"
+    run_id: str
+    opportunity_id: str
+    revision: int
+    platform: dict[str, Any] | None = None
+    requirement_digest: str
+    release_bundle: dict[str, Any]
+    build_provenance: dict[str, Any]
+    agent_b_status: str = AgentBStatus.IMPLEMENTATION_COMPLETE.value

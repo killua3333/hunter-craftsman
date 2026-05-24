@@ -33,7 +33,14 @@ python examples\agent_a_client.py
 | POST | `/v1/opportunities/{id}/analyze` | 同步 Gate，返回 feedback JSON |
 | POST | `/v1/opportunities/{id}/implement` | 异步实现，返回 `run_id` |
 | GET | `/v1/runs/{run_id}` | 查询状态与 feedback |
+| GET | `/v1/runs/{run_id}/events` | 查询阶段事件（支持 after_id/limit） |
 | POST | `/v1/runs/{run_id}/cancel` | 取消 |
+| POST | `/v1/releases/validate-handoff` | 校验 release_handoff schema |
+| POST | `/v1/releases/prepare` | 预备发布并执行 policy check |
+| POST | `/v1/releases/{release_id}/approve` | 人工审批（approved/rejected） |
+| POST | `/v1/releases/{release_id}/submit` | 提交发布（受 policy/approval 闸门约束） |
+| GET | `/v1/releases/{release_id}` | 查看 release 独立状态 |
+| GET | `/v1/audit/replay` | 审计日志回放（按 run/release） |
 
 ### Feedback 格式（→ Agent A）
 
@@ -59,6 +66,13 @@ brew install xcodegen fastlane
 | `DEEPSEEK_PRO_MODEL` | 写 Swift 源码 + Reflexion 修错，默认 `deepseek-v4-pro` |
 | `CALLBACK_DIR` | 反馈 JSON 目录 |
 | `SKIP_XCODEBUILD` | Windows 上设为 `true` 走 Demo 产物模式 |
+| `API_TOKEN` | API 轻鉴权 token（可走 secret store） |
+| `SECRET_PROVIDER`/`SECRET_STORE_DIR` | secret 读取策略（env/file/fallback） |
+| `WEBHOOK_MANDATORY` | 强制签名 webhook 模式 |
+| `RELEASE_REQUIRE_HUMAN_APPROVAL` | submit 前是否要求人工审批 |
+| `RELEASE_REQUIRE_POLICY_CHECKS` | submit 前是否要求 policy 通过 |
+| `AUDIT_RETENTION_DAYS` | 审计日志保留天数 |
+| `NATIVE_BACKEND_POOL` | native backend 目标池（逗号分隔） |
 
 ## Windows Demo 模式
 
@@ -71,7 +85,7 @@ brew install xcodegen fastlane
 - `artifacts/demo.html` 会跳转到上级 `index.html`；反馈 `artifacts.preview_html` 指向交互 Demo
 - 按需求类型选择模板：番茄钟/计时器、计算器、通用列表
 - 若 LLM 已输出合格 `index.html` 则优先使用，否则由内置模板渲染
-- 反馈状态为 `ready_for_release`，并在 `reasons` 里说明已跳过 xcodebuild
+- 反馈终态为 `implementation_complete`，并在 `reasons` 里说明后续发布由独立流程负责
 
 ## 测试
 

@@ -26,11 +26,19 @@ def test_windows_demo_mode_generates_artifacts(tmp_path, monkeypatch):
     fb = run_implementation(store, run_id)
     payload = fb.to_agent_a_dict()
 
-    assert payload["agent_b_status"] == "ready_for_release"
+    assert payload["agent_b_status"] == "implementation_complete"
+    assert payload.get("verification") == "demo"
     artifacts = payload["artifacts"]
-    assert Path(artifacts["demo_html"]).is_file()
-    assert Path(artifacts["preview_html"]).is_file()
-    preview = Path(artifacts["preview_html"]).read_text(encoding="utf-8").lower()
+    assert artifacts["workspace"].startswith(("object://", "file://"))
+    assert artifacts["demo_html"].startswith(("object://", "file://"))
+    assert artifacts["preview_html"].startswith(("object://", "file://"))
+    local = artifacts["local_paths"]
+    assert Path(local["demo_html"]).is_file()
+    assert Path(local["preview_html"]).is_file()
+    preview = Path(local["preview_html"]).read_text(encoding="utf-8").lower()
     assert "<script" in preview
-    assert Path(artifacts["icon"]).is_file()
+    assert Path(local["icon"]).is_file()
     assert len(artifacts["screenshots"]) >= 1
+    assert len(local["screenshots"]) >= 1
+    assert "release_handoff" in payload
+    assert payload["release_handoff"]["platform"]["target"] == "android"

@@ -1,47 +1,60 @@
-# Hunter + Craftsman（Agent A / Agent B）
+# Hunter + Craftsman（Agent A / B / C）
 
-同机双 Agent 流水线：机会筛选 → Gate → 实现 → Demo 产物。
+同机三 Agent 流水线：**自动发现 Play 机会 → Gate → Android 实现 → 可选 Play internal 发布**。
 
 | 目录 | 角色 |
 |------|------|
-| [hunter/](hunter/) | Agent A：LangChain + LangGraph，输出 `AppOpportunityBlueprint` |
-| [craftsman/](craftsman/) | Agent B：FastAPI 流水线，SwiftUI 生成 + Windows Demo |
+| [hunter/](hunter/) | **Agent A**：LangGraph 发现 + 编排 CLI |
+| [craftsman/](craftsman/) | **Agent B**：Gate / 实现 / 产物；**Agent C**：Gradle 打包 + Play API |
+| [docs/](docs/) | 文档（**审查入口** → [docs/project-summary.md](docs/project-summary.md)） |
+| [docker/](docker/) | Android CI 构建镜像 |
 
-## 快速开始
-
-### 1. Craftsman（Agent B）
+## 最快上手
 
 ```powershell
+# 1. Craftsman
 cd craftsman
-copy .env.example .env
-# 填写 DEEPSEEK_API_KEY
-pip install -r requirements.txt
-pip install -e .
+copy .env.example .env   # 填 DEEPSEEK_API_KEY
+pip install -r requirements.txt && pip install -e .
 python -m craftsman.cli serve
+
+# 2. Hunter（另开终端）
+cd hunter
+copy .env.example .env   # 填 DEEPSEEK + TAVILY
+pip install -e ".[dev]"
+hunter autopilot --publish
 ```
 
-### 2. Hunter（Agent A）
+## 常用命令
+
+| 命令 | 说明 |
+|------|------|
+| `hunter autopilot` | 无需求输入，自动发现机会 → B |
+| `hunter autopilot --publish` | 上述 + Agent C（默认 dry-run） |
+| `hunter run "…"` | 手动描述需求 |
+| `hunter chat` | 多轮对话，`/make` 提交 B |
+
+## 文档
+
+| 读者 | 文档 |
+|------|------|
+| **甲方 / 业务** | [甲方项目说明（非技术版）](docs/client-overview.md) |
+| **技术审查** | [项目总结](docs/project-summary.md) |
+| **运维实施** | [操作指南](docs/operator-step-by-step-guide.md) · [Play 上架清单](docs/play-console-setup-checklist.md) · [Agent C 架构](docs/agent-c-architecture.md) |
+
+完整索引见 [docs/README.md](docs/README.md)。
+
+## 测试
 
 ```powershell
-cd hunter
-copy .env.example .env
-# 填写 DEEPSEEK_API_KEY、TAVILY_API_KEY
-pip install -e ".[dev]"
-python -m hunter.main run "做一个极简番茄钟"
+# 仓库根目录（推荐 CI 使用）
+python -m pytest -q                              # 147 passed, 1 skipped
+
+# 分包运行
+cd craftsman && python -m pytest tests/ -q   # 99 passed, 1 skipped
+cd hunter    && python -m pytest tests/ -q   # 48 passed
 ```
-
-## 编排命令
-
-- `hunter run "…"` — A → Gate → 澄清 → B implement
-- `hunter chat` — 多轮对话，满意后 `/make` 提交 B
-- `hunter connect-demo "…"` — 同上（别名）
-
-## 配置说明
-
-- Agent A 默认模型：`deepseek-chat`
-- Agent B：反馈 Gate 用 `deepseek-chat`，写码用 `deepseek-v4-pro`
-- Windows 开发：`SKIP_XCODEBUILD=true`，产出 `artifacts/demo.html` 与截图
 
 ## 许可证
 
-私有项目；上传前请勿将 `.env` 提交到 Git。
+私有项目；勿将 `.env`、`secrets/`、`workspace/` 提交到 Git。
