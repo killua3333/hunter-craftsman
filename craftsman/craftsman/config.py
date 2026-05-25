@@ -13,8 +13,12 @@ class Settings(BaseSettings):
     database_path: Path = ROOT / "craftsman.db"
     workspace_root: Path = ROOT / "workspace"
     callback_dir: Path = ROOT / "callbacks"
+    api_token: str | None = None
     webhook_url: str | None = None
     webhook_secret: str | None = None
+    webhook_mandatory: bool = False
+    secret_provider: str = "env_file_fallback"
+    secret_store_dir: Path = ROOT / "secrets"
 
     # DeepSeek（OpenAI 兼容接口）
     deepseek_api_key: str | None = None
@@ -36,14 +40,78 @@ class Settings(BaseSettings):
     simulator_name: str = "iPhone 16"
     skip_xcodebuild: bool = False
     skip_fastlane: bool = False
+    skip_gradle_build: bool = False
+
+    android_build_backend: str = "auto"
+    docker_android_image: str = "hunter-craftsman/android-builder"
+    docker_gradle_timeout_seconds: float = 1800.0
+    android_smoke_test: str = "auto"
+    android_smoke_timeout_seconds: float = 600.0
+    android_smoke_max_rounds: int = 2
+
+    privacy_deploy_dry_run: bool = True
+    privacy_contact_email: str = "privacy@example.com"
+    cloudflare_api_token: str | None = None
+    cloudflare_account_id: str | None = None
+
+    gate_mode: str = "soft"
+    gate_auto_accept: bool = True
 
     poll_interval_seconds: float = 2.0
+    job_retry_limit: int = 2
+    job_lease_seconds: int = 300
+    contract_default_version: str = "1.0"
+    contract_supported_versions: str = "1.0"
+    artifact_uri_mode: str = "object"
+    artifact_object_prefix: str = "object://local"
+    llm_price_chat_input_per_1k: float = 0.0
+    llm_price_chat_output_per_1k: float = 0.0
+    llm_price_pro_input_per_1k: float = 0.0
+    llm_price_pro_output_per_1k: float = 0.0
+    alert_window_size: int = 20
+    alert_min_samples: int = 5
+    alert_failure_rate_threshold: float = 0.5
+    alert_timeout_rate_threshold: float = 0.3
+    alert_duration_threshold_ratio: float = 0.9
+    release_require_human_approval: bool = True
+    release_require_policy_checks: bool = True
+    audit_retention_days: int = 14
+    audit_replay_limit: int = 500
+    native_backend_pool: str = "local-macos"
+    native_backend_pool_strategy: str = "round_robin"
+    execution_image_ref: str = "ghcr.io/hunter-craftsman/craftsman:py312-latest"
+
+    # Agent C (Publisher) — Android release automation
+    publisher_dry_run: bool = True
+    android_release_track: str = "internal"
+    google_play_package_name: str | None = None
+    publisher_require_signing: bool = False
+    publisher_submit_timeout_seconds: float = 1800.0
+
+    job_worker_count: int = 1
+    llm_request_timeout_seconds: float = 120.0
+    min_free_disk_bytes: int = 8 * 1024 * 1024 * 1024
 
     def resolved_api_key(self) -> str | None:
-        return self.deepseek_api_key or self.openai_api_key
+        from craftsman.secrets import resolve_secret_value
+
+        key = resolve_secret_value("DEEPSEEK_API_KEY", self.deepseek_api_key)
+        if key:
+            return key
+        return resolve_secret_value("OPENAI_API_KEY", self.openai_api_key)
 
     def resolved_api_base(self) -> str:
         return self.deepseek_api_base.rstrip("/")
+
+    def resolved_api_token(self) -> str | None:
+        from craftsman.secrets import resolve_secret_value
+
+        return resolve_secret_value("API_TOKEN", self.api_token)
+
+    def resolved_webhook_secret(self) -> str | None:
+        from craftsman.secrets import resolve_secret_value
+
+        return resolve_secret_value("WEBHOOK_SECRET", self.webhook_secret)
 
 
 settings = Settings()

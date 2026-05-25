@@ -25,3 +25,9 @@ def validate_feedback(data: dict) -> list[str]:
     schema = _load_schema("craftsman-feedback.v1.json")
     validator = jsonschema.Draft202012Validator(schema)
     return [f"{'.'.join(str(p) for p in e.path)}: {e.message}" for e in validator.iter_errors(data)]
+
+
+def validate_release_handoff(data: dict) -> list[str]:
+    schema = _load_schema("release-handoff.v1.json")
+    validator = jsonschema.Draft202012Validator(schema)
+    return [f"{'.'.join(str(p) for p in e.path)}: {e.message}" for e in validator.iter_errors(data)]

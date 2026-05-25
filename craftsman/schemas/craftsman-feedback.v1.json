@@ -43,6 +43,7 @@
         "accepted",
         "in_progress",
         "implementation_failed",
+        "implementation_complete",
         "ready_for_release",
         "submitted",
         "platform_unavailable"
@@ -51,6 +52,7 @@
     "reasons": { "type": "array", "items": { "type": "string" } },
     "suggested_rules": { "type": "array", "items": { "type": "string" } },
     "created_at": { "type": "string", "format": "date-time" },
-    "artifacts": { "type": "object" }
+    "artifacts": { "type": "object" },
+    "release_handoff": { "type": "object" }
   }
 }

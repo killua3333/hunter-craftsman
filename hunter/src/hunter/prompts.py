@@ -16,6 +16,17 @@ def load_learnings_prompt(name: str | None = None) -> str:
     return _read_prompt_file(prompt_name)
 
 
+def load_discovery_prompt() -> str:
+    """Autopilot 发现模式专用系统提示词。"""
+    from hunter.feedback.inline_learnings import load_inline_learnings
+
+    core = _read_prompt_file("specialist_discovery")
+    inline = load_inline_learnings()
+    if inline:
+        return f"{core}\n\n---\n\n{inline}"
+    return core
+
+
 def load_system_prompt(name: str | None = None) -> str:
     """
     加载完整系统提示词 = specialist_system（核心护栏）

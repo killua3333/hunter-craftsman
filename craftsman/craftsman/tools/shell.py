@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 from dataclasses import dataclass
+from pathlib import PurePath
 from typing import Mapping
 
 
@@ -21,6 +22,9 @@ ALLOWED_PREFIXES = (
     "git",
     "which",
     "swift",
+    "gradle",
+    "gradlew",
+    "gradlew.bat",
 )
 
 
@@ -34,7 +38,8 @@ def run_cmd(
     if not cmd:
         raise ValueError("empty command")
     exe = cmd[0].lower()
-    if not any(exe == p or exe.endswith("/" + p) for p in ALLOWED_PREFIXES):
+    exe_name = PurePath(exe).name
+    if not any(exe == p or exe_name == p or exe.endswith("/" + p) or exe.endswith("\\" + p) for p in ALLOWED_PREFIXES):
         raise PermissionError(f"command not allowed: {cmd[0]}")
     try:
         proc = subprocess.run(

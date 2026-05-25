@@ -1,6 +1,13 @@
 from craftsman.gate import run_gate
 
 
+def _strict_gate(monkeypatch):
+    from craftsman.config import settings
+
+    monkeypatch.setattr(settings, "gate_mode", "strict")
+    monkeypatch.setattr(settings, "gate_auto_accept", False)
+
+
 def _minimal_req(**extra):
     base = {
         "app": {"name": "Test", "bundle_id": "com.test.app"},
@@ -20,12 +27,14 @@ def _minimal_req(**extra):
     return base
 
 
-def test_gate_rejects_missing_data_quality():
+def test_gate_rejects_missing_data_quality(monkeypatch):
+    _strict_gate(monkeypatch)
     result = run_gate(_minimal_req(), [])
     assert any("data_quality" in r for r in result.reasons)
 
 
-def test_gate_rejects_measured_with_only_assumption():
+def test_gate_rejects_measured_with_only_assumption(monkeypatch):
+    _strict_gate(monkeypatch)
     result = run_gate(
         _minimal_req(
             data_quality="measured",

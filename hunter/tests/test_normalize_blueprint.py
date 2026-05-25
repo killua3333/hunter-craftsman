@@ -62,6 +62,8 @@ def test_normalize_pomodoro_like_dict():
     bp = parse_blueprint(_pomodoro_like_raw())
     assert bp.accepted is True
     assert bp.app_name == "极简番茄钟"
+    assert bp.requirement.platform.target == "android"
+    assert bp.requirement.app.application_id == "com.hunter.minimalpomodoro"
     feat = bp.requirement.features[0]
     assert feat.id == "番茄计时器" or feat.title == "番茄计时器"
     assert all(isinstance(x, str) for x in feat.items)

@@ -1,7 +1,15 @@
 from craftsman.gate import run_gate
 
 
-def test_gate_rejects_missing_persistence():
+def _strict_gate(monkeypatch):
+    from craftsman.config import settings
+
+    monkeypatch.setattr(settings, "gate_mode", "strict")
+    monkeypatch.setattr(settings, "gate_auto_accept", False)
+
+
+def test_gate_rejects_missing_persistence(monkeypatch):
+    _strict_gate(monkeypatch)
     req = {
         "app": {"name": "Test"},
         "features": [{"id": "a", "type": "list", "title": "T"}],

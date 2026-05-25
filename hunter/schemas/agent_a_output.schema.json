@@ -41,9 +41,17 @@
           "properties": {
             "name": { "type": "string" },
             "bundle_id": { "type": "string" },
+            "application_id": { "type": "string" },
             "version": { "type": "string" },
             "build": { "type": "string" },
-            "min_ios": { "type": "string" }
+            "min_ios": { "type": "string" },
+            "min_android_sdk": { "type": "string" }
+          }
+        },
+        "platform": {
+          "type": "object",
+          "properties": {
+            "target": { "type": "string", "enum": ["android", "ios"] }
           }
         },
         "features": {
@@ -64,7 +72,7 @@
           "type": "object",
           "required": ["persistence", "description"],
           "properties": {
-            "persistence": { "enum": ["none", "UserDefaults", "SwiftData"] },
+            "persistence": { "enum": ["none", "UserDefaults", "SwiftData", "SharedPreferences"] },
             "description": { "type": "string" }
           }
         },

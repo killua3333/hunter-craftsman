@@ -23,6 +23,8 @@ def build_feedback(
     open_questions: list[str] | None = None,
     run_id: str | None = None,
     artifacts: dict | None = None,
+    release_handoff: dict | None = None,
+    verification: str | None = None,
 ) -> CraftsmanFeedback:
     return CraftsmanFeedback(
         opportunity_id=opportunity_id,
@@ -40,4 +42,6 @@ def build_feedback(
         created_at=utc_now(),
         run_id=run_id,
         artifacts=artifacts,
+        release_handoff=release_handoff,
+        verification=verification,
     )

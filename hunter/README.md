@@ -38,7 +38,7 @@
 .\.venv\Scripts\hunter.exe feedback sync
 
 # 或手动保存单条
-.\.venv\Scripts\hunter.exe feedback save ..\craftsman\callbacks\calc-001_r1_ready_for_release.json
+.\.venv\Scripts\hunter.exe feedback save ..\craftsman\callbacks\calc-001_r1_implementation_complete.json
 ```
 
 ### 每周闭环（同步 + 学习）

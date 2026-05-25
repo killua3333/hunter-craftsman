@@ -2,6 +2,9 @@
   "schema_version": "1.0",
   "opportunity_id": "calc-001",
   "revision": 1,
+  "platform": {
+    "target": "android"
+  },
   "data_quality": "assumption",
   "evidence": [
     {
@@ -13,9 +16,10 @@
   "app": {
     "name": "简易计算器",
     "bundle_id": "com.craftsman.calculator",
+    "application_id": "com.craftsman.calculator",
     "version": "1.0.0",
     "build": "1",
-    "min_ios": "17.0"
+    "min_android_sdk": "24"
   },
   "features": [
     {
@@ -26,8 +30,8 @@
     }
   ],
   "core_logic": {
-    "persistence": "UserDefaults",
-    "description": "计算历史存入 UserDefaults"
+    "persistence": "SharedPreferences",
+    "description": "计算历史存入 SharedPreferences"
   },
   "ui_layout": {
     "navigation": "stack"

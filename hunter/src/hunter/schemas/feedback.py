@@ -1,4 +1,4 @@
-"""Agent B → Hunter 反馈契约。"""
+"""Agent B → Hunter feedback contract."""
 
 from __future__ import annotations
 
@@ -9,21 +9,30 @@ from pydantic import BaseModel, Field
 
 
 class AgentBFeedback(BaseModel):
-    opportunity_id: str = Field(description="与机会单对应的唯一 ID")
+    schema_version: str = "1.0"
+    opportunity_id: str = Field(description="Opportunity identifier")
+    revision: int = Field(ge=1, description="Requirement revision")
     agent_b_status: str = Field(
-        description="implementation_ok | implementation_failed | rejected_scope 等"
+        description=(
+            "needs_clarification | rejected | accepted | in_progress | "
+            "implementation_failed | implementation_complete | ready_for_release | "
+            "submitted | platform_unavailable"
+        )
     )
-    reasons: list[str] = Field(min_length=1, description="失败或改进原因")
+    reasons: list[str] = Field(default_factory=list, description="Failure or guidance reasons")
+    suggested_rules: list[str] = Field(default_factory=list, description="Guidance for next revision")
     blueprint: dict[str, Any] | None = Field(
         default=None,
-        description="可选：Agent A 输出的机会单快照",
+        description="Optional Agent A blueprint summary",
     )
-    suggested_rules: list[str] = Field(
-        default_factory=list,
-        description="建议 Agent A 下次遵循的规则",
+    run_id: str | None = Field(default=None, description="Run identifier from Agent B")
+    artifacts: dict[str, Any] | None = Field(default=None, description="Artifact metadata")
+    release_handoff: dict[str, Any] | None = Field(
+        default=None,
+        description="Reserved handoff contract for future release agent",
     )
-    notes: str | None = Field(default=None, description="补充说明")
+    notes: str | None = Field(default=None, description="Additional note")
     created_at: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat(),
-        description="ISO8601 时间戳",
+        description="ISO8601 timestamp",
     )

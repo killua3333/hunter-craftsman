@@ -6,6 +6,7 @@ from typing import Any
 
 from craftsman.config import settings
 from craftsman.llm import fix_code_llm
+from craftsman.tools.gradle_errors import parse_gradle_errors
 from craftsman.tools.xcode_errors import parse_xcode_errors
 
 
@@ -20,6 +21,22 @@ def read_swift_sources(project_dir: Path) -> dict[str, str]:
     info = project_dir / "Info.plist"
     if info.exists():
         files["Info.plist"] = info.read_text(encoding="utf-8")
+    return files
+
+
+def read_android_sources(project_dir: Path) -> dict[str, str]:
+    files: dict[str, str] = {}
+    java_root = project_dir / "app" / "src" / "main" / "java"
+    if not java_root.exists():
+        return files
+    for path in java_root.rglob("*"):
+        if path.suffix not in {".kt", ".java"}:
+            continue
+        rel = path.relative_to(project_dir).as_posix()
+        files[rel] = path.read_text(encoding="utf-8")
+    manifest = project_dir / "app" / "src" / "main" / "AndroidManifest.xml"
+    if manifest.is_file():
+        files["app/src/main/AndroidManifest.xml"] = manifest.read_text(encoding="utf-8")
     return files
 
 
@@ -57,15 +74,42 @@ def apply_fixes(
         write_files(project_dir, patched)
         return True, fp
 
-    # Rule-based fallback: undefined symbols — no-op; signing errors skip
     return False, fp
 
 
-def save_build_log(workspace: Path, log: str) -> Path:
+def apply_gradle_fixes(
+    req: dict[str, Any],
+    project_dir: Path,
+    parsed: dict[str, Any],
+    round_num: int,
+    previous_fp: str | None,
+) -> tuple[bool, str | None]:
+    errors = parsed.get("errors") or []
+    if not errors:
+        return False, previous_fp
+    fp = error_fingerprint(errors)
+    if fp == previous_fp:
+        return False, fp
+
+    files = read_android_sources(project_dir)
+    if not files:
+        return False, fp
+    patched = fix_code_llm(req, files, errors, round_num, platform="android")
+    if patched:
+        write_files(project_dir, patched)
+        return True, fp
+    return False, fp
+
+
+def save_build_log(workspace: Path, log: str, *, backend: str = "xcode") -> Path:
     path = workspace / "build.log"
     path.write_text(log, encoding="utf-8")
+    if backend == "android_gradle" or backend == "android_gradle_docker":
+        parsed = parse_gradle_errors(log)
+    else:
+        parsed = parse_xcode_errors(log)
     (workspace / "build_errors.json").write_text(
-        json.dumps(parse_xcode_errors(log), indent=2),
+        json.dumps(parsed, indent=2),
         encoding="utf-8",
     )
     return path

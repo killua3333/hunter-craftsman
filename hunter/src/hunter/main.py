@@ -81,6 +81,14 @@ def _print_pipeline_outcome(outcome: dict) -> int:
         print("\n=== requirement ===", flush=True)
         print(json.dumps(outcome["requirement"], ensure_ascii=False, indent=2), flush=True)
 
+    if outcome.get("mode") == "autopilot":
+        print("\n=== Autopilot 模式 ===", flush=True)
+        if outcome.get("discovery_answer"):
+            print("发现阶段摘要已写入 blueprint。", flush=True)
+
+    if outcome.get("correlation_id"):
+        print(f"\nCorrelation ID: {outcome['correlation_id']}", flush=True)
+
     feedback = outcome.get("feedback") or {}
     print("\n=== Agent B 反馈 ===", flush=True)
     print(json.dumps(feedback, ensure_ascii=False, indent=2), flush=True)
@@ -92,6 +100,21 @@ def _print_pipeline_outcome(outcome: dict) -> int:
         print("\n可见 demo 产物：", flush=True)
         for key, value in artifacts.items():
             print(f"- {key}: {value}", flush=True)
+
+    publish = outcome.get("publish")
+    if publish:
+        print("\n=== Agent C 发布 ===", flush=True)
+        print(json.dumps(publish, ensure_ascii=False, indent=2), flush=True)
+        setup_sheet = publish.get("setup_sheet")
+        if setup_sheet:
+            print("\n=== Play Console 操作清单 ===", flush=True)
+            print(setup_sheet, flush=True)
+        setup_path = publish.get("play_console_setup_path")
+        if setup_path:
+            print(f"\n清单文件: {setup_path}", flush=True)
+        status = str(publish.get("final_status") or publish.get("publish_status") or "")
+        if status in {"failed", "prepare_rejected", "approval_required"}:
+            return 3
     return 0
 
 
@@ -168,6 +191,18 @@ def cmd_chat(
             "请确认 Craftsman 已运行: python -m craftsman.cli serve\n",
             flush=True,
         )
+
+        seen_phases: set[str] = set()
+
+        def _print_progress(event: dict[str, object]) -> None:
+            phase = str(event.get("phase") or "").strip()
+            detail = str(event.get("detail") or "").strip()
+            key = f"{phase}:{detail}"
+            if not phase or key in seen_phases:
+                return
+            seen_phases.add(key)
+            print(f"[run] {phase}: {detail}", flush=True)
+
         try:
             outcome = run_blueprint_pipeline(
                 last_blueprint,
@@ -175,6 +210,7 @@ def cmd_chat(
                 base_url=base_url,
                 opportunity_id=opportunity_id,
                 timeout_seconds=timeout,
+                progress_callback=_print_progress,
                 max_rounds=max_rounds,
             )
         except (ValueError, RuntimeError) as exc:
@@ -319,7 +355,11 @@ def cmd_connect_demo(
     base_url: str,
     opportunity_id: str | None,
     timeout: float,
+    poll_interval: float,
+    sync_implement: bool,
     max_rounds: int,
+    publish: bool = False,
+    auto_approve_release: bool = True,
 ) -> int:
     """一键联通 A→B（含 Gate 澄清循环，最多 3 轮）。"""
     from hunter.orchestrator import run_opportunity_pipeline
@@ -329,13 +369,74 @@ def cmd_connect_demo(
         return 2
 
     print("运行编排流水线（Agent A → Gate → 澄清 → implement）...", flush=True)
+    seen_phases: set[str] = set()
+
+    def _print_progress(event: dict[str, object]) -> None:
+        phase = str(event.get("phase") or "").strip()
+        detail = str(event.get("detail") or "").strip()
+        key = f"{phase}:{detail}"
+        if not phase or key in seen_phases:
+            return
+        seen_phases.add(key)
+        print(f"[run] {phase}: {detail}", flush=True)
+
     try:
         outcome = run_opportunity_pipeline(
             question,
             base_url=base_url,
             opportunity_id=opportunity_id,
             timeout_seconds=timeout,
+            poll_interval_seconds=poll_interval,
+            use_async_implement=not sync_implement,
+            progress_callback=_print_progress,
             max_rounds=max_rounds,
+            publish=publish,
+            auto_approve_release=auto_approve_release,
+        )
+    except (ValueError, RuntimeError) as exc:
+        print(f"失败: {exc}", file=sys.stderr)
+        return 2
+
+    return _print_pipeline_outcome(outcome)
+
+
+def cmd_autopilot(
+    *,
+    base_url: str,
+    opportunity_id: str | None,
+    timeout: float,
+    poll_interval: float,
+    sync_implement: bool,
+    max_rounds: int,
+    publish: bool = False,
+    auto_approve_release: bool = True,
+) -> int:
+    """Autopilot：人类只触发开始，自动发现机会 → B → 可选 C。"""
+    from hunter.orchestrator import run_autopilot_pipeline
+
+    print("Autopilot：自动搜索 Play 机会 → Gate → implement → 可选发布...", flush=True)
+    seen_phases: set[str] = set()
+
+    def _print_progress(event: dict[str, object]) -> None:
+        phase = str(event.get("phase") or "").strip()
+        detail = str(event.get("detail") or "").strip()
+        key = f"{phase}:{detail}"
+        if not phase or key in seen_phases:
+            return
+        seen_phases.add(key)
+        print(f"[autopilot] {phase}: {detail}", flush=True)
+
+    try:
+        outcome = run_autopilot_pipeline(
+            base_url=base_url,
+            opportunity_id=opportunity_id,
+            timeout_seconds=timeout,
+            poll_interval_seconds=poll_interval,
+            use_async_implement=not sync_implement,
+            progress_callback=_print_progress,
+            max_rounds=max_rounds,
+            publish=publish,
+            auto_approve_release=auto_approve_release,
         )
     except (ValueError, RuntimeError) as exc:
         print(f"失败: {exc}", file=sys.stderr)
@@ -350,15 +451,23 @@ def cmd_run(
     base_url: str,
     opportunity_id: str | None,
     timeout: float,
+    poll_interval: float,
+    sync_implement: bool,
     max_rounds: int,
+    publish: bool = False,
+    auto_approve_release: bool = True,
 ) -> int:
-    """与 connect-demo 相同：完整 A→B 编排。"""
+    """与 connect-demo 相同：完整 A→B 编排；--publish 追加 Agent C。"""
     return cmd_connect_demo(
         question,
         base_url=base_url,
         opportunity_id=opportunity_id,
         timeout=timeout,
+        poll_interval=poll_interval,
+        sync_implement=sync_implement,
         max_rounds=max_rounds,
+        publish=publish,
+        auto_approve_release=auto_approve_release,
     )
 
 
@@ -421,11 +530,32 @@ def main() -> None:
     )
 
     run_p = sub.add_parser("run", help="A→B 完整编排（Gate 澄清 + implement）")
-    run_p.add_argument("question", help="机会描述")
+    run_p.add_argument("question", nargs="?", default="", help="机会描述（省略且 --autopilot 时自动发现）")
+    run_p.add_argument(
+        "--autopilot",
+        action="store_true",
+        help="不提供具体需求，自动搜索 Play 机会并跑通 B/C",
+    )
     run_p.add_argument("--base-url", default="http://127.0.0.1:8791")
     run_p.add_argument("--opportunity-id", default=None)
-    run_p.add_argument("--timeout", type=float, default=180.0)
+    run_p.add_argument("--timeout", type=float, default=600.0)
+    run_p.add_argument("--poll-interval", type=float, default=2.0)
+    run_p.add_argument(
+        "--sync-implement",
+        action="store_true",
+        help="使用兼容路径：调用 /v1/runs/sync-implement（默认异步 implement + 轮询）",
+    )
     run_p.add_argument("--max-rounds", type=int, default=3)
+    run_p.add_argument(
+        "--publish",
+        action="store_true",
+        help="实现完成后调用 Agent C（打包/签名/上传 Play，默认 dry-run）",
+    )
+    run_p.add_argument(
+        "--no-auto-approve",
+        action="store_true",
+        help="发布前不自动调用 /releases/{id}/approve（需人工审批时）",
+    )
 
     connect_p = sub.add_parser(
         "connect-demo",
@@ -446,7 +576,13 @@ def main() -> None:
         "--timeout",
         type=float,
         default=600.0,
-        help="调用 Agent B 同步接口超时时间（秒）",
+        help="等待 Agent B 异步实现完成的总超时时间（秒）",
+    )
+    connect_p.add_argument("--poll-interval", type=float, default=2.0, help="轮询 run 状态间隔（秒）")
+    connect_p.add_argument(
+        "--sync-implement",
+        action="store_true",
+        help="使用兼容路径：调用 /v1/runs/sync-implement（默认异步 implement + 轮询）",
     )
     connect_p.add_argument(
         "--max-rounds",
@@ -454,6 +590,29 @@ def main() -> None:
         default=3,
         help="needs_clarification 时最多澄清轮数",
     )
+    connect_p.add_argument(
+        "--publish",
+        action="store_true",
+        help="实现完成后调用 Agent C（打包/签名/上传 Play，默认 dry-run）",
+    )
+    connect_p.add_argument(
+        "--no-auto-approve",
+        action="store_true",
+        help="发布前不自动调用 /releases/{id}/approve",
+    )
+
+    autopilot_p = sub.add_parser(
+        "autopilot",
+        help="自动发现 Play 机会并跑通 A→B→(C)，无需人类提供具体需求",
+    )
+    autopilot_p.add_argument("--base-url", default="http://127.0.0.1:8791")
+    autopilot_p.add_argument("--opportunity-id", default=None)
+    autopilot_p.add_argument("--timeout", type=float, default=600.0)
+    autopilot_p.add_argument("--poll-interval", type=float, default=2.0)
+    autopilot_p.add_argument("--sync-implement", action="store_true")
+    autopilot_p.add_argument("--max-rounds", type=int, default=3)
+    autopilot_p.add_argument("--publish", action="store_true")
+    autopilot_p.add_argument("--no-auto-approve", action="store_true")
 
     args = parser.parse_args()
 
@@ -477,15 +636,49 @@ def main() -> None:
             )
         )
 
+    if args.command == "autopilot":
+        auto_approve = not args.no_auto_approve
+        raise SystemExit(
+            cmd_autopilot(
+                base_url=args.base_url,
+                opportunity_id=args.opportunity_id,
+                timeout=args.timeout,
+                poll_interval=args.poll_interval,
+                sync_implement=args.sync_implement,
+                max_rounds=args.max_rounds,
+                publish=args.publish,
+                auto_approve_release=auto_approve,
+            )
+        )
+
     if args.command in ("connect-demo", "run"):
         question = args.question
+        auto_approve = not getattr(args, "no_auto_approve", False)
+        if args.command == "run" and getattr(args, "autopilot", False):
+            autopilot_timeout = max(float(args.timeout), 1800.0)
+            raise SystemExit(
+                cmd_autopilot(
+                    base_url=args.base_url,
+                    opportunity_id=args.opportunity_id,
+                    timeout=autopilot_timeout,
+                    poll_interval=args.poll_interval,
+                    sync_implement=args.sync_implement,
+                    max_rounds=args.max_rounds,
+                    publish=getattr(args, "publish", False),
+                    auto_approve_release=auto_approve,
+                )
+            )
         raise SystemExit(
             cmd_connect_demo(
                 question,
                 base_url=args.base_url,
                 opportunity_id=args.opportunity_id,
                 timeout=args.timeout,
+                poll_interval=args.poll_interval,
+                sync_implement=args.sync_implement,
                 max_rounds=args.max_rounds,
+                publish=getattr(args, "publish", False),
+                auto_approve_release=auto_approve,
             )
         )
 
