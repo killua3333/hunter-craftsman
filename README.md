@@ -1,13 +1,19 @@
 # Hunter + Craftsman（Agent A / B / C）
 
-同机三 Agent 流水线：**自动发现 Play 机会 → Gate → Android 实现 → 可选 Play internal 发布**。
+同机 **三智能体** 流水线：**自动发现 Play 机会 → Gate → Android 实现 → 可选 Play internal 发布**。
 
-| 目录 | 角色 |
+| 智能体 | 目录 / 代码 | 职责 |
+|--------|-------------|------|
+| **Agent A（Hunter）** | [hunter/](hunter/) | Play 机会发现、requirement 编排、CLI |
+| **Agent B（Craftsman）** | [craftsman/](craftsman/) · `orchestrator/` | Soft Gate、代码生成、编译验证、产物与 handoff |
+| **Agent C（Publisher）** | [craftsman/](craftsman/) · [`publisher/`](craftsman/craftsman/publisher/) | Gradle 打包、签名、隐私页、Play internal 提交 |
+
+> B 与 C 共用同一个 `craftsman serve` 服务与 API；A 为独立 CLI，通过 HTTP 编排 B → C。
+
+| 其他 | 说明 |
 |------|------|
-| [hunter/](hunter/) | **Agent A**：LangGraph 发现 + 编排 CLI |
-| [craftsman/](craftsman/) | **Agent B**：Gate / 实现 / 产物；**Agent C**：Gradle 打包 + Play API |
 | [docs/](docs/) | 文档（**审查入口** → [docs/project-summary.md](docs/project-summary.md)） |
-| [docker/](docker/) | Android CI 构建镜像 |
+| [docker/](docker/) | Android CI 构建镜像（Agent B 验证 / Agent C 打包） |
 
 ## 最快上手
 
