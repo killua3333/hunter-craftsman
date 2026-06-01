@@ -1,11 +1,14 @@
 import json
 import time
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 from craftsman.api.app import create_app
 from craftsman.config import settings
+from craftsman.store.db import RunStore
+from craftsman.worker import BackgroundWorker
 
 SAMPLE = Path(__file__).parent.parent / "examples" / "requirement.sample.json"
 
@@ -44,3 +47,27 @@ def test_release_submit_returns_immediately_and_worker_completes(monkeypatch):
                 break
             time.sleep(0.05)
         assert final_status == "dry_run_complete"
+
+
+def test_release_failure_keeps_release_handoff_for_requeue(monkeypatch):
+    store = RunStore()
+    worker = BackgroundWorker(store)
+    release_id = "rel-failure-keep-handoff"
+    handoff = {"release_id": release_id, "platform": {"target": "android"}, "run_id": "run-keep"}
+    store.record_release_policy_check(release_id, passed=True, issues=[])
+    store.record_release_approval(release_id, decision="approved", approved_by="tester", note=None)
+    store.upsert_release_state(
+        release_id,
+        status="submitting",
+        details={"release_handoff": handoff, "platform_target": "android"},
+        updated_by="tester",
+    )
+
+    with patch("craftsman.worker.run_android_release", side_effect=RuntimeError("simulated release failure")):
+        worker._process_release(release_id, lease_token="lease-test")
+
+    release = store.get_release_state(release_id)
+    assert release is not None
+    assert release["status"] == "failed"
+    assert release["details"]["release_handoff"]["release_id"] == release_id
+    assert release["details"]["message"] == "simulated release failure"

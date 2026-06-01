@@ -139,6 +139,7 @@ class BackgroundWorker:
                 release_id,
                 status=final_status,
                 details={
+                    **details,
                     "policy": policy,
                     "approval": approval,
                     "platform_target": details.get("platform_target") or "android",
@@ -166,10 +167,16 @@ class BackgroundWorker:
                 worker_id=self.worker_id,
                 lease_token=lease_token,
             )
+            state = self.store.get_release_state(release_id) or {}
+            details: dict[str, Any] = state.get("details") if isinstance(state.get("details"), dict) else {}
             self.store.upsert_release_state(
                 release_id,
                 status="failed",
-                details={"message": str(exc), "category": taxonomy["category"]},
+                details={
+                    **details,
+                    "message": str(exc),
+                    "category": taxonomy["category"],
+                },
                 updated_by="agent_c",
             )
             logger.exception("release job failed: release_id=%s", release_id)

@@ -1,7 +1,7 @@
 import pytest
 
 from hunter.integrations import build_requirement_from_blueprint
-from hunter.integrations.craftsman import _http_json, _with_retry
+from hunter.integrations.craftsman import CraftsmanHTTPError, _http_json, _with_retry
 from tests.conftest import sample_blueprint
 
 
@@ -128,4 +128,40 @@ def test_with_retry_skips_non_transport_runtime_error():
 
     with pytest.raises(RuntimeError, match="validation failed"):
         _with_retry(terminal, attempts=3)
+    assert calls["n"] == 1
+
+
+def test_with_retry_retries_retryable_http_5xx_once():
+    calls = {"n": 0}
+
+    def flaky():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise CraftsmanHTTPError(
+                "temporary",
+                code="temporary",
+                status_code=503,
+                retryable=True,
+            )
+        return {"ok": True}
+
+    result = _with_retry(flaky, attempts=2)
+    assert result == {"ok": True}
+    assert calls["n"] == 2
+
+
+def test_with_retry_does_not_retry_retryable_http_4xx():
+    calls = {"n": 0}
+
+    def bad_request():
+        calls["n"] += 1
+        raise CraftsmanHTTPError(
+            "bad request",
+            code="invalid_request",
+            status_code=400,
+            retryable=True,
+        )
+
+    with pytest.raises(CraftsmanHTTPError, match="bad request"):
+        _with_retry(bad_request, attempts=3)
     assert calls["n"] == 1

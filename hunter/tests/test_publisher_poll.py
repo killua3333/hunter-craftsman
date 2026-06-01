@@ -14,6 +14,7 @@ def test_terminal_release_statuses_include_dry_run():
 
 def test_wait_for_release_completion():
     calls = {"n": 0}
+    events = []
 
     def fake_status(_release_id, **kwargs):
         calls["n"] += 1
@@ -26,8 +27,10 @@ def test_wait_for_release_completion():
             "rel-1",
             timeout_seconds=5.0,
             poll_interval_seconds=0.01,
+            on_event=events.append,
         )
     assert out["status"] == "dry_run_complete"
+    assert [event["status"] for event in events] == ["building", "dry_run_complete"]
 
 
 def test_play_console_fields_prefers_submit_then_poll():
@@ -67,10 +70,18 @@ def test_run_publish_pipeline_surfaces_poll_timeout():
     prepare = {"accepted": True, "approval_required": False}
     submit = {"release_id": "rel-1", "status": "submitting", "agent_c_status": "building"}
     poll = {"release_id": "rel-1", "status": "building", "poll_timed_out": True}
+    events = []
 
     with patch("hunter.integrations.publisher.prepare_release", return_value=prepare), patch(
         "hunter.integrations.publisher.submit_release", return_value=submit
     ), patch("hunter.integrations.publisher.wait_for_release_completion", return_value=poll):
-        out = run_publish_pipeline(feedback, timeout_seconds=1.0, poll_interval_seconds=0.01)
+        out = run_publish_pipeline(
+            feedback,
+            timeout_seconds=1.0,
+            poll_interval_seconds=0.01,
+            on_event=events.append,
+        )
     assert out["poll_timed_out"] is True
     assert out["publish_status"] == "building"
+    assert events[0]["phase"] == "release_prepare"
+    assert events[-1]["phase"] == "release_complete"

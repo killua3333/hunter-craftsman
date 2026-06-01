@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from craftsman.api import app as api_app
 from craftsman.api.app import create_app
 from craftsman.config import settings
 
@@ -20,6 +21,26 @@ def test_analyze_endpoint():
     assert body["blueprint"]["accepted"] is True
     assert body["agent_b_status"] == "accepted"
     assert body["contract_version"] == "1.0"
+
+
+def test_health_reports_repaired_release_jobs():
+    with TestClient(create_app()) as client:
+        resp = client.get("/health")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "repaired_release_jobs" in body["runs"]
+
+
+def test_readyz_endpoint():
+    with TestClient(create_app()) as client:
+        resp = client.get("/readyz")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ready"] is True
+        assert body["checks"]["workspace_ok"] is True
+        assert body["checks"]["callbacks_ok"] is True
+        assert body["checks"]["database_ok"] is True
+        assert "repaired_release_jobs" in body
 
 
 def test_analyze_rejects_incomplete(monkeypatch):
@@ -248,3 +269,146 @@ def test_audit_replay_endpoint():
         assert isinstance(body["events"], list)
         if body["events"]:
             assert "event_type" in body["events"][0]
+
+
+def test_dashboard_overview_and_requeue_endpoints():
+    req = json.loads(SAMPLE.read_text(encoding="utf-8"))
+    with TestClient(create_app()) as client:
+        page = client.get("/dashboard")
+        assert page.status_code == 200
+        assert "Hunter Craftsman 控制台" in page.text
+
+        run = client.post(
+            f"/v1/opportunities/{req['opportunity_id']}/implement",
+            json={"opportunity_id": req["opportunity_id"], "requirement": req},
+        )
+        assert run.status_code == 200
+        run_id = run.json()["run_id"]
+
+        release_handoff = client.post("/v1/runs/sync-implement", json={"requirement": req}).json()["release_handoff"]
+        release_handoff["release_id"] = f"rel-{release_handoff['run_id']}"
+        prepared = client.post("/v1/releases/prepare", json=release_handoff)
+        assert prepared.status_code == 200
+        release_id = prepared.json()["release_id"]
+
+        overview = client.get("/dashboard/api/overview")
+        assert overview.status_code == 200
+        body = overview.json()
+        assert body["summary"]["service"] == "craftsman"
+        assert "repaired_release_jobs" in body["summary"]
+        assert "ready" in body["summary"]
+        assert "checks" in body["summary"]
+        assert any(item["run_id"] == run_id for item in body["runs"])
+        assert any(item["release_id"] == release_id for item in body["releases"])
+
+        detail = client.get(f"/dashboard/api/runs/{run_id}")
+        assert detail.status_code == 200
+        assert detail.json()["run"]["run_id"] == run_id
+        assert isinstance(detail.json()["audit"], list)
+
+        release_detail = client.get(f"/dashboard/api/releases/{release_id}")
+        assert release_detail.status_code == 200
+        assert release_detail.json()["release"]["release_id"] == release_id
+        assert "policy" in release_detail.json()
+        assert "approval" in release_detail.json()
+        assert isinstance(release_detail.json()["audit"], list)
+
+
+def test_dashboard_requeue_run_endpoint(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "database_path", tmp_path / "runs.db")
+    with TestClient(create_app()) as client:
+        assert api_app._store is not None
+        run_id = api_app._store.create_run(
+            opportunity_id="opp-requeue",
+            revision=1,
+            requirement={"opportunity_id": "opp-requeue", "revision": 1, "app": {"name": "Retry"}},
+            status="failed",
+            phase="failed",
+            phase_detail="dead letter",
+        )
+        api_app._store.enqueue_implementation(run_id, max_attempts=1)
+        api_app._store.fail_job(
+            run_id,
+            error_message="terminal",
+            retryable=False,
+        )
+
+        resp = client.post(f"/dashboard/api/runs/{run_id}/requeue")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "queued"
+
+
+def test_dashboard_requeue_release_endpoint(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "database_path", tmp_path / "runs.db")
+    with TestClient(create_app()) as client:
+        assert api_app._store is not None
+        release_id = "rel-requeue"
+        api_app._store.record_release_policy_check(release_id, passed=True, issues=[])
+        api_app._store.upsert_release_state(
+            release_id,
+            status="failed",
+            details={"platform_target": "android", "release_handoff": {"run_id": "run-1"}},
+            updated_by="agent_c",
+        )
+        api_app._store.enqueue_release_submit(release_id, max_attempts=1)
+        api_app._store.fail_release_job(
+            release_id,
+            error_message="terminal",
+            retryable=False,
+        )
+
+        resp = client.post(f"/dashboard/api/releases/{release_id}/requeue")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "submitting"
+
+
+def test_dashboard_release_approve_and_submit_endpoints(monkeypatch):
+    monkeypatch.setattr(settings, "release_require_human_approval", True)
+    monkeypatch.setattr(settings, "release_require_policy_checks", True)
+    req = json.loads(SAMPLE.read_text(encoding="utf-8"))
+    with TestClient(create_app()) as client:
+        sync = client.post("/v1/runs/sync-implement", json={"requirement": req})
+        assert sync.status_code == 200
+        handoff = dict(sync.json()["release_handoff"])
+        release_id = f"rel-{handoff['run_id']}"
+        handoff["release_id"] = release_id
+
+        prepare = client.post("/v1/releases/prepare", json=handoff)
+        assert prepare.status_code == 200
+        assert prepare.json()["accepted"] is True
+
+        approve = client.post(
+            f"/dashboard/api/releases/{release_id}/decision",
+            json={"approved_by": "ops-user", "decision": "approved", "note": "approved from dashboard"},
+        )
+        assert approve.status_code == 200
+        assert approve.json()["status"] == "approved"
+
+        submit = client.post(f"/dashboard/api/releases/{release_id}/submit")
+        assert submit.status_code == 200
+        assert submit.json()["status"] == "submitting"
+
+
+def test_dashboard_release_reject_endpoint(monkeypatch):
+    monkeypatch.setattr(settings, "release_require_human_approval", True)
+    req = json.loads(SAMPLE.read_text(encoding="utf-8"))
+    with TestClient(create_app()) as client:
+        sync = client.post("/v1/runs/sync-implement", json={"requirement": req})
+        assert sync.status_code == 200
+        handoff = dict(sync.json()["release_handoff"])
+        release_id = f"rel-{handoff['run_id']}"
+        handoff["release_id"] = release_id
+
+        prepare = client.post("/v1/releases/prepare", json=handoff)
+        assert prepare.status_code == 200
+
+        reject = client.post(
+            f"/dashboard/api/releases/{release_id}/decision",
+            json={"approved_by": "ops-user", "decision": "rejected", "note": "reject from dashboard"},
+        )
+        assert reject.status_code == 200
+        assert reject.json()["status"] == "rejected"
+
+        detail = client.get(f"/dashboard/api/releases/{release_id}")
+        assert detail.status_code == 200
+        assert detail.json()["approval"]["decision"] == "rejected"

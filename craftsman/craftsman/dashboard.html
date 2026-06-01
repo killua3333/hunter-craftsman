@@ -1,0 +1,718 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hunter Craftsman 控制台</title>
+  <style>
+    :root {
+      --bg: #050505;
+      --panel: #0d0d0d;
+      --panel-2: #141414;
+      --line: #2a2a2a;
+      --soft: #9d9d9d;
+      --text: #f5f5f5;
+      --muted: #c7c7c7;
+      --ok: #f5f5f5;
+      --warn: #d0d0d0;
+      --bad: #7f7f7f;
+      --accent: #ffffff;
+      --mono: "Consolas", "SFMono-Regular", "Liberation Mono", monospace;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--mono);
+      background:
+        radial-gradient(circle at top left, rgba(255,255,255,0.08), transparent 28%),
+        linear-gradient(180deg, #0b0b0b 0%, #040404 100%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    .shell {
+      max-width: 1600px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+      border: 1px solid var(--line);
+      background: rgba(9, 9, 9, 0.9);
+      padding: 16px 18px;
+      margin-bottom: 16px;
+      box-shadow: 0 0 0 1px rgba(255,255,255,0.04) inset;
+    }
+
+    .title {
+      font-size: 24px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .subtitle {
+      color: var(--soft);
+      font-size: 12px;
+      margin-top: 4px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    button, input {
+      font: inherit;
+    }
+
+    button {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--line);
+      padding: 8px 12px;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    button:hover { border-color: var(--accent); }
+    button:disabled { opacity: 0.45; cursor: wait; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 16px;
+    }
+
+    .col {
+      display: grid;
+      gap: 16px;
+      align-content: start;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(22,22,22,0.92), rgba(7,7,7,0.95));
+      overflow: hidden;
+    }
+
+    .panel-head {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      background: rgba(255,255,255,0.03);
+    }
+
+    .panel-title {
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .panel-body {
+      padding: 14px;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .stat {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      padding: 12px;
+      min-height: 88px;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: var(--soft);
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .stat-value {
+      font-size: 28px;
+      line-height: 1;
+    }
+
+    .stat-meta {
+      font-size: 11px;
+      color: var(--soft);
+      margin-top: 8px;
+    }
+
+    .list {
+      display: grid;
+      gap: 10px;
+      max-height: 460px;
+      overflow: auto;
+    }
+
+    .item {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      padding: 12px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .item-top, .kv {
+      display: flex;
+      gap: 10px;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      border: 1px solid var(--line);
+      padding: 2px 8px;
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .muted {
+      color: var(--soft);
+      font-size: 12px;
+    }
+
+    .id {
+      word-break: break-all;
+      font-size: 12px;
+    }
+
+    .timeline {
+      display: grid;
+      gap: 10px;
+      max-height: 620px;
+      overflow: auto;
+    }
+
+    .event {
+      border-left: 2px solid var(--accent);
+      padding-left: 10px;
+    }
+
+    .event .meta {
+      color: var(--soft);
+      font-size: 11px;
+    }
+
+    .empty {
+      color: var(--soft);
+      border: 1px dashed var(--line);
+      padding: 16px;
+      text-align: center;
+    }
+
+    .footer {
+      margin-top: 16px;
+      color: var(--soft);
+      font-size: 11px;
+      text-align: right;
+    }
+
+    @media (max-width: 1100px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+      .stats {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 700px) {
+      .shell { padding: 12px; }
+      .topbar { flex-direction: column; align-items: flex-start; }
+      .stats {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="topbar">
+      <div>
+        <div class="title">Hunter Craftsman 控制台</div>
+        <div class="subtitle">查看 Agent A / B / C 运行状态、队列情况和发布流程</div>
+      </div>
+      <div class="actions">
+        <label class="muted">自动刷新 <input id="autorefresh" type="checkbox" checked></label>
+        <button id="refresh">刷新</button>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="col">
+        <section class="panel">
+          <div class="panel-head">
+            <div class="panel-title">系统总览</div>
+            <div class="muted" id="healthLine">加载中...</div>
+          </div>
+          <div class="panel-body">
+            <div class="stats" id="stats"></div>
+            <div class="timeline" id="opsChecks" style="margin-top:12px;"></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div class="panel-title">运行任务</div>
+            <div class="muted" id="runCount"></div>
+          </div>
+          <div class="panel-body">
+            <div class="list" id="runs"></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div class="panel-title">发布任务</div>
+            <div class="muted" id="releaseCount"></div>
+          </div>
+          <div class="panel-body">
+            <div class="list" id="releases"></div>
+          </div>
+        </section>
+      </div>
+
+      <div class="col">
+        <section class="panel">
+          <div class="panel-head">
+            <div class="panel-title">当前运行时间线</div>
+            <div class="muted" id="selectedRunLabel">尚未选择运行任务</div>
+          </div>
+          <div class="panel-body">
+            <div class="timeline" id="timeline"></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div class="panel-title">当前运行审计</div>
+            <div class="muted">交接记录与操作轨迹</div>
+          </div>
+          <div class="panel-body">
+            <div class="timeline" id="runAudit"></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div class="panel-title">当前发布详情</div>
+            <div class="muted" id="selectedReleaseLabel">尚未选择发布任务</div>
+          </div>
+          <div class="panel-body">
+            <div class="timeline" id="releaseDetail"></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div class="panel-title">审计流</div>
+            <div class="muted">最近的 agent 交接记录</div>
+          </div>
+          <div class="panel-body">
+            <div class="timeline" id="audit"></div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="footer" id="updatedAt">尚未同步</div>
+  </div>
+
+  <script>
+    const state = {
+      selectedRunId: null,
+      selectedReleaseId: null,
+      loading: false,
+      timer: null,
+    };
+
+    const el = (id) => document.getElementById(id);
+
+    const fmt = (value) => value == null || value === "" ? "-" : String(value);
+
+    const BOOL_LABELS = {
+      true: "是",
+      false: "否"
+    };
+
+    const STATUS_LABELS = {
+      implementation_complete: "实现完成",
+      implementation_failed: "实现失败",
+      in_progress: "进行中",
+      pending: "等待中",
+      queued: "已入队",
+      failed: "失败",
+      dead_letter: "死信",
+      done: "完成",
+      approved: "已批准",
+      rejected: "已拒绝",
+      prepared: "已准备",
+      submitting: "提交中",
+      published: "已发布",
+      dry_run_complete: "演练完成",
+      platform_unavailable: "平台不可用",
+      accepted: "已接受",
+      needs_clarification: "需要澄清",
+      sync_implement: "同步实现",
+      complete: "完成"
+    };
+
+    const PHASE_LABELS = {
+      autopilot_discovery: "自动发现",
+      analyze: "需求分析",
+      analyze_result: "分析结果",
+      clarify: "澄清修正",
+      implement: "开始实现",
+      spec_normalize: "需求标准化",
+      plan: "规划",
+      codegen: "代码生成",
+      verify: "验证",
+      package: "打包",
+      complete: "完成",
+      failed: "失败",
+      queued: "排队中",
+      release_prepare: "发布准备",
+      release_approval: "发布审批",
+      release_submit: "发布提交",
+      release_poll: "发布轮询",
+      release_complete: "发布完成",
+      terminal: "终态"
+    };
+
+    const EVENT_LABELS = {
+      release_prepared: "发布准备完成",
+      release_approval_recorded: "发布审批已记录",
+      release_submit_queued: "发布提交已入队",
+      release_submit_completed: "发布提交完成",
+      release_requeued: "发布任务重新入队",
+      release_jobs_repaired: "发布队列自动修复",
+      run_queued: "运行任务已入队",
+      run_requeued: "运行任务重新入队",
+      run_sync_started: "同步运行开始",
+      run_sync_completed: "同步运行完成"
+    };
+
+    function zh(value, mapping = STATUS_LABELS) {
+      if (value === true || value === false) return BOOL_LABELS[String(value)];
+      if (value == null || value === "") return "-";
+      return mapping[value] || String(value);
+    }
+
+    function card(label, value, meta) {
+      return `
+        <div class="stat">
+          <div class="stat-label">${label}</div>
+          <div class="stat-value">${fmt(value)}</div>
+          <div class="stat-meta">${fmt(meta)}</div>
+        </div>
+      `;
+    }
+
+    function badge(text) {
+      return `<span class="badge">${fmt(text)}</span>`;
+    }
+
+    function renderSummary(summary) {
+      const runCounts = summary.run_counts || {};
+      const releaseCounts = summary.release_counts || {};
+      const stats = [
+        card("运行总数", summary.runs_total, `进行中 ${runCounts.in_progress || 0}`),
+        card("死信任务", summary.dead_letter_runs, `发布死信 ${summary.dead_letter_releases}`),
+        card("发布总数", summary.releases_total, `提交中 ${releaseCounts.submitting || 0}`),
+        card("Worker 数", summary.job_worker_count, `租约 ${summary.job_lease_seconds}s`)
+      ];
+      el("stats").innerHTML = stats.join("");
+      el("healthLine").textContent = `服务=${summary.service} 就绪=${zh(summary.ready, BOOL_LABELS)} Gate=${summary.gate_mode} 演练=${zh(summary.publisher_dry_run, BOOL_LABELS)}`;
+      const checks = summary.checks || {};
+      el("opsChecks").innerHTML = [
+        `<div class="event"><div>工作区 :: ${zh(checks.workspace_ok, BOOL_LABELS)}</div><div class="meta">craftsman workspace 是否可用</div></div>`,
+        `<div class="event"><div>回调目录 :: ${zh(checks.callbacks_ok, BOOL_LABELS)}</div><div class="meta">callbacks 目录是否可用</div></div>`,
+        `<div class="event"><div>数据库 :: ${zh(checks.database_ok, BOOL_LABELS)}</div><div class="meta">sqlite 是否可连接</div></div>`,
+        `<div class="event"><div>已修复任务 :: ${fmt(summary.repaired_release_jobs)}</div><div class="meta">本次请求顺手修复的历史发布脏状态</div></div>`
+      ].join("");
+    }
+
+    function renderRuns(runs) {
+      el("runCount").textContent = `最近 ${runs.length} 条`;
+      if (!runs.length) {
+        el("runs").innerHTML = '<div class="empty">暂时还没有运行任务</div>';
+        return;
+      }
+      el("runs").innerHTML = runs.map((run) => `
+        <div class="item">
+          <div class="item-top">
+            <strong>${fmt(run.opportunity_id)}</strong>
+            <div>
+              ${badge(zh(run.status))}
+              ${badge(zh(run.phase, PHASE_LABELS))}
+            </div>
+          </div>
+          <div class="id">${fmt(run.run_id)}</div>
+          <div class="kv">
+            <span class="muted">版本 ${fmt(run.revision)} | 尝试 ${fmt(run.job?.attempts)}/${fmt(run.job?.max_attempts)}</span>
+            <div>
+              <button data-open-run="${run.run_id}">时间线</button>
+              <button data-requeue-run="${run.run_id}" ${run.can_requeue ? "" : "disabled"}>重新入队</button>
+            </div>
+          </div>
+          <div class="muted">${fmt(run.phase_detail)}</div>
+          <div class="muted">更新时间 ${fmt(run.updated_at)}</div>
+        </div>
+      `).join("");
+    }
+
+    function renderReleases(releases) {
+      el("releaseCount").textContent = `最近 ${releases.length} 条`;
+      if (!releases.length) {
+        el("releases").innerHTML = '<div class="empty">暂时还没有发布任务</div>';
+        return;
+      }
+      el("releases").innerHTML = releases.map((release) => `
+        <div class="item">
+          <div class="item-top">
+            <strong>${fmt(release.release_id)}</strong>
+            <div>
+              ${badge(zh(release.status))}
+              ${badge(release.platform_target === "android" ? "安卓" : release.platform_target === "ios" ? "iOS" : "未知")}
+            </div>
+          </div>
+          <div class="muted">${fmt(release.message)}</div>
+          <div class="muted">策略通过 ${zh(release.policy_passed, BOOL_LABELS)} | 审批 ${zh(release.approval_decision)}</div>
+          <div class="kv">
+            <span class="muted">Agent C ${zh(release.agent_c_status)} | 尝试 ${fmt(release.job?.attempts)}/${fmt(release.job?.max_attempts)}</span>
+            <div>
+              <button data-open-release="${release.release_id}">详情</button>
+              <button data-approve-release="${release.release_id}" ${release.approval_decision === "approved" ? "disabled" : ""}>批准</button>
+              <button data-reject-release="${release.release_id}" ${release.status === "rejected" ? "disabled" : ""}>拒绝</button>
+              <button data-submit-release="${release.release_id}" ${release.policy_passed === false ? "disabled" : ""}>提交</button>
+              <button data-requeue-release="${release.release_id}" ${release.can_requeue ? "" : "disabled"}>重新入队</button>
+            </div>
+          </div>
+          <div class="muted">更新时间 ${fmt(release.updated_at)}</div>
+        </div>
+      `).join("");
+    }
+
+    function renderTimeline(events, selectedRunId) {
+      el("selectedRunLabel").textContent = selectedRunId || "尚未选择运行任务";
+      if (!events.length) {
+        el("timeline").innerHTML = '<div class="empty">选择一个运行任务后，这里会显示阶段时间线</div>';
+        return;
+      }
+      el("timeline").innerHTML = events.map((event) => `
+        <div class="event">
+          <div>${zh(event.phase, PHASE_LABELS)} :: ${fmt(event.detail)}</div>
+          <div class="meta">#${fmt(event.id)} 于 ${fmt(event.created_at)}</div>
+        </div>
+      `).join("");
+    }
+
+    function renderAudit(events) {
+      if (!events.length) {
+        el("audit").innerHTML = '<div class="empty">暂时还没有审计事件</div>';
+        return;
+      }
+      el("audit").innerHTML = events.map((event) => `
+        <div class="event">
+          <div>${zh(event.event_type, EVENT_LABELS)} ${event.run_id ? `:: ${event.run_id}` : event.release_id ? `:: ${event.release_id}` : ""}</div>
+          <div class="meta">${fmt(event.actor)} 于 ${fmt(event.created_at)}</div>
+        </div>
+      `).join("");
+    }
+
+    function renderRunAudit(events) {
+      if (!events.length) {
+        el("runAudit").innerHTML = '<div class="empty">当前运行任务还没有审计记录</div>';
+        return;
+      }
+      el("runAudit").innerHTML = events.map((event) => `
+        <div class="event">
+          <div>${zh(event.event_type, EVENT_LABELS)}</div>
+          <div class="meta">${fmt(event.actor)} 于 ${fmt(event.created_at)}</div>
+        </div>
+      `).join("");
+    }
+
+    function renderReleaseDetail(data, selectedReleaseId) {
+      el("selectedReleaseLabel").textContent = selectedReleaseId || "尚未选择发布任务";
+      if (!data) {
+        el("releaseDetail").innerHTML = '<div class="empty">选择一个发布任务后，这里会显示策略、审批、队列和 Agent C 详情</div>';
+        return;
+      }
+      const release = data.release || {};
+      const policy = data.policy || {};
+      const approval = data.approval || {};
+      const job = data.job || {};
+      const detail = release.details || {};
+      const issues = policy.issues || [];
+      const audit = data.audit || [];
+      const rows = [
+        `<div class="event"><div>状态 :: ${zh(release.status)}</div><div class="meta">更新时间 ${fmt(release.updated_at)}</div></div>`,
+        `<div class="event"><div>策略检查 :: 通过=${zh(policy.passed, BOOL_LABELS)}</div><div class="meta">${issues.length ? issues.join(" | ") : "没有策略问题"}</div></div>`,
+        `<div class="event"><div>审批 :: ${zh(approval.decision)}</div><div class="meta">${fmt(approval.approved_by)} ${approval.approved_at ? `于 ${fmt(approval.approved_at)}` : ""}</div></div>`,
+        `<div class="event"><div>队列 :: ${zh(job.status)}</div><div class="meta">尝试 ${fmt(job.attempts)}/${fmt(job.max_attempts)} ${job.last_error ? `| ${fmt(job.last_error)}` : ""}</div></div>`,
+        `<div class="event"><div>平台 :: ${detail.platform_target === "android" ? "安卓" : detail.platform_target === "ios" ? "iOS" : fmt(detail.platform_target)}</div><div class="meta">${fmt(detail.message)}</div></div>`,
+        `<div class="event"><div>审计事件数 :: ${fmt(audit.length)}</div><div class="meta">Agent C ${zh(detail.agent_c?.agent_c_status)}</div></div>`
+      ];
+      el("releaseDetail").innerHTML = rows.join("");
+    }
+
+    async function request(path, options = {}) {
+      const resp = await fetch(path, {
+        ...options,
+        headers: { "Content-Type": "application/json", ...(options.headers || {}) }
+      });
+      if (!resp.ok) {
+        const payload = await resp.json().catch(() => ({}));
+        throw new Error(payload?.detail?.error?.message || `HTTP ${resp.status}`);
+      }
+      return resp.json();
+    }
+
+    async function loadDashboard() {
+      if (state.loading) return;
+      state.loading = true;
+      try {
+        const data = await request("/dashboard/api/overview");
+        renderSummary(data.summary || {});
+        renderRuns(data.runs || []);
+        renderReleases(data.releases || []);
+        renderAudit(data.audit || []);
+
+        const runId = state.selectedRunId || data.runs?.[0]?.run_id || null;
+        state.selectedRunId = runId;
+        if (runId) {
+          const detail = await request(`/dashboard/api/runs/${encodeURIComponent(runId)}`);
+          renderTimeline(detail.events || [], runId);
+          renderRunAudit(detail.audit || []);
+        } else {
+          renderTimeline([], null);
+          renderRunAudit([]);
+        }
+        const releaseId = state.selectedReleaseId || data.releases?.[0]?.release_id || null;
+        state.selectedReleaseId = releaseId;
+        if (releaseId) {
+          const detail = await request(`/dashboard/api/releases/${encodeURIComponent(releaseId)}`);
+          renderReleaseDetail(detail, releaseId);
+        } else {
+          renderReleaseDetail(null, null);
+        }
+        el("updatedAt").textContent = `最近同步时间 ${new Date().toLocaleString()}`;
+      } catch (error) {
+        el("updatedAt").textContent = `同步失败：${error.message}`;
+      } finally {
+        state.loading = false;
+      }
+    }
+
+    async function requeueRun(runId) {
+      await request(`/dashboard/api/runs/${encodeURIComponent(runId)}/requeue`, { method: "POST" });
+      state.selectedRunId = runId;
+      await loadDashboard();
+    }
+
+    async function requeueRelease(releaseId) {
+      await request(`/dashboard/api/releases/${encodeURIComponent(releaseId)}/requeue`, { method: "POST" });
+      await loadDashboard();
+    }
+
+    async function decideRelease(releaseId, decision, note) {
+      await request(`/dashboard/api/releases/${encodeURIComponent(releaseId)}/decision`, {
+        method: "POST",
+        body: JSON.stringify({ approved_by: "dashboard-operator", decision, note })
+      });
+      state.selectedReleaseId = releaseId;
+      await loadDashboard();
+    }
+
+    async function approveRelease(releaseId) {
+      await decideRelease(releaseId, "approved", "由控制台批准");
+    }
+
+    async function rejectRelease(releaseId) {
+      await decideRelease(releaseId, "rejected", "由控制台拒绝");
+    }
+
+    async function submitRelease(releaseId) {
+      await request(`/dashboard/api/releases/${encodeURIComponent(releaseId)}/submit`, { method: "POST" });
+      state.selectedReleaseId = releaseId;
+      await loadDashboard();
+    }
+
+    document.addEventListener("click", async (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const runId = target.getAttribute("data-open-run");
+      if (runId) {
+        state.selectedRunId = runId;
+        const detail = await request(`/dashboard/api/runs/${encodeURIComponent(runId)}`);
+        renderTimeline(detail.events || [], runId);
+        renderRunAudit(detail.audit || []);
+      }
+      const releaseId = target.getAttribute("data-open-release");
+      if (releaseId) {
+        state.selectedReleaseId = releaseId;
+        const detail = await request(`/dashboard/api/releases/${encodeURIComponent(releaseId)}`);
+        renderReleaseDetail(detail, releaseId);
+      }
+      const approveReleaseId = target.getAttribute("data-approve-release");
+      if (approveReleaseId) {
+        target.setAttribute("disabled", "disabled");
+        try { await approveRelease(approveReleaseId); } finally { target.removeAttribute("disabled"); }
+      }
+      const rejectReleaseId = target.getAttribute("data-reject-release");
+      if (rejectReleaseId) {
+        target.setAttribute("disabled", "disabled");
+        try { await rejectRelease(rejectReleaseId); } finally { target.removeAttribute("disabled"); }
+      }
+      const submitReleaseId = target.getAttribute("data-submit-release");
+      if (submitReleaseId) {
+        target.setAttribute("disabled", "disabled");
+        try { await submitRelease(submitReleaseId); } finally { target.removeAttribute("disabled"); }
+      }
+      const rqRun = target.getAttribute("data-requeue-run");
+      if (rqRun) {
+        target.setAttribute("disabled", "disabled");
+        try { await requeueRun(rqRun); } finally { target.removeAttribute("disabled"); }
+      }
+      const rqRelease = target.getAttribute("data-requeue-release");
+      if (rqRelease) {
+        target.setAttribute("disabled", "disabled");
+        try { await requeueRelease(rqRelease); } finally { target.removeAttribute("disabled"); }
+      }
+    });
+
+    el("refresh").addEventListener("click", loadDashboard);
+    el("autorefresh").addEventListener("change", () => {
+      if (state.timer) clearInterval(state.timer);
+      if (el("autorefresh").checked) {
+        state.timer = setInterval(loadDashboard, 4000);
+      }
+    });
+
+    state.timer = setInterval(loadDashboard, 4000);
+    loadDashboard();
+  </script>
+</body>
+</html>

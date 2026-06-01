@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Hunter Autopilot on schedule
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=30min
+Unit=hunter-autopilot.service
+
+[Install]
+WantedBy=timers.target

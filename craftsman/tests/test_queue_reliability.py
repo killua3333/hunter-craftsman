@@ -84,3 +84,58 @@ def test_claim_returns_distinct_lease_tokens(tmp_path):
     second = store.claim_next_job(lease_seconds=1, worker_id="worker-2")
     assert second is not None
     assert first["lease_token"] != second["lease_token"]
+
+
+def test_requeue_run_resets_dead_letter_job(tmp_path):
+    store = RunStore(db_path=tmp_path / "runs.db")
+    worker = "worker-c"
+    run_id = store.create_run(
+        opportunity_id="opp-4",
+        revision=1,
+        requirement={"opportunity_id": "opp-4", "revision": 1, "app": {"name": "D"}},
+        status="failed",
+        phase="failed",
+        phase_detail="implementation failed",
+    )
+    store.enqueue_implementation(run_id, max_attempts=1)
+    claimed = store.claim_next_job(lease_seconds=60, worker_id=worker)
+    assert claimed is not None
+    assert store.fail_job(
+        run_id,
+        error_message="terminal failure",
+        retryable=False,
+        worker_id=worker,
+        lease_token=claimed["lease_token"],
+    ) == "dead_letter"
+
+    assert store.requeue_run(run_id, max_attempts=3) is True
+    job = store.get_job(run_id)
+    run = store.get_run(run_id)
+    assert job is not None
+    assert run is not None
+    assert job["status"] == "pending"
+    assert int(job["attempts"]) == 0
+    assert int(job["max_attempts"]) == 3
+    assert run["status"] == "in_progress"
+    assert run["phase"] == "queued"
+
+
+def test_complete_release_job_allows_owned_terminal_transition(tmp_path):
+    store = RunStore(db_path=tmp_path / "runs.db")
+    release_id = "rel-owned-complete"
+    store.enqueue_release_submit(release_id, max_attempts=2)
+    claimed = store.claim_next_release_job(lease_seconds=60, worker_id="worker-z")
+    assert claimed is not None
+    assert claimed["release_id"] == release_id
+
+    assert (
+        store.complete_release_job(
+            release_id,
+            worker_id="worker-z",
+            lease_token=claimed["lease_token"],
+        )
+        == "done"
+    )
+    jobs = store.list_release_jobs(limit=10)
+    row = next(item for item in jobs if item["release_id"] == release_id)
+    assert row["status"] == "done"

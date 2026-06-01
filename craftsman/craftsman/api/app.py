@@ -6,10 +6,12 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from craftsman.callback import deliver_feedback
 from craftsman.config import settings
+from craftsman.dashboard import dashboard_html
 from craftsman.models import AgentBStatus
 from craftsman.orchestrator.policy_checks import check_release_compliance_metadata
 from craftsman.orchestrator.pipeline import analyze_requirement, run_implementation
@@ -23,12 +25,41 @@ _store: RunStore | None = None
 _worker: BackgroundWorker | None = None
 
 
+def _readiness_snapshot(store: RunStore | None) -> dict[str, Any]:
+    workspace_ok = settings.workspace_root.exists() and settings.workspace_root.is_dir()
+    callbacks_ok = settings.callback_dir.exists() and settings.callback_dir.is_dir()
+    database_ok = False
+    repaired_release_jobs = 0
+    if store is not None:
+        repaired_release_jobs = store.repair_release_job_state()
+        with store._conn() as conn:
+            conn.execute("SELECT 1").fetchone()
+        database_ok = True
+    return {
+        "ready": workspace_ok and callbacks_ok and database_ok,
+        "workspace_root": str(settings.workspace_root),
+        "callback_dir": str(settings.callback_dir),
+        "checks": {
+            "workspace_ok": workspace_ok,
+            "callbacks_ok": callbacks_ok,
+            "database_ok": database_ok,
+        },
+        "repaired_release_jobs": repaired_release_jobs,
+    }
+
+
 class SyncImplementBody(BaseModel):
     requirement: dict[str, Any] = Field(default_factory=dict)
 
 
 class ReleaseApprovalBody(BaseModel):
     approved_by: str = Field(min_length=1)
+    decision: str = Field(default="approved")
+    note: str | None = None
+
+
+class DashboardReleaseActionBody(BaseModel):
+    approved_by: str = Field(default="dashboard-operator", min_length=1)
     decision: str = Field(default="approved")
     note: str | None = None
 
@@ -140,9 +171,18 @@ def create_app() -> FastAPI:
         run_stats: dict[str, Any] = {}
         if _store is not None:
             try:
+                readiness = _readiness_snapshot(_store)
+                repaired_release_jobs = int(readiness["repaired_release_jobs"])
+                if repaired_release_jobs:
+                    _store.append_audit_log(
+                        event_type="release_jobs_repaired",
+                        actor="system",
+                        payload={"count": repaired_release_jobs, "source": "health"},
+                    )
                 with _store._conn() as conn:
                     row = conn.execute("SELECT COUNT(*) AS total FROM runs").fetchone()
                     run_stats["runs_total"] = int(row["total"]) if row else 0
+                run_stats["repaired_release_jobs"] = repaired_release_jobs
             except Exception:
                 run_stats["runs_total"] = None
         return {
@@ -165,6 +205,325 @@ def create_app() -> FastAPI:
                 "agent_c_android_publisher": True,
             },
         }
+
+    @app.get("/readyz")
+    def readyz() -> dict[str, Any]:
+        return {"service": "craftsman", **_readiness_snapshot(_store)}
+
+    @app.get("/", response_class=HTMLResponse)
+    @app.get("/dashboard", response_class=HTMLResponse)
+    def dashboard_page() -> str:
+        return dashboard_html()
+
+    @app.get("/dashboard/api/overview")
+    def dashboard_overview(
+        x_api_token: str | None = Header(default=None, alias="X-API-Token"),
+    ) -> dict[str, Any]:
+        if settings.resolved_api_token():
+            _require_api_token(x_api_token)
+        assert _store is not None
+        readiness = _readiness_snapshot(_store)
+        repaired_release_jobs = int(readiness["repaired_release_jobs"])
+        if repaired_release_jobs:
+            _store.append_audit_log(
+                event_type="release_jobs_repaired",
+                actor="system",
+                payload={"count": repaired_release_jobs, "source": "dashboard_overview"},
+            )
+        runs = _store.list_runs(limit=100)
+        run_jobs = {row["run_id"]: row for row in _store.list_jobs(limit=50)}
+        releases = _store.list_release_states(limit=100)
+        release_jobs = {row["release_id"]: row for row in _store.list_release_jobs(limit=50)}
+        recent_audit = _store.list_audit_logs(limit=40)
+
+        run_payload: list[dict[str, Any]] = []
+        for row in runs:
+            job = run_jobs.get(row["run_id"])
+            run_payload.append(
+                {
+                    "run_id": row["run_id"],
+                    "opportunity_id": row["opportunity_id"],
+                    "revision": row["revision"],
+                    "status": row["status"],
+                    "phase": row.get("phase"),
+                    "phase_detail": row.get("phase_detail"),
+                    "error_message": row.get("error_message"),
+                    "updated_at": row["updated_at"],
+                    "created_at": row["created_at"],
+                    "workspace_path": row.get("workspace_path"),
+                    "job": (
+                        {
+                            "status": job.get("status"),
+                            "attempts": job.get("attempts"),
+                            "max_attempts": job.get("max_attempts"),
+                            "last_error": job.get("last_error"),
+                            "dead_letter_at": job.get("dead_letter_at"),
+                        }
+                        if job
+                        else None
+                    ),
+                    "can_requeue": bool(job and job.get("status") in {"dead_letter", "done"}),
+                }
+            )
+
+        release_payload: list[dict[str, Any]] = []
+        for row in releases:
+            details = row.get("details") if isinstance(row.get("details"), dict) else {}
+            agent_c = details.get("agent_c") if isinstance(details, dict) else {}
+            job = release_jobs.get(row["release_id"])
+            release_payload.append(
+                {
+                    "release_id": row["release_id"],
+                    "status": row["status"],
+                    "updated_at": row["updated_at"],
+                    "platform_target": details.get("platform_target"),
+                    "policy_passed": row.get("passed"),
+                    "approval_decision": row.get("decision"),
+                    "issues": row.get("issues") or [],
+                    "agent_c_status": agent_c.get("agent_c_status") if isinstance(agent_c, dict) else None,
+                    "message": details.get("message") if isinstance(details, dict) else None,
+                    "job": (
+                        {
+                            "status": job.get("status"),
+                            "attempts": job.get("attempts"),
+                            "max_attempts": job.get("max_attempts"),
+                            "last_error": job.get("last_error"),
+                            "dead_letter_at": job.get("dead_letter_at"),
+                        }
+                        if job
+                        else None
+                    ),
+                    "can_requeue": bool(job and job.get("status") in {"dead_letter", "done"}),
+                }
+            )
+
+        dead_letter_runs = sum(1 for row in run_jobs.values() if row.get("status") == "dead_letter")
+        dead_letter_releases = sum(1 for row in release_jobs.values() if row.get("status") == "dead_letter")
+        return {
+            "summary": {
+                "service": "craftsman",
+                "gate_mode": settings.gate_mode,
+                "publisher_dry_run": settings.publisher_dry_run,
+                "job_worker_count": settings.job_worker_count,
+                "job_lease_seconds": settings.job_lease_seconds,
+                "runs_total": len(runs),
+                "releases_total": len(releases),
+                "dead_letter_runs": dead_letter_runs,
+                "dead_letter_releases": dead_letter_releases,
+                "repaired_release_jobs": repaired_release_jobs,
+                "ready": readiness["ready"],
+                "checks": readiness["checks"],
+                "run_counts": _store.run_status_counts(),
+                "release_counts": _store.release_status_counts(),
+            },
+            "runs": run_payload,
+            "releases": release_payload,
+            "audit": recent_audit,
+        }
+
+    @app.get("/dashboard/api/runs/{run_id}")
+    def dashboard_run_detail(
+        run_id: str,
+        x_api_token: str | None = Header(default=None, alias="X-API-Token"),
+    ) -> dict[str, Any]:
+        if settings.resolved_api_token():
+            _require_api_token(x_api_token)
+        assert _store is not None
+        row = _store.get_run(run_id)
+        if not row:
+            raise HTTPException(
+                404,
+                detail=_error_detail(code="run_not_found", message="run not found"),
+            )
+        events = _store.list_events(run_id, limit=500)
+        audit = _store.list_audit_logs(run_id=run_id, limit=100)
+        return {"run": row, "events": events, "audit": audit}
+
+    @app.get("/dashboard/api/releases/{release_id}")
+    def dashboard_release_detail(
+        release_id: str,
+        x_api_token: str | None = Header(default=None, alias="X-API-Token"),
+    ) -> dict[str, Any]:
+        if settings.resolved_api_token():
+            _require_api_token(x_api_token)
+        assert _store is not None
+        release = _store.get_release_state(release_id)
+        if not release:
+            raise HTTPException(
+                404,
+                detail=_error_detail(code="release_not_found", message="release not found"),
+            )
+        policy = _store.get_release_policy_check(release_id)
+        approval = _store.get_release_approval(release_id)
+        audit = _store.list_audit_logs(release_id=release_id, limit=100)
+        release_job = next(
+            (row for row in _store.list_release_jobs(limit=200) if row.get("release_id") == release_id),
+            None,
+        )
+        return {
+            "release": release,
+            "policy": policy,
+            "approval": approval,
+            "job": release_job,
+            "audit": audit,
+        }
+
+    @app.post("/dashboard/api/runs/{run_id}/requeue")
+    def dashboard_requeue_run(
+        run_id: str,
+        x_api_token: str | None = Header(default=None, alias="X-API-Token"),
+    ) -> dict[str, Any]:
+        _require_api_token(x_api_token)
+        assert _store is not None
+        ok = _store.requeue_run(run_id, max_attempts=max(settings.job_retry_limit + 1, 1))
+        if not ok:
+            raise HTTPException(
+                404,
+                detail=_error_detail(code="run_not_found", message="run not found"),
+            )
+        _store.append_event(run_id, "queued", "implementation requeued from dashboard")
+        _store.append_audit_log(
+            event_type="run_requeued",
+            run_id=run_id,
+            actor="dashboard",
+            payload={"source": "dashboard"},
+        )
+        return {"accepted": True, "run_id": run_id, "status": "queued"}
+
+    @app.post("/dashboard/api/releases/{release_id}/requeue")
+    def dashboard_requeue_release(
+        release_id: str,
+        x_api_token: str | None = Header(default=None, alias="X-API-Token"),
+    ) -> dict[str, Any]:
+        _require_api_token(x_api_token)
+        assert _store is not None
+        ok = _store.requeue_release(release_id, max_attempts=max(settings.job_retry_limit + 1, 1))
+        if not ok:
+            raise HTTPException(
+                404,
+                detail=_error_detail(code="release_not_found", message="release not found"),
+            )
+        _store.append_audit_log(
+            event_type="release_requeued",
+            release_id=release_id,
+            actor="dashboard",
+            payload={"source": "dashboard"},
+        )
+        return {"accepted": True, "release_id": release_id, "status": "submitting"}
+
+    @app.post("/dashboard/api/releases/{release_id}/decision")
+    def dashboard_release_decision(
+        release_id: str,
+        body: DashboardReleaseActionBody,
+        x_api_token: str | None = Header(default=None, alias="X-API-Token"),
+    ) -> dict[str, Any]:
+        _require_api_token(x_api_token)
+        assert _store is not None
+        if not _store.get_release_state(release_id):
+            raise HTTPException(
+                404,
+                detail=_error_detail(code="release_not_found", message="release not found"),
+            )
+        decision = body.decision.strip().lower()
+        if decision not in {"approved", "rejected"}:
+            raise HTTPException(
+                400,
+                detail=_error_detail(
+                    code="invalid_approval_decision",
+                    message="decision must be approved or rejected",
+                ),
+            )
+        _store.record_release_approval(
+            release_id,
+            decision=decision,
+            approved_by=body.approved_by.strip(),
+            note=body.note,
+        )
+        existing = _store.get_release_state(release_id) or {}
+        details = existing.get("details") if isinstance(existing.get("details"), dict) else {}
+        _store.upsert_release_state(
+            release_id,
+            status="approved" if decision == "approved" else "rejected",
+            details={
+                **details,
+                "decision": decision,
+                "approved_by": body.approved_by.strip(),
+                "note": body.note,
+            },
+            updated_by=body.approved_by.strip(),
+        )
+        _store.append_audit_log(
+            event_type="release_approval_recorded",
+            release_id=release_id,
+            actor=body.approved_by.strip(),
+            payload={"decision": decision, "note": body.note, "source": "dashboard"},
+        )
+        return {
+            "accepted": True,
+            "release_id": release_id,
+            "status": "approved" if decision == "approved" else "rejected",
+        }
+
+    @app.post("/dashboard/api/releases/{release_id}/submit")
+    def dashboard_submit_release(
+        release_id: str,
+        x_api_token: str | None = Header(default=None, alias="X-API-Token"),
+    ) -> dict[str, Any]:
+        _require_api_token(x_api_token)
+        assert _store is not None
+        policy = _store.get_release_policy_check(release_id)
+        if settings.release_require_policy_checks and (not policy or not policy.get("passed")):
+            raise HTTPException(
+                409,
+                detail=_error_detail(
+                    code="release_policy_check_failed",
+                    message="release submit requires passing policy checks",
+                    details={"release_id": release_id, "policy": policy},
+                ),
+            )
+        approval = _store.get_release_approval(release_id)
+        if settings.release_require_human_approval and (not approval or approval.get("decision") != "approved"):
+            raise HTTPException(
+                409,
+                detail=_error_detail(
+                    code="release_requires_human_approval",
+                    message="release submit requires explicit human approval",
+                    details={"release_id": release_id, "approval": approval},
+                ),
+            )
+        state = _store.get_release_state(release_id)
+        details = (state or {}).get("details") if isinstance((state or {}).get("details"), dict) else {}
+        handoff = details.get("release_handoff") if isinstance(details, dict) else None
+        if not isinstance(handoff, dict):
+            raise HTTPException(
+                404,
+                detail=_error_detail(
+                    code="release_handoff_missing",
+                    message="release handoff not found; call /v1/releases/prepare first",
+                    details={"release_id": release_id},
+                ),
+            )
+        platform_target = _release_platform_target(handoff, fallback="android")
+        _store.upsert_release_state(
+            release_id,
+            status="submitting",
+            details={
+                **details,
+                "policy": policy,
+                "approval": approval,
+                "platform_target": platform_target,
+                "release_handoff": handoff,
+            },
+            updated_by="dashboard",
+        )
+        _store.enqueue_release_submit(release_id, max_attempts=max(settings.job_retry_limit + 1, 1))
+        _store.append_audit_log(
+            event_type="release_submit_queued",
+            release_id=release_id,
+            actor="dashboard",
+            payload={"platform_target": platform_target, "source": "dashboard"},
+        )
+        return {"accepted": True, "release_id": release_id, "status": "submitting"}
 
     @app.post("/v1/opportunities/{opportunity_id}/analyze")
     def analyze(
