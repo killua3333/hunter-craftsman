@@ -27,3 +27,23 @@ def test_sqlite_uses_wal_journal_mode(tmp_path):
         mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
     assert str(mode).lower() == "wal"
 
+
+def test_repair_release_job_state_reconciles_terminal_jobs(tmp_path):
+    store = RunStore(db_path=tmp_path / "runs.db")
+    release_id = "rel-repair"
+    store.record_release_policy_check(release_id, passed=True, issues=[])
+    store.upsert_release_state(
+        release_id,
+        status="dry_run_complete",
+        details={"release_handoff": {"release_id": release_id}},
+        updated_by="agent_c",
+    )
+    store.enqueue_release_submit(release_id, max_attempts=3)
+    claimed = store.claim_next_release_job(lease_seconds=60, worker_id="worker-test")
+    assert claimed is not None
+    repaired = store.repair_release_job_state()
+    assert repaired == 1
+    jobs = store.list_release_jobs(limit=10)
+    row = next(item for item in jobs if item["release_id"] == release_id)
+    assert row["status"] == "done"
+

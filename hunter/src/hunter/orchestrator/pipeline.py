@@ -33,6 +33,17 @@ _TERMINAL_STATUSES = frozenset(
 )
 
 
+def _emit_progress(
+    progress_callback: Callable[[dict[str, Any]], None] | None,
+    phase: str,
+    detail: str,
+    **extra: Any,
+) -> None:
+    if progress_callback is None:
+        return
+    progress_callback({"phase": phase, "detail": detail, **extra})
+
+
 def _build_clarification_prompt(feedback: dict[str, Any], revision: int) -> str:
     reasons = feedback.get("reasons") or []
     rules = feedback.get("suggested_rules") or []
@@ -63,6 +74,7 @@ def _maybe_publish(
     publish: bool,
     auto_approve_release: bool,
     timeout_seconds: float,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     if not publish:
         return outcome
@@ -77,15 +89,18 @@ def _maybe_publish(
         outcome["publish"] = {"publish_status": "skipped", "reason": f"platform {target} uses non-android publisher"}
         return outcome
     try:
+        _emit_progress(progress_callback, "publish", "starting agent_c publish pipeline", source="agent_a")
         outcome["publish"] = run_publish_pipeline(
             feedback,
             base_url=base_url,
             auto_approve=auto_approve_release,
             timeout_seconds=timeout_seconds,
             poll_interval_seconds=2.0,
+            on_event=progress_callback,
         )
     except (RuntimeError, ValueError) as exc:
         outcome["publish"] = {"publish_status": "failed", "error": str(exc)}
+        _emit_progress(progress_callback, "publish", f"agent_c publish pipeline failed: {exc}", source="agent_c")
     return outcome
 
 
@@ -118,6 +133,13 @@ def run_autopilot_pipeline(
     last_outcome: dict[str, Any] | None = None
 
     for attempt in range(1, max_opportunity_attempts + 1):
+        _emit_progress(
+            progress_callback,
+            "autopilot_discovery",
+            f"starting opportunity discovery attempt {attempt}",
+            source="agent_a",
+            attempt=attempt,
+        )
         session = DiscoverySession()
         trigger = AUTOPILOT_TRIGGER
         if attempt > 1:
@@ -219,6 +241,13 @@ def run_blueprint_pipeline(
     analyze_history: list[dict[str, Any]] = []
 
     for round_num in range(1, max_rounds + 1):
+        _emit_progress(
+            progress_callback,
+            "analyze",
+            f"submitting requirement revision {revision} to agent_b gate",
+            source="agent_a",
+            revision=revision,
+        )
         requirement = build_requirement_from_blueprint(
             blueprint,
             opportunity_id=oid,
@@ -233,6 +262,14 @@ def run_blueprint_pipeline(
         )
         analyze_history.append({"revision": revision, "feedback": feedback})
         status = feedback.get("agent_b_status", "")
+        _emit_progress(
+            progress_callback,
+            "analyze_result",
+            f"agent_b returned status={status} for revision {revision}",
+            source="agent_b",
+            revision=revision,
+            status=status,
+        )
 
         if status == "needs_clarification":
             if round_num >= max_rounds:
@@ -249,6 +286,13 @@ def run_blueprint_pipeline(
                     "stopped": "max_clarification_rounds",
                 }
             revision += 1
+            _emit_progress(
+                progress_callback,
+                "clarify",
+                f"requesting clarification revision {revision}",
+                source="agent_a",
+                revision=revision,
+            )
             clarify = clarify_session.send(_build_clarification_prompt(feedback, revision))
             blueprint = clarify.get("blueprint")
             if blueprint is None:
@@ -266,6 +310,13 @@ def run_blueprint_pipeline(
             continue
 
         if status == "accepted":
+            _emit_progress(
+                progress_callback,
+                "implement",
+                "agent_b accepted requirement; starting implementation",
+                source="agent_b",
+                revision=revision,
+            )
             if use_async_implement:
                 run = start_implementation(
                     requirement,
@@ -308,10 +359,19 @@ def run_blueprint_pipeline(
                 publish=publish,
                 auto_approve_release=auto_approve_release,
                 timeout_seconds=timeout_seconds,
+                progress_callback=progress_callback,
             )
             )
 
         if status in _TERMINAL_STATUSES:
+            _emit_progress(
+                progress_callback,
+                "terminal",
+                f"pipeline stopped with agent_b status={status}",
+                source="agent_b",
+                revision=revision,
+                status=status,
+            )
             if save_feedback:
                 save_feedback_raw(feedback)
             return {

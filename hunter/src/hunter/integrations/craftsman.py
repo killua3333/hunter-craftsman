@@ -38,7 +38,18 @@ def _ensure_contract_compatibility(payload: dict[str, Any]) -> None:
 
 def _is_retryable_runtime_error(exc: RuntimeError) -> bool:
     message = str(exc).lower()
-    return any(token in message for token in ("unreachable", "timeout", "timed out", "connection reset"))
+    return any(
+        token in message
+        for token in (
+            "unreachable",
+            "timeout",
+            "timed out",
+            "connection reset",
+            "connection aborted",
+            "temporarily unavailable",
+            "connection refused",
+        )
+    )
 
 
 def _with_retry(fn: Callable[[], dict[str, Any]], *, attempts: int = 2) -> dict[str, Any]:
@@ -48,7 +59,7 @@ def _with_retry(fn: Callable[[], dict[str, Any]], *, attempts: int = 2) -> dict[
             return fn()
         except CraftsmanHTTPError as exc:
             last_exc = exc
-            if not exc.retryable or attempt >= attempts:
+            if not exc.retryable or exc.status_code < 500 or attempt >= attempts:
                 raise
         except RuntimeError as exc:
             last_exc = exc

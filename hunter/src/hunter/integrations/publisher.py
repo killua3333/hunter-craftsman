@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, Callable
 
 from hunter.integrations.craftsman import _http_json, _with_retry
 
@@ -78,17 +78,40 @@ def wait_for_release_completion(
     base_url: str = "http://127.0.0.1:8791",
     timeout_seconds: float = 1800.0,
     poll_interval_seconds: float = 2.0,
+    on_event: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Poll release status until terminal state or timeout."""
     deadline = time.monotonic() + max(timeout_seconds, 1.0)
     last: dict[str, Any] = {"release_id": release_id, "status": "unknown"}
+    last_status = ""
     while time.monotonic() < deadline:
         last = get_release_status(release_id, base_url=base_url, timeout_seconds=30.0)
         status = str(last.get("status") or "").strip().lower()
+        if on_event is not None and status and status != last_status:
+            on_event(
+                {
+                    "phase": "release_poll",
+                    "detail": f"release {release_id} status={status}",
+                    "release_id": release_id,
+                    "status": status,
+                    "source": "agent_c",
+                }
+            )
+            last_status = status
         if status in TERMINAL_RELEASE_STATUSES:
             return last
         time.sleep(max(poll_interval_seconds, 0.2))
     last["poll_timed_out"] = True
+    if on_event is not None:
+        on_event(
+            {
+                "phase": "release_poll",
+                "detail": f"release {release_id} poll timed out",
+                "release_id": release_id,
+                "status": str(last.get('status') or 'unknown'),
+                "source": "agent_c",
+            }
+        )
     return last
 
 
@@ -120,6 +143,7 @@ def run_publish_pipeline(
     approved_by: str = "hunter-auto",
     timeout_seconds: float = 1800.0,
     poll_interval_seconds: float = 2.0,
+    on_event: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """
     Agent C pipeline: prepare → (optional approve) → submit.
@@ -134,8 +158,28 @@ def run_publish_pipeline(
     release_id = str(handoff.get("release_id") or (f"rel-{run_id}" if run_id else "rel-unknown"))
     payload = {**handoff, "release_id": release_id}
 
+    if on_event is not None:
+        on_event(
+            {
+                "phase": "release_prepare",
+                "detail": f"preparing release handoff {release_id}",
+                "release_id": release_id,
+                "source": "agent_a",
+            }
+        )
+
     prepare = prepare_release(payload, base_url=base_url, timeout_seconds=60.0)
     if not prepare.get("accepted"):
+        if on_event is not None:
+            on_event(
+                {
+                    "phase": "release_prepare",
+                    "detail": f"release handoff rejected {release_id}",
+                    "release_id": release_id,
+                    "status": "prepare_rejected",
+                    "source": "agent_b",
+                }
+            )
         return {
             "release_id": release_id,
             "publish_status": "prepare_rejected",
@@ -144,6 +188,15 @@ def run_publish_pipeline(
 
     approval = None
     if prepare.get("approval_required") and auto_approve:
+        if on_event is not None:
+            on_event(
+                {
+                    "phase": "release_approval",
+                    "detail": f"auto-approving release {release_id}",
+                    "release_id": release_id,
+                    "source": "agent_a",
+                }
+            )
         approval = approve_release(
             release_id,
             approved_by=approved_by,
@@ -151,12 +204,31 @@ def run_publish_pipeline(
             timeout_seconds=30.0,
         )
     elif prepare.get("approval_required") and not auto_approve:
+        if on_event is not None:
+            on_event(
+                {
+                    "phase": "release_approval",
+                    "detail": f"release {release_id} waiting for human approval",
+                    "release_id": release_id,
+                    "status": "approval_required",
+                    "source": "agent_c",
+                }
+            )
         return {
             "release_id": release_id,
             "publish_status": "approval_required",
             "prepare": prepare,
         }
 
+    if on_event is not None:
+        on_event(
+            {
+                "phase": "release_submit",
+                "detail": f"submitting release {release_id}",
+                "release_id": release_id,
+                "source": "agent_a",
+            }
+        )
     submit = submit_release(release_id, base_url=base_url, timeout_seconds=60.0)
     publish_status = str(submit.get("status") or submit.get("agent_c_status") or "unknown")
     if publish_status.lower() in TERMINAL_RELEASE_STATUSES:
@@ -167,8 +239,19 @@ def run_publish_pipeline(
             base_url=base_url,
             timeout_seconds=timeout_seconds,
             poll_interval_seconds=poll_interval_seconds,
+            on_event=on_event,
         )
     final_status = str(final.get("status") or publish_status)
+    if on_event is not None:
+        on_event(
+            {
+                "phase": "release_complete",
+                "detail": f"release {release_id} finished with status={final_status}",
+                "release_id": release_id,
+                "status": final_status,
+                "source": "agent_c",
+            }
+        )
     setup_path, setup_sheet = _play_console_fields(submit, final)
     result = {
         "release_id": release_id,

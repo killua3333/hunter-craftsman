@@ -7,6 +7,7 @@ from tests.conftest import sample_blueprint
 
 def test_autopilot_publish_dry_run_e2e():
     blueprint = sample_blueprint()
+    progress_events = []
     implemented = {
         "agent_b_status": "implementation_complete",
         "opportunity_id": "auto-e2e",
@@ -53,8 +54,18 @@ def test_autopilot_publish_dry_run_e2e():
     ):
         from hunter.orchestrator import run_autopilot_pipeline
 
-        outcome = run_autopilot_pipeline(save_feedback=False, publish=True)
+        outcome = run_autopilot_pipeline(
+            save_feedback=False,
+            publish=True,
+            progress_callback=progress_events.append,
+        )
 
     assert outcome["mode"] == "autopilot"
     assert outcome["correlation_id"] == "run-e2e-1"
     assert outcome["publish"]["final_status"] == "dry_run_complete"
+    phases = [event["phase"] for event in progress_events]
+    assert "autopilot_discovery" in phases
+    assert "analyze" in phases
+    assert "analyze_result" in phases
+    assert "implement" in phases
+    assert "publish" in phases

@@ -1,0 +1,12 @@
+[Unit]
+Description=Hunter Autopilot Trigger
+After=network.target craftsman.service
+Wants=craftsman.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/hunter-agent/hunter
+EnvironmentFile=/etc/hunter-craftsman/hunter.env
+ExecStart=/opt/hunter-agent/.venv/bin/hunter autopilot --publish
+User=www-data
+Group=www-data

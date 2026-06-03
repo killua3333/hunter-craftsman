@@ -426,11 +426,10 @@ class RunStore:
     ) -> str:
         now = _utc_now_iso()
         where = ["release_id=?"]
-        values: list[Any] = [now]
+        where_values: list[Any] = [release_id]
         if worker_id is not None and lease_token is not None:
-            where.extend(["owner_id=?", "lease_token=?", "status='processing'"])
-            values.extend([worker_id, lease_token])
-        values.append(release_id)
+            where.extend(["owner_id=?", "lease_token=?"])
+            where_values.extend([worker_id, lease_token])
         with self._conn() as conn:
             updated = conn.execute(
                 f"""
@@ -442,7 +441,7 @@ class RunStore:
                     updated_at=?
                 WHERE {' AND '.join(where)}
                 """,
-                values,
+                [now, *where_values],
             ).rowcount
         return "done" if updated == 1 else "stale"
 
@@ -606,6 +605,30 @@ class RunStore:
             ).fetchone()
         return dict(row) if row else None
 
+    def list_runs(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM runs
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (max(limit, 1),),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def run_status_counts(self) -> dict[str, int]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT status, COUNT(*) AS total
+                FROM runs
+                GROUP BY status
+                """
+            ).fetchall()
+        return {str(row["status"]): int(row["total"]) for row in rows}
+
     def append_event(self, run_id: str, phase: str, detail: str = "") -> None:
         with self._conn() as conn:
             conn.execute(
@@ -634,6 +657,62 @@ class RunStore:
                 LIMIT ?
                 """,
                 (run_id, max(after_id, 0), max(limit, 1)),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def requeue_run(self, run_id: str, *, max_attempts: int | None = None) -> bool:
+        now = _utc_now_iso()
+        with self._conn() as conn:
+            existing = conn.execute(
+                "SELECT run_id, max_attempts FROM job_queue WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            if not existing:
+                return False
+            next_max_attempts = max_attempts or int(existing["max_attempts"]) or 1
+            updated = conn.execute(
+                """
+                UPDATE job_queue
+                SET status='pending',
+                    attempts=0,
+                    max_attempts=?,
+                    owner_id=NULL,
+                    lease_token=NULL,
+                    lease_until=NULL,
+                    last_error=NULL,
+                    dead_letter_at=NULL,
+                    updated_at=?
+                WHERE run_id=?
+                """,
+                (max(next_max_attempts, 1), now, run_id),
+            ).rowcount
+            if updated != 1:
+                return False
+            conn.execute(
+                """
+                UPDATE runs
+                SET status='in_progress',
+                    phase='queued',
+                    phase_detail='implementation requeued',
+                    error_message=NULL,
+                    updated_at=?
+                WHERE run_id=?
+                """,
+                (now, run_id),
+            )
+        return True
+
+    def list_jobs(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT q.*, r.opportunity_id, r.revision, r.phase, r.phase_detail, r.status AS run_status
+                FROM job_queue q
+                JOIN runs r ON r.run_id = q.run_id
+                ORDER BY q.updated_at DESC, q.id DESC
+                LIMIT ?
+                """,
+                (max(limit, 1),),
             ).fetchall()
         return [dict(row) for row in rows]
 
@@ -761,6 +840,136 @@ class RunStore:
         except json.JSONDecodeError:
             data["details"] = {}
         return data
+
+    def list_release_states(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT rs.*, rp.passed, rp.issues_json, ra.decision, ra.approved_by, ra.note, ra.approved_at
+                FROM release_states rs
+                LEFT JOIN release_policy_checks rp ON rp.release_id = rs.release_id
+                LEFT JOIN release_approvals ra ON ra.release_id = rs.release_id
+                ORDER BY rs.updated_at DESC, rs.release_id DESC
+                LIMIT ?
+                """,
+                (max(limit, 1),),
+            ).fetchall()
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            data = dict(row)
+            try:
+                data["details"] = json.loads(data.get("details_json") or "{}")
+            except json.JSONDecodeError:
+                data["details"] = {}
+            try:
+                data["issues"] = json.loads(data.get("issues_json") or "[]")
+            except json.JSONDecodeError:
+                data["issues"] = []
+            if data.get("passed") is not None:
+                data["passed"] = bool(data["passed"])
+            out.append(data)
+        return out
+
+    def release_status_counts(self) -> dict[str, int]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT status, COUNT(*) AS total
+                FROM release_states
+                GROUP BY status
+                """
+            ).fetchall()
+        return {str(row["status"]): int(row["total"]) for row in rows}
+
+    def requeue_release(self, release_id: str, *, max_attempts: int | None = None) -> bool:
+        now = _utc_now_iso()
+        with self._conn() as conn:
+            existing = conn.execute(
+                "SELECT release_id, max_attempts FROM release_job_queue WHERE release_id = ?",
+                (release_id,),
+            ).fetchone()
+            if not existing:
+                return False
+            next_max_attempts = max_attempts or int(existing["max_attempts"]) or 1
+            updated = conn.execute(
+                """
+                UPDATE release_job_queue
+                SET status='pending',
+                    attempts=0,
+                    max_attempts=?,
+                    owner_id=NULL,
+                    lease_token=NULL,
+                    lease_until=NULL,
+                    last_error=NULL,
+                    dead_letter_at=NULL,
+                    updated_at=?
+                WHERE release_id=?
+                """,
+                (max(next_max_attempts, 1), now, release_id),
+            ).rowcount
+            if updated != 1:
+                return False
+            conn.execute(
+                """
+                UPDATE release_states
+                SET status='submitting',
+                    updated_at=?
+                WHERE release_id=?
+                """,
+                (now, release_id),
+            )
+        return True
+
+    def list_release_jobs(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT q.*, rs.status AS release_status, rs.updated_by
+                FROM release_job_queue q
+                LEFT JOIN release_states rs ON rs.release_id = q.release_id
+                ORDER BY q.updated_at DESC, q.id DESC
+                LIMIT ?
+                """,
+                (max(limit, 1),),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def repair_release_job_state(self) -> int:
+        """
+        Reconcile release jobs that still look processing even though the release
+        state is terminal. This can happen after older versions or interrupted
+        runs and should never leave the operator console in a contradictory state.
+        """
+        terminal_statuses = {"published", "dry_run_complete", "failed", "platform_unavailable"}
+        now = _utc_now_iso()
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT q.release_id, q.status AS job_status, q.owner_id, q.lease_token, rs.status AS release_status
+                FROM release_job_queue q
+                JOIN release_states rs ON rs.release_id = q.release_id
+                WHERE q.status='processing'
+                """
+            ).fetchall()
+            repaired = 0
+            for row in rows:
+                release_status = str(row["release_status"] or "").strip().lower()
+                if release_status not in terminal_statuses:
+                    continue
+                conn.execute(
+                    """
+                    UPDATE release_job_queue
+                    SET status='done',
+                        owner_id=NULL,
+                        lease_token=NULL,
+                        lease_until=NULL,
+                        updated_at=?
+                    WHERE release_id=?
+                    """,
+                    (now, row["release_id"]),
+                )
+                repaired += 1
+        return repaired
 
     def append_audit_log(
         self,
