@@ -59,15 +59,23 @@ var myState by remember { mutableStateOf(savedValue) }
 ```
 
 ### Material3 基本布局
+**重要：如果使用 TopAppBar / Scaffold / NavigationBarItem 等 Material3 组件，必须在函数前添加 `@OptIn(ExperimentalMaterial3Api::class)`**
+
 ```kotlin
-MaterialTheme(colorScheme = lightColorScheme(
-    primary = parseColor("{{ primary_color }}"),
-)) {
-    Scaffold(
-        topBar = { TopAppBar(title = { Text("App Title") }) }
-    ) { padding ->
-        Column(modifier = Modifier.padding(padding)) {
-            // 你的 UI 内容
+import androidx.compose.material3.ExperimentalMaterial3Api
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MyApp() {
+    MaterialTheme(colorScheme = lightColorScheme(
+        primary = parseColor("{{ primary_color }}"),
+    )) {
+        Scaffold(
+            topBar = { TopAppBar(title = { Text("App Title") }) }
+        ) { padding ->
+            Column(modifier = Modifier.padding(padding)) {
+                // 你的 UI 内容
+            }
         }
     }
 }

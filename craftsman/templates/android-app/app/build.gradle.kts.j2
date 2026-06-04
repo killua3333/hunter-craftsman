@@ -22,16 +22,28 @@ android {
         kotlinCompilerExtensionVersion = "1.5.14"
     }
 
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
     signingConfigs {
         create("release") {
             val keystorePropsFile = rootProject.file("keystore.properties")
             if (keystorePropsFile.exists()) {
-                val keystoreProps = java.util.Properties()
-                keystoreProps.load(keystorePropsFile.inputStream())
-                storeFile = file(keystoreProps["storeFile"] as String)
-                storePassword = keystoreProps["storePassword"] as String
-                keyAlias = keystoreProps["keyAlias"] as String
-                keyPassword = keystoreProps["keyPassword"] as String
+                val props = keystorePropsFile.readLines()
+                    .filter { it.contains("=") }
+                    .associate {
+                        val (k, v) = it.split("=", limit = 2)
+                        k.trim() to v.trim()
+                    }
+                storeFile = file(props["storeFile"] ?: "")
+                storePassword = props["storePassword"] ?: ""
+                keyAlias = props["keyAlias"] ?: ""
+                keyPassword = props["keyPassword"] ?: ""
             }
         }
     }

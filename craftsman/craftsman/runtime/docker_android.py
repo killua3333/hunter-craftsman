@@ -92,6 +92,8 @@ def run_gradle_in_container(
         f"{workspace_mount}:/workspace",
         "-w",
         container_workdir,
+        "-e",
+        "GRADLE_USER_HOME=/tmp/gradle",
     ]
     secrets_dir = settings.secret_store_dir
     if secrets_dir.is_dir():
@@ -99,9 +101,18 @@ def run_gradle_in_container(
     if extra_env:
         for key, value in extra_env.items():
             cmd.extend(["-e", f"{key}={value}"])
+    # Pass host proxy settings into the container (essential for network-restricted envs)
+    import os as _os
+    for _proxy_var in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
+        _proxy_val = _os.environ.get(_proxy_var)
+        if _proxy_val:
+            cmd.extend(["-e", f"{_proxy_var}={_proxy_val}"])
     cmd.extend(
         [
+            "--entrypoint",
+            "/opt/gradle-8.7/bin/gradle",
             settings.docker_android_image,
+            "--no-daemon",
             gradle_task,
         ]
     )
@@ -111,6 +122,8 @@ def run_gradle_in_container(
             cmd,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=float(settings.docker_gradle_timeout_seconds),
         )
     except subprocess.TimeoutExpired as exc:
@@ -156,6 +169,8 @@ def run_smoke_in_container(
             cmd,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=float(settings.android_smoke_timeout_seconds),
         )
     except subprocess.TimeoutExpired as exc:
