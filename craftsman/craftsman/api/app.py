@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
+import time
+from collections import defaultdict
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, Header, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from craftsman.callback import deliver_feedback
@@ -158,6 +161,40 @@ async def lifespan(app: FastAPI):
         _worker.stop()
 
 
+# ── Rate Limiter (token bucket, per-IP, in-memory) ──
+
+class _RateLimiter:
+    def __init__(self, requests: int = 60, window_seconds: float = 60.0) -> None:
+        self._max = requests
+        self._window = window_seconds
+        self._buckets: dict[str, tuple[float, int]] = {}
+        self._lock = threading.Lock()
+
+    def _cleanup(self) -> None:
+        now = time.monotonic()
+        stale = [k for k, (t, _) in self._buckets.items() if now - t > self._window * 2]
+        for k in stale:
+            del self._buckets[k]
+
+    def allow(self, key: str) -> bool:
+        now = time.monotonic()
+        with self._lock:
+            if len(self._buckets) > 10_000:
+                self._cleanup()
+            ts, count = self._buckets.get(key, (now, 0))
+            if now - ts > self._window:
+                ts, count = now, 0
+            count += 1
+            self._buckets[key] = (ts, count)
+            return count <= self._max
+
+
+_rate_limiter = _RateLimiter(requests=120, window_seconds=60.0)
+
+# Health endpoints exempt from rate limiting
+_RATE_EXEMPT = frozenset({"/health", "/readyz"})
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="Craftsman Agent B",
@@ -165,6 +202,24 @@ def create_app() -> FastAPI:
         description="多平台自动化车间（Android 默认 / iOS 可选）— Gate + Build + Release",
         lifespan=lifespan,
     )
+
+    @app.middleware("http")
+    async def rate_limit_middleware(request: Request, call_next: Any) -> Any:
+        path = request.url.path
+        if path not in _RATE_EXEMPT:
+            client_ip = request.client.host if request.client else "127.0.0.1"
+            if not _rate_limiter.allow(client_ip):
+                return JSONResponse(
+                    status_code=429,
+                    content={
+                        "error": {
+                            "code": "rate_limited",
+                            "message": "请求频次过高，请稍后重试",
+                            "retryable": True,
+                        }
+                    },
+                )
+        return await call_next(request)
 
     @app.get("/health")
     def health() -> dict[str, Any]:

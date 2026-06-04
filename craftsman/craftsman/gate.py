@@ -218,6 +218,8 @@ def run_gate(req: dict[str, Any], schema_errors: list[str]) -> GateResult:
 
     if soft and settings.gate_auto_accept and not fatal:
         accepted = True
+        # 软模式接受但保留 reasons 作为 suggested_rules（不自欺欺人）
+        rules[:0] = [f"[soft-gate] {r}" for r in reasons]
         reasons = []
     else:
         accepted = len(reasons) == 0

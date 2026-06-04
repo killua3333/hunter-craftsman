@@ -23,7 +23,8 @@ hunter autopilot --publish    # 上述 + Agent C 发布（默认 dry-run）
 ```
 hunter-craftsman/
 ├── hunter/          Agent A — 机会发现、编排、CLI
-├── craftsman/       Agent B + Agent C — Gate、实现、发布 API
+├── craftsman/       Agent B（实现）+ Agent C（发布）— 同一 FastAPI 服务
+│   └── craftsman/publisher/   Agent C 代码
 ├── docs/            操作与架构文档（本文件为入口）
 ├── docker/          Android CI 构建镜像（Gradle verified）
 ├── pytest.ini       根目录全量测试配置
@@ -32,12 +33,13 @@ hunter-craftsman/
 └── .gitignore       忽略 workspace / callbacks / secrets / .env
 ```
 
-| 目录 | 角色 | 不应提交 Git |
-|------|------|----------------|
-| `hunter/` | Agent A | `.env`、`feedback/*.json`（examples 除外） |
-| `craftsman/` | Agent B + C | `.env`、`workspace/`、`callbacks/`、`*.db`、`secrets/` |
-| `docs/` | 文档 | — |
-| `docker/` | CI 镜像定义 | — |
+| 目录 | 智能体 | 不应提交 Git |
+|------|--------|----------------|
+| `hunter/` | **Agent A** | `.env`、`feedback/*.json`（examples 除外） |
+| `craftsman/`（`orchestrator/` 等） | **Agent B** | `.env`、`workspace/`、`callbacks/`、`*.db`、`secrets/` |
+| `craftsman/craftsman/publisher/` | **Agent C** | （同上，与 B 共用配置与运行时） |
+| `docs/` | — | — |
+| `docker/` | — | — |
 
 ---
 

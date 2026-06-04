@@ -7,7 +7,7 @@ from typing import Any
 from craftsman.config import settings
 from craftsman.orchestrator.policy_checks import check_release_compliance_metadata
 from craftsman.publisher.android_build import build_release_aab, write_build_manifest
-from craftsman.publisher.android_signing import write_keystore_properties
+from craftsman.publisher.android_signing import cleanup_keystore_properties, write_keystore_properties
 from craftsman.publisher.android_version import bump_version_for_release
 from craftsman.publisher.handoff import (
     application_id,
@@ -103,6 +103,8 @@ def run_android_release(
 
     _phase(PublisherPhase.BUILD, "gradle bundleRelease")
     build = build_release_aab(project_dir, dry_run=effective_dry_run)
+    if signing_ok:
+        cleanup_keystore_properties(project_dir)
     if not build.ok or not build.aab_path:
         return _failure(release_id, phases, build.reasons or ["build failed"], handoff, log=build.log)
 

@@ -158,7 +158,21 @@ def run_autopilot_pipeline(
             attempts.append(last_outcome)
             continue
         if not blueprint.accepted:
-            blueprint = blueprint.model_copy(update={"accepted": True})
+            outcome = {
+                "accepted": False,
+                "blueprint": blueprint.model_dump(),
+                "feedback": None,
+                "mode": "autopilot",
+                "stopped": "blueprint_rejected_by_specialist",
+                "autopilot_attempt": attempt,
+                "reasons": blueprint.reasons or [],
+            }
+            attempts.append(outcome)
+            append_inline_learning(
+                opportunity_id=opportunity_id,
+                reason=f"autopilot attempt {attempt}: specialist rejected blueprint — {blueprint.summary or 'no summary'}",
+            )
+            continue
 
         outcome = run_blueprint_pipeline(
             blueprint,
