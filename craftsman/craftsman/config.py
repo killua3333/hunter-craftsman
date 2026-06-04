@@ -92,6 +92,7 @@ class Settings(BaseSettings):
     android_key_password: str | None = None
     publisher_require_signing: bool = False
     publisher_submit_timeout_seconds: float = 1800.0
+    webhook_url: str | None = None  # POSTed on publish completion
 
     job_worker_count: int = 1
     llm_request_timeout_seconds: float = 120.0

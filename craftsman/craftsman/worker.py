@@ -166,6 +166,7 @@ class BackgroundWorker:
                 actor="agent_c",
                 payload={"agent_c_status": agent_status, "platform_target": details.get("platform_target")},
             )
+            self._fire_webhook(release_id, final_status, agent_result)
         except Exception as exc:
             taxonomy = classify_runtime_exception(exc)
             self.store.fail_release_job(
@@ -188,9 +189,36 @@ class BackgroundWorker:
                 updated_by="agent_c",
             )
             logger.exception("release job failed: release_id=%s", release_id)
+            self._fire_webhook(release_id, "failed", {"reasons": [f"{taxonomy['category']}: {exc}"]})
         finally:
             heartbeat_stop.set()
             heartbeat.join(timeout=1.0)
+
+    def _fire_webhook(
+        self,
+        release_id: str,
+        status: str,
+        payload: dict[str, Any],
+    ) -> None:
+        """Fire webhook callback on release completion (fire-and-forget)."""
+        url = settings.webhook_url
+        if not url:
+            return
+        try:
+            import httpx
+            r = httpx.post(
+                url,
+                json={
+                    "event": "publisher.release_completed",
+                    "release_id": release_id,
+                    "status": status,
+                    **payload,
+                },
+                timeout=10,
+            )
+            logger.info("webhook fired: url=%s status=%s resp=%d", url, status, r.status_code)
+        except Exception:
+            logger.warning("webhook failed: url=%s status=%s", url, status, exc_info=True)
 
     def _lease_heartbeat(
         self,

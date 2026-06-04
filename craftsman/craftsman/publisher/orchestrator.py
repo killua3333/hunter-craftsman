@@ -101,42 +101,40 @@ def run_android_release(
         )
         phases[-1]["detail"] = version_detail
 
-    _phase(PublisherPhase.BUILD, "gradle bundleRelease")
-    build = build_release_aab(project_dir, dry_run=effective_dry_run)
-    if signing_ok:
-        cleanup_keystore_properties(project_dir)
-    if not build.ok or not build.aab_path:
-        return _failure(release_id, phases, build.reasons or ["build failed"], handoff, log=build.log)
+    _phase(PublisherPhase.UPLOAD, f"upload to track {settings.android_release_track}")
+    upload, aab_path = _upload_with_healing(
+        project_dir=project_dir,
+        package_name=package,
+        metadata_dir=metadata_dir,
+        icon_path=icon_path,
+        screenshot_paths=screenshot_paths,
+        effective_dry_run=effective_dry_run,
+        release_track=settings.android_release_track,
+        phases=phases,
+        release_id=release_id,
+        handoff=handoff,
+        max_retries=3,
+    )
+    if not upload.ok:
+        return _failure(release_id, phases, [upload.message], handoff)
 
     write_build_manifest(
         workspace,
         {
             "release_id": release_id,
-            "aab_path": build.aab_path,
+            "aab_path": aab_path,
             "signing": signing_msg,
-            "dry_run": build.dry_run,
+            "dry_run": upload.dry_run,
             "version": version_detail,
             "package_name": package,
         },
     )
 
-    _phase(PublisherPhase.UPLOAD, f"upload to track {settings.android_release_track}")
-    upload = upload_to_play(
-        aab_path=Path(build.aab_path),
-        package_name=package,
-        dry_run=effective_dry_run or build.dry_run,
-        metadata_dir=metadata_dir,
-        icon_path=icon_path,
-        screenshot_paths=screenshot_paths,
-    )
-    if not upload.ok:
-        return _failure(release_id, phases, [upload.message], handoff)
-
     status = PublisherStatus.DRY_RUN_COMPLETE if upload.dry_run else PublisherStatus.SUBMITTED
     _phase(PublisherPhase.COMPLETE, status.value)
 
     bundle = dict(handoff.get("release_bundle") or {})
-    bundle["aab_path"] = build.aab_path
+    bundle["aab_path"] = aab_path
 
     return {
         "release_id": release_id,
@@ -177,3 +175,120 @@ def _failure(
         "build_log": log,
         "release_handoff": handoff,
     }
+
+
+def _upload_with_healing(
+    *,
+    project_dir: Path,
+    package_name: str,
+    metadata_dir: Path | None,
+    icon_path: Path | None,
+    screenshot_paths: list[Path] | None,
+    effective_dry_run: bool,
+    release_track: str,
+    phases: list[dict[str, str]],
+    release_id: str,
+    handoff: dict[str, Any],
+    max_retries: int = 3,
+):
+    """Upload to Play with self-healing retry for common recoverable errors.
+
+    Returns (upload_result, aab_path_str).
+    """
+    import re
+
+    for attempt in range(max_retries + 1):
+        if attempt > 0:
+            logger.warning(
+                "upload self-heal attempt %d/%d release_id=%s",
+                attempt, max_retries, release_id,
+            )
+
+        # Build (or rebuild) AAB
+        from craftsman.publisher.android_build import build_release_aab
+        from craftsman.publisher.android_signing import write_keystore_properties, cleanup_keystore_properties
+
+        signing_ok, _ = write_keystore_properties(project_dir)
+        build = build_release_aab(project_dir, dry_run=effective_dry_run)
+        if signing_ok:
+            cleanup_keystore_properties(project_dir)
+
+        if not build.ok or not build.aab_path:
+            phases.append({"phase": PublisherPhase.BUILD.value, "detail": f"build failed (attempt {attempt + 1})"})
+            if attempt < max_retries:
+                continue
+            from craftsman.publisher.models import ReleaseUploadResult
+            return ReleaseUploadResult(ok=False, track=release_track, message="build failed after retries",
+                                       store_response={"build_log": build.log}), ""
+
+        if attempt > 0:
+            phases.append({"phase": PublisherPhase.BUILD.value, "detail": f"rebuild (attempt {attempt + 1})"})
+
+        # Upload
+        upload = upload_to_play(
+            aab_path=Path(build.aab_path),
+            package_name=package_name,
+            dry_run=effective_dry_run,
+            metadata_dir=metadata_dir,
+            icon_path=icon_path,
+            screenshot_paths=screenshot_paths,
+        )
+
+        if upload.ok:
+            return upload, build.aab_path
+
+        msg = upload.message.lower()
+
+        # --- Self-healing rules ---
+
+        # Target SDK too low
+        m = re.search(r"target sdk.*?(?:too low|minimum).*?(\d+)", msg)
+        if m:
+            target = int(m.group(1))
+            logger.info("healing: bumping targetSdk to %d", target)
+            _bump_gradle_property(project_dir, "targetSdk", target)
+            _bump_gradle_property(project_dir, "compileSdk", target)
+            _bump_gradle_property(project_dir, "versionCode", _read_gradle_int(project_dir, "versionCode") + 1)
+            continue
+
+        # Version code already used
+        if "already been used" in msg or "versioncode conflict" in msg:
+            current = _read_gradle_int(project_dir, "versionCode")
+            new_vc = current + 1
+            logger.info("healing: bumping versionCode %d -> %d", current, new_vc)
+            _bump_gradle_property(project_dir, "versionCode", new_vc)
+            continue
+
+        # Bundle not signed
+        if "must be signed" in msg or "sign" in msg:
+            logger.info("healing: re-configuring signing")
+            from craftsman.publisher.android_signing import write_keystore_properties as _wks
+            _wks(project_dir)
+            continue
+
+        # Unrecoverable
+        return upload, build.aab_path
+
+    # Exhausted retries
+    from craftsman.publisher.models import ReleaseUploadResult
+    return ReleaseUploadResult(ok=False, track=release_track,
+                               message=f"upload failed after {max_retries + 1} attempts"), ""
+
+
+def _read_gradle_int(project_dir: Path, key: str) -> int:
+    import re
+    gf = project_dir / "app" / "build.gradle.kts"
+    if not gf.is_file():
+        return 1
+    m = re.search(rf"{key}\s*=\s*(\d+)", gf.read_text(encoding="utf-8"))
+    return int(m.group(1)) if m else 1
+
+
+def _bump_gradle_property(project_dir: Path, key: str, value: int) -> None:
+    import re
+    gf = project_dir / "app" / "build.gradle.kts"
+    if not gf.is_file():
+        return
+    text = gf.read_text(encoding="utf-8")
+    text = re.sub(rf"{key}\s*=\s*\d+", f"{key} = {value}", text)
+    gf.write_text(text, encoding="utf-8")
