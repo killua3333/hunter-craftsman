@@ -38,5 +38,12 @@ def write_keystore_properties(project_dir: Path) -> tuple[bool, str]:
     return True, "release signing configured via keystore.properties"
 
 
+def cleanup_keystore_properties(project_dir: Path) -> None:
+    """Delete keystore.properties after build to avoid plaintext secrets on disk."""
+    props = project_dir / "keystore.properties"
+    if props.is_file():
+        props.unlink(missing_ok=True)
+
+
 def signing_configured() -> bool:
     return bool(resolve_secret_value("ANDROID_KEYSTORE_PATH", None))

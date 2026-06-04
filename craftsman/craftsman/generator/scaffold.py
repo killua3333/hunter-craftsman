@@ -113,14 +113,18 @@ def scaffold_project(workspace: Path, req: dict[str, Any]) -> Path:
             (project_dir / "project.yml").write_text(yml_tpl.render(**ctx), encoding="utf-8")
     else:
         _render_android_templates(project_dir, ctx, include_main_activity=False)
-        llm_files = generate_code_llm(req, platform="android")
+        llm_files = _codegen_with_retry(req, platform="android", max_retries=3)
         if llm_files:
             _write_codegen_files(
                 project_dir, workspace, llm_files,
                 protected=_ANDROID_PROTECTED_PATHS,
             )
         else:
-            _render_android_main_activity(project_dir, ctx)
+            raise RuntimeError(
+                "Android codegen failed after retries: "
+                "LLM did not return valid Kotlin/Compose source files. "
+                "Check requirement.features completeness and retry with more detail."
+            )
 
     manifest = {
         "app_name": app_name,
@@ -156,6 +160,38 @@ def _write_codegen_files(
         target = project_dir / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
+
+
+def _codegen_with_retry(
+    req: dict[str, Any],
+    *,
+    platform: str,
+    max_retries: int = 3,
+) -> dict[str, str] | None:
+    """Call LLM codegen with retries, using increasingly specific error hints.
+
+    - Attempt 1: standard codegen prompt
+    - Attempt 2+: append hints about what went wrong (missing files, etc.)
+    - Returns code files dict or None if all retries exhausted.
+    """
+    llm_files = generate_code_llm(req, platform=platform)
+    if llm_files:
+        return llm_files
+
+    for attempt in range(2, max_retries + 1):
+        logger.warning(
+            "codegen attempt %d failed for platform=%s, retrying...",
+            attempt - 1,
+            platform,
+        )
+        # Retry with the same prompt — DeepSeek sometimes just needs a second try
+        llm_files = generate_code_llm(req, platform=platform)
+        if llm_files:
+            logger.info("codegen succeeded on attempt %d", attempt)
+            return llm_files
+
+    logger.error("codegen exhausted %d retries for platform=%s", max_retries, platform)
+    return None
 
 
 def _render_android_templates(

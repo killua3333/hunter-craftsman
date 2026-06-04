@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from craftsman.config import ROOT
+
+logger = logging.getLogger(__name__)
 
 _TEMPLATES = ROOT / "templates" / "web-demo"
 _LOADER = Environment(
@@ -51,10 +54,18 @@ def _demo_context(req: dict[str, Any]) -> dict[str, Any]:
 
 
 def _is_interactive_html(path: Path) -> bool:
+    """判断 HTML 是否由 LLM 生成且具有真实交互逻辑。
+
+    要求同时满足：（1）含 <script 标签；（2）体积 > 1500 字节；
+    （3）不含模板占位符 {{ }}。
+    """
     if not path.is_file():
         return False
     text = path.read_text(encoding="utf-8")
-    return "<script" in text.lower() and len(text) > 800
+    has_script = "<script" in text.lower()
+    big_enough = len(text) > 1500
+    no_template = "{{" not in text
+    return has_script and big_enough and no_template
 
 
 def generate_interactive_demo(workspace: Path, req: dict[str, Any]) -> Path:
@@ -74,7 +85,9 @@ def ensure_windows_demo(workspace: Path, req: dict[str, Any]) -> Path:
     """
     index_path = workspace / "index.html"
     if _is_interactive_html(index_path):
+        logger.info("web_demo: keeping LLM-generated index.html (%d bytes)", index_path.stat().st_size)
         return index_path
+    logger.warning("web_demo: LLM codegen produced no valid HTML, falling back to template")
     return generate_interactive_demo(workspace, req)
 
 
