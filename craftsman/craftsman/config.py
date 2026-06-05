@@ -93,6 +93,7 @@ class Settings(BaseSettings):
     publisher_require_signing: bool = False
     publisher_submit_timeout_seconds: float = 1800.0
     webhook_url: str | None = None  # POSTed on publish completion
+    auto_promote_to_production: bool = False  # 发布 internal 成功后自动推到 production（触发 Google 审核）
 
     job_worker_count: int = 1
     llm_request_timeout_seconds: float = 120.0

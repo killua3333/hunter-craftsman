@@ -572,18 +572,47 @@ def run_implementation(
         enter_phase("package", "collect implementation artifacts")
         branding = req.get("branding") or {}
         store_meta = req.get("store") or {}
+        features_list = req.get("features") or []
+
+        # B3: 按品类自动选择色板
+        palette = assets_tool.choose_palette(app_name, [f.get("title", "") if isinstance(f, dict) else str(f) for f in features_list])
+
+        # 如果没有 LLM 指定的 primary_color，使用色板的
+        primary_color = branding.get("primary_color") or palette["primary"]
+        if not branding.get("primary_color"):
+            branding["primary_color"] = primary_color
+
         artifacts_dir = workspace / "artifacts"
         icon_path = artifacts_dir / "AppIcon.png"
-        assets_tool.generate_icon(
+
+        # B1: 优先 LLM 生成 SVG 图标
+        feature_titles = [f.get("title", "") if isinstance(f, dict) else str(f) for f in features_list][:5]
+        icon_paths = assets_tool.generate_icon_via_llm(
             icon_path,
-            text=(branding.get("icon_text") or app_name[:1]),
-            bg_hex=branding.get("primary_color", "#007AFF"),
+            app_name=app_name,
+            branding_text=branding.get("icon_text") or "",
+            features=feature_titles,
+            palette=palette,
         )
+
+        # B4: 截图中增强 benefit_text
+        benefit_text = store_meta.get("benefit", "")
+        if not benefit_text and features_list:
+            # 从功能列表自动生成 benefit 文案
+            feature_names = [f.get("title", "") if isinstance(f, dict) else str(f) for f in features_list[:3]]
+            if feature_names:
+                benefit_text = " • ".join(fn for fn in feature_names if fn)
+                if len(benefit_text) > 80:
+                    benefit_text = benefit_text[:77] + "..."
+
         shots = assets_tool.generate_screenshots(
             artifacts_dir / "screenshots",
             app_name=app_name,
             subtitle=store_meta.get("subtitle", app_name),
-            bg_hex=branding.get("primary_color", "#007AFF"),
+            bg_hex=primary_color,
+            benefit_text=benefit_text,
+            palette=palette,
+            features=features_list if features_list else None,
         )
         demo_html_path = artifacts_dir / "demo.html"
         web_demo_tool.write_artifacts_redirect(demo_html_path)

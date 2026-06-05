@@ -118,6 +118,34 @@ def run_android_release(
     if not upload.ok:
         return _failure(release_id, phases, [upload.message], handoff)
 
+    # ---- 自动推送到 production（触发 Google 人工审核） ----
+    production_result: dict[str, Any] = {}
+    if settings.auto_promote_to_production and not effective_dry_run and upload.track != "production":
+        _phase(PublisherPhase.UPLOAD, "promote to production track (Google review)")
+        promote = _upload_to_track_only(
+            aab_path=Path(aab_path),
+            package_name=package,
+            track="production",
+            service=play_service,
+        )
+        production_result = {
+            "promoted_to_production": promote.ok,
+            "production_track": "production",
+            "message": promote.message,
+            "store_response": promote.store_response,
+        }
+        if promote.ok:
+            _phase(PublisherPhase.COMPLETE, "submitted to production (pending Google review)")
+        else:
+            _phase(PublisherPhase.UPLOAD, f"production promotion failed: {promote.message}")
+            # 不阻塞：internal 已经成功，production 推送失败记录但不中断
+    elif upload.track == "production":
+        production_result = {
+            "promoted_to_production": True,
+            "production_track": "production",
+            "message": "published directly to production",
+        }
+
     write_build_manifest(
         workspace,
         {
@@ -151,6 +179,7 @@ def run_android_release(
         "signing": {"configured": signing_ok, "message": signing_msg},
         "version": version_detail,
         "dry_run": upload.dry_run,
+        "production": production_result or None,
         "release_handoff": {**handoff, "release_bundle": bundle},
         "play_console_setup_path": setup_sheet.get("path"),
         "setup_sheet": setup_sheet.get("text"),
@@ -292,3 +321,69 @@ def _bump_gradle_property(project_dir: Path, key: str, value: int) -> None:
     text = gf.read_text(encoding="utf-8")
     text = re.sub(rf"{key}\s*=\s*\d+", f"{key} = {value}", text)
     gf.write_text(text, encoding="utf-8")
+
+
+def _upload_to_track_only(
+    *,
+    aab_path: Path,
+    package_name: str,
+    track: str,
+    service,
+):
+    """Upload an existing AAB to a specific track only (no listing/images sync). Used for
+    promoting from internal/alpha/beta to production."""
+    import logging
+
+    from craftsman.publisher.play_client import map_play_api_error
+    from craftsman.publisher.models import ReleaseUploadResult
+
+    _logger = logging.getLogger(__name__)
+
+    try:
+        from googleapiclient.http import MediaFileUpload
+    except ImportError:
+        return ReleaseUploadResult(ok=False, track=track, message="google-api-python-client not installed")
+
+    try:
+        edit = service.edits().insert(packageName=package_name, body={}).execute()
+        edit_id = str(edit["id"])
+
+        media = MediaFileUpload(str(aab_path), mimetype="application/octet-stream", resumable=True)
+        bundle = (
+            service.edits()
+            .bundles()
+            .upload(packageName=package_name, editId=edit_id, media_body=media)
+            .execute()
+        )
+        version_code = str(bundle.get("versionCode") or "")
+
+        if not version_code:
+            service.edits().delete(packageName=package_name, editId=edit_id).execute()
+            return ReleaseUploadResult(ok=False, track=track, message="bundle upload returned no versionCode")
+
+        track_body = {
+            "releases": [
+                {"status": "completed", "versionCodes": [version_code]}
+            ]
+        }
+        service.edits().tracks().update(
+            packageName=package_name,
+            editId=edit_id,
+            track=track,
+            body=track_body,
+        ).execute()
+
+        commit = service.edits().commit(packageName=package_name, editId=edit_id).execute()
+
+        _logger.info("promoted to %s track: edit=%s vc=%s", track, edit_id, version_code)
+        return ReleaseUploadResult(
+            ok=True,
+            track=track,
+            message=f"submitted to {track} track (versionCode={version_code}, pending Google review)",
+            dry_run=False,
+            store_response={"edit_id": edit_id, "versionCode": version_code, "commit": commit},
+        )
+    except Exception as exc:
+        mapped = map_play_api_error(exc)
+        _logger.warning("promotion to %s failed: %s", track, mapped)
+        return ReleaseUploadResult(ok=False, track=track, message=mapped, store_response={"error": mapped})

@@ -105,9 +105,17 @@ def _maybe_publish(
 
 
 AUTOPILOT_TRIGGER = (
-    "Autopilot 已启动。请自动搜索 Google Play 工具类 app 机会，"
-    "选定 1 个最适合纯前端 Android MVP 的方向，"
-    "输出 accepted=true 的完整 AppOpportunityBlueprint JSON（含 requirement）。"
+    "Autopilot 已启动。请自动搜索 Google Play 工具类 app 机会。\n\n"
+    "## 工作流程\n"
+    "1. 先调 play_competitive_analysis(query=\"工具类关键词\") 做竞品横向对比\n"
+    "2. 对 ripe 竞品调 play_analyze_reviews(app_id=\"...\") 批量分析差评\n"
+    "3. 基于差评数据，在最终 Blueprint 的 product_brief 字段中输出：\n"
+    "   - target_users: 目标用户画像（1句话）\n"
+    "   - pain_points: 从差评中归纳的 3 个核心痛点\n"
+    "   - differentiation: 3 个差异化角度\n"
+    "   - feature_priority: 按优先级排序的功能列表\n"
+    "4. 输出 accepted=true 的完整 AppOpportunityBlueprint JSON（含 requirement + product_brief）\n\n"
+    "选定 1 个最适合纯前端 Android MVP 的方向。"
 )
 
 
@@ -173,6 +181,27 @@ def run_autopilot_pipeline(
                 reason=f"autopilot attempt {attempt}: specialist rejected blueprint — {blueprint.summary or 'no summary'}",
             )
             continue
+
+        # 如果没有 product_brief，用 LLM 后补
+        if not blueprint.product_brief and blueprint.requirement:
+            _emit_progress(
+                progress_callback,
+                "autopilot_discovery",
+                "generating product_brief",
+                source="agent_a",
+                attempt=attempt,
+            )
+            brief_prompt = (
+                f"基于以下 Blueprint 内容，生成一个产品简介（product_brief），"
+                f"包含 target_users / pain_points / differentiation / feature_priority：\n"
+                f"app_name: {blueprint.app_name}\n"
+                f"core_logic: {blueprint.core_logic}\n"
+                f"store description: {blueprint.requirement.store.get('description', '')}\n"
+            )
+            answer = session.send(brief_prompt, max_rounds=1)
+            brief_text = answer.get("final_answer") or answer.get("answer") or ""
+            if brief_text:
+                blueprint.product_brief = _safe_str(brief_text, 2000)
 
         outcome = run_blueprint_pipeline(
             blueprint,

@@ -221,6 +221,99 @@
       text-align: center;
     }
 
+    /* ---------- 发布进度 popover ---------- */
+    .overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.6);
+      z-index: 100;
+      justify-content: center;
+      align-items: center;
+    }
+    .overlay.open { display: flex; }
+
+    .popover {
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      padding: 18px;
+      max-width: 520px;
+      width: 90%;
+      max-height: 80vh;
+      overflow: auto;
+    }
+    .popover-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 10px;
+      margin-bottom: 12px;
+    }
+
+    .progress-line {
+      display: grid;
+      gap: 6px;
+    }
+    .progress-step {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 4px 0;
+    }
+    .progress-icon {
+      width: 20px;
+      text-align: center;
+      flex-shrink: 0;
+      font-size: 14px;
+    }
+    .progress-icon.done { color: #4caf50; }
+    .progress-icon.current { color: #2196f3; animation: pulse 1.2s infinite; }
+    .progress-icon.pending { color: var(--soft); }
+    .progress-body { flex: 1; }
+    .progress-phase { font-size: 12px; }
+    .progress-detail { font-size: 11px; color: var(--soft); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    /* ---------- 错误展开面板 ---------- */
+    .expandable {
+      border-top: 1px solid var(--line);
+      margin-top: 8px;
+      padding-top: 8px;
+      display: none;
+    }
+    .expandable.open { display: block; }
+    .expandable pre {
+      margin: 0;
+      font: inherit;
+      font-size: 11px;
+      color: var(--soft);
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 300px;
+      overflow: auto;
+      background: var(--bg);
+      padding: 8px;
+      border: 1px solid var(--line);
+    }
+
+    /* ---------- Play Console 链接样式 ---------- */
+    .play-link {
+      color: #66bb6a;
+      text-decoration: none;
+      border: 1px solid #66bb6a;
+      padding: 6px 10px;
+      font-size: 11px;
+      display: inline-block;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .play-link:hover { background: rgba(102,187,106,0.1); }
+
     .footer {
       margin-top: 16px;
       color: var(--soft);
@@ -257,6 +350,11 @@
         <label class="muted">自动刷新 <input id="autorefresh" type="checkbox" checked></label>
         <button id="refresh">刷新</button>
       </div>
+    </div>
+
+    <!-- 进度 popover 浮层 -->
+    <div class="overlay" id="progressOverlay">
+      <div class="popover" id="progressPopover"></div>
     </div>
 
     <div class="grid">
@@ -397,6 +495,7 @@
       release_submit: "发布提交",
       release_poll: "发布轮询",
       release_complete: "发布完成",
+      production_promote: "生产推进",
       terminal: "终态"
     };
 
@@ -489,7 +588,7 @@
         return;
       }
       el("releases").innerHTML = releases.map((release) => `
-        <div class="item">
+        <div class="item" data-release-id="${release.release_id}">
           <div class="item-top">
             <strong>${fmt(release.release_id)}</strong>
             <div>
@@ -503,6 +602,7 @@
             <span class="muted">Agent C ${zh(release.agent_c_status)} | 尝试 ${fmt(release.job?.attempts)}/${fmt(release.job?.max_attempts)}</span>
             <div>
               <button data-open-release="${release.release_id}">详情</button>
+              <button data-progress-release="${release.release_id}">进度</button>
               <button data-approve-release="${release.release_id}" ${release.approval_decision === "approved" ? "disabled" : ""}>批准</button>
               <button data-reject-release="${release.release_id}" ${release.status === "rejected" ? "disabled" : ""}>拒绝</button>
               <button data-submit-release="${release.release_id}" ${release.policy_passed === false ? "disabled" : ""}>提交</button>
@@ -565,17 +665,73 @@
       const approval = data.approval || {};
       const job = data.job || {};
       const detail = release.details || {};
+      const agentC = detail.agent_c || {};
       const issues = policy.issues || [];
       const audit = data.audit || [];
+      const agentCStatus = agentC.agent_c_status || "";
+
+      // Play Console 链接
+      let playLink = "";
+      const pkg = agentC?.upload?.store_response?.package_name;
+      if (pkg && (agentCStatus === "submitted" || agentCStatus === "published" || agentCStatus === "dry_run_complete")) {
+        playLink = `
+          <div class="event">
+            <div>Play Console</div>
+            <div class="meta">
+              <a class="play-link" href="https://play.google.com/console/developers/${fmt(pkg)}" target="_blank" rel="noopener">在 Play Console 中查看</a>
+            </div>
+          </div>`;
+      }
+
+      // Production 推进状态
+      let productionLine = "";
+      const prod = agentC?.production || {};
+      if (prod && prod.promoted_to_production !== undefined) {
+        const prodIcon = prod.promoted_to_production ? "\u2713" : "\u2717";
+        const prodColor = prod.promoted_to_production ? "#66bb6a" : "#e57373";
+        productionLine = `
+          <div class="event">
+            <div>Production :: <span style="color:${prodColor}">${prodIcon} ${prod.promoted_to_production ? "已提交审核" : "推进失败"}</span></div>
+            <div class="meta">${fmt(prod.message)}</div>
+          </div>`;
+      }
+
+      // 错误详情
+      let errorPanel = "";
+      const reasons = agentC?.reasons || [];
+      const buildLog = agentC?.build_log || "";
+      const errorMsg = release.message || job.last_error || "";
+      if (agentCStatus === "failed" || release.status === "failed" || reasons.length > 0 || buildLog || errorMsg) {
+        const errBody = [
+          reasons.length ? `原因: ${reasons.join(" | ")}` : "",
+          buildLog ? `构建日志:\n${buildLog}` : "",
+          errorMsg && !reasons.includes(errorMsg) ? `错误: ${errorMsg}` : "",
+        ].filter(Boolean).join("\n\n");
+        errorPanel = `
+          <div class="event">
+            <div>
+              <button data-toggle-error="${selectedReleaseId}" style="font-size:11px;padding:4px 8px;">
+                错误详情 ${badge("展开")}
+              </button>
+            </div>
+            <div class="expandable" id="errPanel-${selectedReleaseId.replace(/[^a-zA-Z0-9-]/g, "")}">
+              <pre>${fmt(errBody) || "无详细信息"}</pre>
+            </div>
+          </div>`;
+      }
+
       const rows = [
         `<div class="event"><div>状态 :: ${zh(release.status)}</div><div class="meta">更新时间 ${fmt(release.updated_at)}</div></div>`,
         `<div class="event"><div>策略检查 :: 通过=${zh(policy.passed, BOOL_LABELS)}</div><div class="meta">${issues.length ? issues.join(" | ") : "没有策略问题"}</div></div>`,
         `<div class="event"><div>审批 :: ${zh(approval.decision)}</div><div class="meta">${fmt(approval.approved_by)} ${approval.approved_at ? `于 ${fmt(approval.approved_at)}` : ""}</div></div>`,
         `<div class="event"><div>队列 :: ${zh(job.status)}</div><div class="meta">尝试 ${fmt(job.attempts)}/${fmt(job.max_attempts)} ${job.last_error ? `| ${fmt(job.last_error)}` : ""}</div></div>`,
         `<div class="event"><div>平台 :: ${detail.platform_target === "android" ? "安卓" : detail.platform_target === "ios" ? "iOS" : fmt(detail.platform_target)}</div><div class="meta">${fmt(detail.message)}</div></div>`,
-        `<div class="event"><div>审计事件数 :: ${fmt(audit.length)}</div><div class="meta">Agent C ${zh(detail.agent_c?.agent_c_status)}</div></div>`
+        `<div class="event"><div>Agent C :: ${zh(agentCStatus)}</div><div class="meta">审计事件数 ${fmt(audit.length)}</div></div>`,
+        productionLine,
+        playLink,
+        errorPanel,
       ];
-      el("releaseDetail").innerHTML = rows.join("");
+      el("releaseDetail").innerHTML = rows.filter(Boolean).join("");
     }
 
     async function request(path, options = {}) {
@@ -660,6 +816,97 @@
       await loadDashboard();
     }
 
+    // ---- 进度 popover ----
+    async function showProgress(releaseId) {
+      const detail = await request(`/dashboard/api/releases/${encodeURIComponent(releaseId)}`);
+      const agentC = detail?.release?.details?.agent_c || {};
+      const phases = agentC.phases || [];
+      const agentCStatus = agentC.agent_c_status || "";
+
+      // 如果 phases 为空，从 release 状态推断
+      const isRunning = ["prepared", "submitting"].includes(detail?.release?.status || "");
+      const isDone = ["published", "dry_run_complete", "failed"].includes(detail?.release?.status || "");
+
+      let steps = [];
+      if (phases.length > 0) {
+        // 使用真实 phases
+        const phaseNames = phases.map(p => p.phase || "");
+        const allPhases = ["validate", "sign", "build", "upload", "complete", "failed"];
+        const seen = new Set(phaseNames);
+        for (const pn of allPhases) {
+          const detailObj = phases.find(p => p.phase === pn);
+          steps.push({
+            phase: pn,
+            detail: detailObj?.detail || "",
+            status: seen.has(pn) ? (pn === "failed" ? "failed" : "done") : (agentCStatus === "failed" && !seen.has(pn) ? "cancelled" : "pending"),
+          });
+        }
+      } else {
+        // 从状态推断
+        steps = [
+          { phase: "validate", detail: "验证 release_handoff", status: isDone || isRunning ? "done" : "pending" },
+          { phase: "sign", detail: "配置签名", status: isDone || isRunning ? "done" : "pending" },
+          { phase: "build", detail: "Gradle 构建 AAB", status: isDone || isRunning ? "done" : "pending" },
+          { phase: "upload", detail: "上传到 Google Play", status: isDone ? "done" : isRunning ? "current" : "pending" },
+          { phase: "complete", detail: agentCStatus === "failed" ? "发布失败" : agentCStatus === "dry_run_complete" ? "演练完成" : "发布完成", status: isDone ? (agentCStatus === "failed" ? "failed" : "done") : "pending" },
+        ];
+      }
+
+      // 如果没有 current 且有 running，最后一个 pending 视为 current
+      if (!steps.some(s => s.status === "current") && (isRunning)) {
+        for (let i = steps.length - 1; i >= 0; i--) {
+          if (steps[i].status === "pending") { steps[i].status = "current"; break; }
+        }
+      }
+
+      const icons = { done: "\u2713", current: "\u23f3", pending: "\u25cb", failed: "\u2717", cancelled: "\u2014" };
+      const iconClass = { done: "done", current: "current", pending: "pending", failed: "done", cancelled: "pending" };
+      const phaseLabels = {
+        validate: "验证", sign: "签名", build: "构建", upload: "上传",
+        complete: "完成", failed: "失败", production: "生产"
+      };
+
+      el("progressPopover").innerHTML = `
+        <div class="popover-head">
+          <div class="panel-title">发布进度</div>
+          <button id="closeProgress">关闭</button>
+        </div>
+        <div class="muted" style="margin-bottom:10px;">release_id: ${fmt(releaseId)}</div>
+        <div class="progress-line">
+          ${steps.map(s => `
+            <div class="progress-step">
+              <div class="progress-icon ${iconClass[s.status]}">${icons[s.status]}</div>
+              <div class="progress-body">
+                <div class="progress-phase">${phaseLabels[s.phase] || s.phase}</div>
+                <div class="progress-detail">${fmt(s.detail) || ""}</div>
+              </div>
+            </div>
+          `).join("")}
+        </div>
+      `;
+      el("progressOverlay").classList.add("open");
+    }
+
+    el("progressOverlay").addEventListener("click", (e) => {
+      if (e.target === el("progressOverlay") || e.target.id === "closeProgress") {
+        el("progressOverlay").classList.remove("open");
+      }
+    });
+
+    // ---- 错误面板切换 ----
+    function toggleError(releaseId) {
+      const safeId = releaseId.replace(/[^a-zA-Z0-9-]/g, "");
+      const panel = document.getElementById("errPanel-" + safeId);
+      if (panel) {
+        panel.classList.toggle("open");
+        const btn = document.querySelector(`[data-toggle-error="${releaseId}"]`);
+        if (btn) {
+          const badgeEl = btn.querySelector(".badge");
+          if (badgeEl) badgeEl.textContent = panel.classList.contains("open") ? "收起" : "展开";
+        }
+      }
+    }
+
     document.addEventListener("click", async (event) => {
       const target = event.target;
       if (!(target instanceof HTMLElement)) return;
@@ -700,6 +947,14 @@
       if (rqRelease) {
         target.setAttribute("disabled", "disabled");
         try { await requeueRelease(rqRelease); } finally { target.removeAttribute("disabled"); }
+      }
+      const progressRelease = target.getAttribute("data-progress-release");
+      if (progressRelease) {
+        await showProgress(progressRelease);
+      }
+      const toggleErr = target.getAttribute("data-toggle-error");
+      if (toggleErr) {
+        toggleError(toggleErr);
       }
     });
 
