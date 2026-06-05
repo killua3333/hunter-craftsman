@@ -65,6 +65,8 @@ python autopilot_loop.py --interval 30
 | **甲方 / 业务** | [甲方项目说明（非技术版）](docs/client-overview.md) |
 | **技术审查** | [项目总结](docs/project-summary.md) |
 | **运维实施** | [操作指南](docs/operator-step-by-step-guide.md) · [Play 上架清单](docs/play-console-setup-checklist.md) · [Agent C 架构](docs/agent-c-architecture.md) · [Windows 调度器](docs/windows-scheduler-guide.md) |
+| **前端控制台** | [前端傻瓜操作说明](docs/frontend-foolproof-guide.md) |
+| **商业模式** | [AI 赚钱赎身 可行性分析](docs/business-model-ai-remission-analysis.md) |
 
 完整索引见 [docs/README.md](docs/README.md)。
 

@@ -13,6 +13,14 @@
 - [docker-android-ci.md](docker-android-ci.md) — Docker builder 真编译与冒烟测试
 - [windows-scheduler-guide.md](windows-scheduler-guide.md) — Windows 自动调度：循环触发 autopilot 发现→实现→上架
 
+## 前端控制台
+
+- [frontend-foolproof-guide.md](frontend-foolproof-guide.md) — Dashboard 傻瓜操作说明
+
+## 商业模式
+
+- [business-model-ai-remission-analysis.md](business-model-ai-remission-analysis.md) — 「AI 赚钱赎身」模式可行性分析
+
 ## 架构与运维
 
 - [agent-c-architecture.md](agent-c-architecture.md) — Agent C 模块与 A→B→C 数据流

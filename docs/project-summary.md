@@ -267,6 +267,8 @@ start http://127.0.0.1:8791
 | [agent-c-architecture.md](agent-c-architecture.md) | Agent C 模块与 A→B→C 数据流 |
 | [docker-android-ci.md](docker-android-ci.md) | Docker builder 真编译 + smoke |
 | [windows-scheduler-guide.md](windows-scheduler-guide.md) | Windows 自动调度指南 |
+| [frontend-foolproof-guide.md](frontend-foolproof-guide.md) | Dashboard 傻瓜操作说明 |
+| [business-model-ai-remission-analysis.md](business-model-ai-remission-analysis.md) | AI 赚钱赎身 模式可行性分析 |
 | [execution-runtime-ops.md](execution-runtime-ops.md) | 运行时 / backend pool |
 | [secret-management-plan.md](secret-management-plan.md) | 密钥 provider 策略 |
 | [archive/legacy-plans/](archive/legacy-plans/) | 历史架构计划（只读归档） |
