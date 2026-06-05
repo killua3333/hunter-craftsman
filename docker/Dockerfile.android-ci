@@ -19,6 +19,14 @@ RUN mkdir -p "${ANDROID_HOME}/cmdline-tools" \
     && mv "${ANDROID_HOME}/cmdline-tools/cmdline-tools" "${ANDROID_HOME}/cmdline-tools/latest" \
     && rm /tmp/cmdline-tools.zip
 
+# Pre-install Gradle 8.7 so container runtime does not need external network
+ENV GRADLE_VERSION=8.7 \
+    GRADLE_HOME=/opt/gradle-8.7
+RUN curl -fsSL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" -o /tmp/gradle.zip \
+    && unzip -q /tmp/gradle.zip -d /opt \
+    && rm /tmp/gradle.zip
+ENV PATH="${PATH}:${GRADLE_HOME}/bin"
+
 RUN yes | sdkmanager --licenses >/dev/null \
     && sdkmanager \
         "platform-tools" \

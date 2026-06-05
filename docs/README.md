@@ -11,6 +11,7 @@
 - [play-console-setup-checklist.md](play-console-setup-checklist.md) — Google Play 密钥与 Console 一次性配置
 - [cloudflare-privacy-setup.md](cloudflare-privacy-setup.md) — 隐私政策 Cloudflare Pages 部署
 - [docker-android-ci.md](docker-android-ci.md) — Docker builder 真编译与冒烟测试
+- [windows-scheduler-guide.md](windows-scheduler-guide.md) — Windows 自动调度：循环触发 autopilot 发现→实现→上架
 
 ## 架构与运维
 

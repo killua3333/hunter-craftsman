@@ -49,19 +49,21 @@ class BackgroundWorker:
 
     def _loop(self) -> None:
         while not self._stop.is_set():
-            claim = self.store.claim_next_job(
-                lease_seconds=settings.job_lease_seconds,
-                worker_id=self.worker_id,
-            )
-            if claim:
-                self._process_implementation(claim["run_id"], claim["lease_token"])
-                continue
+            # Check release jobs first — they are typically fast and
+            # should not be starved by long-running implementation jobs.
             release_claim = self.store.claim_next_release_job(
                 lease_seconds=settings.job_lease_seconds,
                 worker_id=self.worker_id,
             )
             if release_claim:
                 self._process_release(release_claim["release_id"], release_claim["lease_token"])
+                continue
+            claim = self.store.claim_next_job(
+                lease_seconds=settings.job_lease_seconds,
+                worker_id=self.worker_id,
+            )
+            if claim:
+                self._process_implementation(claim["run_id"], claim["lease_token"])
                 continue
             time.sleep(settings.poll_interval_seconds)
 
@@ -82,10 +84,10 @@ class BackgroundWorker:
             )
             if action != "done":
                 logger.warning(
-                    "complete skipped due to stale ownership: run_id=%s worker_id=%s",
+                    "complete: ownership stale for run_id=%s, force-completing",
                     run_id,
-                    self.worker_id,
                 )
+                self.store.complete_job(run_id)  # force-complete without ownership check
         except WorkerStopRequested:
             action = self.store.fail_job(
                 run_id,
@@ -147,17 +149,24 @@ class BackgroundWorker:
                 },
                 updated_by="agent_c",
             )
-            self.store.complete_release_job(
+            action = self.store.complete_release_job(
                 release_id,
                 worker_id=self.worker_id,
                 lease_token=lease_token,
             )
+            if action != "done":
+                logger.warning(
+                    "complete_release: ownership stale for release_id=%s, force-completing",
+                    release_id,
+                )
+                self.store.complete_release_job(release_id)  # force-complete without ownership check
             self.store.append_audit_log(
                 event_type="release_submit_completed",
                 release_id=release_id,
                 actor="agent_c",
                 payload={"agent_c_status": agent_status, "platform_target": details.get("platform_target")},
             )
+            self._fire_webhook(release_id, final_status, agent_result)
         except Exception as exc:
             taxonomy = classify_runtime_exception(exc)
             self.store.fail_release_job(
@@ -180,9 +189,36 @@ class BackgroundWorker:
                 updated_by="agent_c",
             )
             logger.exception("release job failed: release_id=%s", release_id)
+            self._fire_webhook(release_id, "failed", {"reasons": [f"{taxonomy['category']}: {exc}"]})
         finally:
             heartbeat_stop.set()
             heartbeat.join(timeout=1.0)
+
+    def _fire_webhook(
+        self,
+        release_id: str,
+        status: str,
+        payload: dict[str, Any],
+    ) -> None:
+        """Fire webhook callback on release completion (fire-and-forget)."""
+        url = settings.webhook_url
+        if not url:
+            return
+        try:
+            import httpx
+            r = httpx.post(
+                url,
+                json={
+                    "event": "publisher.release_completed",
+                    "release_id": release_id,
+                    "status": status,
+                    **payload,
+                },
+                timeout=10,
+            )
+            logger.info("webhook fired: url=%s status=%s resp=%d", url, status, r.status_code)
+        except Exception:
+            logger.warning("webhook failed: url=%s status=%s", url, status, exc_info=True)
 
     def _lease_heartbeat(
         self,

@@ -1,6 +1,6 @@
 # Hunter–Craftsman 项目总结（审查用）
 
-> 最后更新：2026-05-24  
+> 最后更新：2026-06-05  
 > 执行依据：Master Roadmap（`hunter_craftsman_master_9a313be6.plan.md`，Cursor Plans 目录）
 
 ---
@@ -25,6 +25,7 @@ hunter-craftsman/
 ├── hunter/          Agent A — 机会发现、编排、CLI
 ├── craftsman/       Agent B（实现）+ Agent C（发布）— 同一 FastAPI 服务
 │   └── craftsman/publisher/   Agent C 代码
+├── scheduler/       Windows 自动调度（循环 → health check → autopilot → 休眠）
 ├── docs/            操作与架构文档（本文件为入口）
 ├── docker/          Android CI 构建镜像（Gradle verified）
 ├── pytest.ini       根目录全量测试配置
@@ -75,6 +76,12 @@ hunter/
 ├── src/hunter/
 │   ├── agents/specialist.py      SpecialistSession + DiscoverySession
 │   ├── tools/
+│   │   ├── play_scraper.py       Play 真实数据工具集（核心，const）
+│   │   │   ├── play_search_apps        搜索 app 列表
+│   │   │   ├── play_get_reviews        读取真实评论
+│   │   │   ├── play_get_app_detail     完整元数据
+│   │   │   ├── play_analyze_reviews    批量差评聚类分析（痛点频率+典型原文+功能期望）
+│   │   │   └── play_competitive_analysis 竞品横向对比（stal/ripe 标记）
 │   │   ├── play_search.py        Tavily + site:play.google.com
 │   │   ├── play_category_scan.py 工具/效率/健康类目轮询
 │   │   └── tavily_search.py      通用 web_search
@@ -87,9 +94,11 @@ hunter/
 └── .env.example                  DEEPSEEK + TAVILY 必填（autopilot）
 ```
 
-**Autopilot 行为摘要：**
+**Autopilot 行为摘要（v2 — 2026-06）：**
 
-- 无人类需求 → `DiscoverySession` + `play_search` / `play_category_scan`
+- 无人类需求 → `DiscoverySession` + `play_competitive_analysis`（竞品矩阵） + `play_analyze_reviews`（差评聚类）
+- 自动生成 `product_brief`（target_users / pain_points / differentiation / feature_priority）
+- 基于差评痛点生成差异化 Store 描述文案
 - 解析后强制 `accepted=true`
 - 实现失败最多 **pick 3 个机会**；失败写入 `inline_learnings.md`
 - 编排 outcome 带 `correlation_id`（= run_id）
@@ -110,6 +119,7 @@ craftsman/
 │   ├── runtime/backends.py       demo / macos_xcode / android_gradle / android_gradle_docker
 │   ├── publisher/                Agent C：play_store、play_listing、android_build、privacy_policy…
 │   └── tools/
+│       ├── assets.py             图标生成（LLM SVG / 传统 fallback）、色板、截图（含 benefit 文案）
 │       ├── gradle_errors.py      Gradle build.log 解析
 │       └── android_smoke.py      Docker 内 monkey 冒烟
 ├── templates/
@@ -159,6 +169,9 @@ craftsman/
 | Phase 3 规模化（基础） | ✅ | correlation_id、/health 扩展、Docker builder + smoke |
 | **Real Release Path** | ✅ | Docker Gradle、CF 隐私、Console 清单、冒烟 + reflexion |
 | **Automation Hardening** | ✅ | 超时预算、隐私 URL 全覆盖、policy 占位符拦截、异步 submit、WAL、多 worker |
+| **Agent A 需求升级（v2）** | ✅ | Play scraper 工具集（竞品矩阵+差评聚类）、差评驱动描述、product_brief |
+| **App 质量升级（Part B）** | ✅ | LLM 生成 SVG 图标、品类色板、截图增强（benefit 文案+深色背景） |
+| **Windows 自动调度** | ✅ | autopilot_loop 循环脚本 + bat 一键启动 + Task Scheduler 注册 |
 | **用户 live 验收** | ⏳ | Docker + CF token + Play 密钥 → `hunter autopilot --publish` |
 
 Phase 3 中 **多机会并行队列**、**批量 autopilot** 尚未做（按需后续）。
@@ -224,11 +237,18 @@ python -m craftsman.cli serve
 cd d:\A\hunter-craftsman\hunter
 hunter autopilot --publish
 
+# 或者 Windows 自动调度（无需手动触发）
+cd d:\A\hunter-craftsman\scheduler
+python autopilot_loop.py --interval 30
+
 # 手动描述需求（仍支持）
 hunter run "做一个离线番茄钟" --publish
 
 # 多轮对话 + /make
 hunter chat
+
+# 控制台 Dashboard（浏览器打开）
+start http://127.0.0.1:8791
 ```
 
 健康检查：`GET http://127.0.0.1:8791/health`（含 gate_mode、runs_total）
@@ -246,6 +266,7 @@ hunter chat
 | [cloudflare-privacy-setup.md](cloudflare-privacy-setup.md) | Cloudflare 隐私政策部署 |
 | [agent-c-architecture.md](agent-c-architecture.md) | Agent C 模块与 A→B→C 数据流 |
 | [docker-android-ci.md](docker-android-ci.md) | Docker builder 真编译 + smoke |
+| [windows-scheduler-guide.md](windows-scheduler-guide.md) | Windows 自动调度指南 |
 | [execution-runtime-ops.md](execution-runtime-ops.md) | 运行时 / backend pool |
 | [secret-management-plan.md](secret-management-plan.md) | 密钥 provider 策略 |
 | [archive/legacy-plans/](archive/legacy-plans/) | 历史架构计划（只读归档） |

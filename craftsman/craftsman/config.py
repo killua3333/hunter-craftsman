@@ -85,8 +85,15 @@ class Settings(BaseSettings):
     publisher_dry_run: bool = True
     android_release_track: str = "internal"
     google_play_package_name: str | None = None
+    google_play_service_account_file: str | None = None
+    android_keystore_path: str | None = None
+    android_keystore_password: str | None = None
+    android_key_alias: str | None = None
+    android_key_password: str | None = None
     publisher_require_signing: bool = False
     publisher_submit_timeout_seconds: float = 1800.0
+    webhook_url: str | None = None  # POSTed on publish completion
+    auto_promote_to_production: bool = False  # 发布 internal 成功后自动推到 production（触发 Google 审核）
 
     job_worker_count: int = 1
     llm_request_timeout_seconds: float = 120.0

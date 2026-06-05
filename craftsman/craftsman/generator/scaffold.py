@@ -203,6 +203,7 @@ def _render_android_templates(
     template_files = (
         "build.gradle.kts.j2",
         "settings.gradle.kts.j2",
+        "gradle.properties.j2",
         "app/build.gradle.kts.j2",
         "app/src/main/AndroidManifest.xml.j2",
     )

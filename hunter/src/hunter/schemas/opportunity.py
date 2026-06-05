@@ -133,6 +133,10 @@ class AppOpportunityBlueprint(BaseModel):
         default=None,
         description="完整 requirement.v1 结构，供 Agent B 直接实现",
     )
+    product_brief: str | None = Field(
+        default=None,
+        description="产品简介（可用 Markdown）：含 product_brief.target_users, pain_points, differentiation, feature_priority",
+    )
 
     @field_validator("keywords")
     @classmethod

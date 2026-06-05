@@ -48,24 +48,22 @@ def _max_version_from_track(track_payload: dict[str, Any]) -> int:
 
 def fetch_max_version_code_from_play(service, package_name: str, track: str) -> int | None:
     """Query Play for the highest versionCode on a track (uses a transient edit)."""
-    edit = service.edits().insert(packageName=package_name, body={}).execute()
-    edit_id = str(edit["id"])
     try:
-        track_payload = (
-            service.edits()
-            .tracks()
-            .get(packageName=package_name, editId=edit_id, track=track)
-            .execute()
-        )
-        max_code = _max_version_from_track(track_payload)
-        return max_code if max_code > 0 else None
+        edit = service.edits().insert(packageName=package_name, body={}).execute()
+        edit_id = str(edit["id"])
+        try:
+            track_payload = (
+                service.edits()
+                .tracks()
+                .get(packageName=package_name, editId=edit_id, track=track)
+                .execute()
+            )
+            max_code = _max_version_from_track(track_payload)
+            return max_code if max_code > 0 else None
+        finally:
+            service.edits().delete(packageName=package_name, editId=edit_id).execute()
     except Exception:
         return None
-    finally:
-        try:
-            service.edits().delete(packageName=package_name, editId=edit_id).execute()
-        except Exception:
-            pass
 
 
 def bump_version_for_release(
