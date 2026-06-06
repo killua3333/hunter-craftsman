@@ -245,7 +245,10 @@ def load_blueprint_dict_from_text(text: str) -> dict[str, Any]:
                     return payload
                 raise ValueError("JSON 根节点必须是对象")
 
-    raise ValueError("回复中未找到完整的 JSON 对象")
+    raise ValueError(
+        "回复中未找到完整的 JSON 对象（常见原因：输出过长被截断；"
+        "请让 features≤3 项、每项 items≤3 条后重试）"
+    )
 
 
 def blueprint_for_agent_b(blueprint: AppOpportunityBlueprint) -> dict[str, Any]:
@@ -278,6 +281,19 @@ def extract_blueprint_from_messages(
     """
     from langchain_core.messages import AIMessage
 
+    def _error_rank(err: str | None) -> int:
+        if not err:
+            return 0
+        if err.startswith("JSON 校验失败"):
+            return 4
+        if "步数用尽" in err or "need more steps" in err.lower():
+            return 3
+        if "未找到完整的 JSON" in err:
+            return 2
+        if "未找到有效" in err or "回复为空" in err:
+            return 1
+        return 2
+
     last_error: str | None = None
     for msg in reversed(messages):
         if not isinstance(msg, AIMessage):
@@ -288,10 +304,20 @@ def extract_blueprint_from_messages(
         if msg.tool_calls and not str(content).strip():
             continue
         text = content if isinstance(content, str) else str(content)
+        if "need more steps" in text.lower():
+            candidate = (
+                "LangGraph 步数用尽（助手未输出 JSON，仅返回 need more steps）；"
+                "Autopilot 应只调 1 次 play_search 后立即出 JSON"
+            )
+            if _error_rank(candidate) >= _error_rank(last_error):
+                last_error = candidate
+            continue
         try:
             return extract_blueprint_from_text(text), None
         except (ValueError, ValidationError, json.JSONDecodeError) as exc:
-            last_error = format_parse_error(exc)
+            candidate = format_parse_error(exc)
+            if _error_rank(candidate) >= _error_rank(last_error):
+                last_error = candidate
             continue
     return None, last_error
 

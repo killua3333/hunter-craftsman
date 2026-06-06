@@ -9,7 +9,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
     WORKDIR=/workspace/project \
     PATH="${PATH}:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/opt/android-sdk/emulator"
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# 使用清华镜像加速 apt
+RUN sed -i 's|http://archive.ubuntu.com|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list \
+    && sed -i 's|http://security.ubuntu.com|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list \
+    && apt-get update && apt-get install -y --no-install-recommends \
     curl unzip git libpulse0 \
     && rm -rf /var/lib/apt/lists/*
 

@@ -70,6 +70,35 @@ hunter autopilot --publish
 - Windows 默认 `SKIP_GRADLE_BUILD=true`（demo 模式）；有 Android SDK 时可设 `false` 启用 verified 编译
 - 真 live 上架见 [play-console-setup-checklist.md](play-console-setup-checklist.md)
 
+### 2.1) 带 Dashboard 观察（推荐验收时开启）
+
+```powershell
+# 终端 1 — Craftsman（同上）
+cd craftsman
+python -m craftsman.cli serve
+
+# 终端 2 — Dashboard Gateway
+cd dashboard\gateway
+pip install -r requirements.txt
+python main.py
+
+# 终端 3 — 前端
+cd dashboard\ui
+npm install
+npm run dev
+
+# 终端 4 — Hunter（另开）
+cd hunter
+hunter run "做一个离线番茄钟" --publish --timeout 1800
+# 或 hunter autopilot --publish --timeout 1800
+```
+
+跑完后终端会打印 `Dashboard: http://127.0.0.1:8800/pipeline/pl-...`，浏览器打开该链接（或开发 UI http://127.0.0.1:5173 首页「最近流水线」）。
+
+关闭 Hunter 写入 `pipeline_runs/`：`$env:HUNTER_PIPELINE_TRACK = "0"`。
+
+完整说明与验收标准见 [project-summary.md §9–§10](project-summary.md)。
+
 **超时预算（秒）**：
 
 | 命令 / 阶段 | 默认 | 说明 |
@@ -185,7 +214,40 @@ cd hunter
 
 ---
 
-## 6) 产物与观测
+## 6) Pipeline Dashboard（前端运维）
+
+| 项 | 说明 |
+|----|------|
+| Gateway | `dashboard/gateway`，默认 http://127.0.0.1:8800 |
+| 开发 UI | `dashboard/ui`，`npm run dev` → http://127.0.0.1:5173 |
+| 数据目录 | 仓库根 `pipeline_runs/{pipeline_id}/`（`meta.json` + `hunter.jsonl`） |
+| UI 五步 | Discover → Gate → Build → Verify → Publish |
+| 产物预览 | Gateway `/api/artifacts/runs/{run_id}/preview.html` |
+
+生产单端口：`cd dashboard/ui && npm run build`，仅跑 Gateway，访问 :8800。
+
+---
+
+## 7) Agent 闭环验收（快速清单）
+
+**目标：** 确认 A（Hunter）→ B（Craftsman）→ C（Publisher）在同机可编排完成，且 Dashboard 能反映全过程。
+
+| # | 检查项 | 通过标准 |
+|---|--------|----------|
+| 1 | `GET :8791/health` | 200 |
+| 2 | Dashboard 三端已起（§2.1） | 首页可访问 |
+| 3 | `hunter run "…" --publish --timeout 1800` | 退出码 0；`implementation_complete` |
+| 4 | Publisher 终态 | **`dry_run_complete`**（默认 dry-run） |
+| 5 | 终端 Dashboard 链接 | 五步条 Publish 完成 |
+| 6 | `craftsman/workspace/{run_id}/` | 有工程与 artifacts |
+
+可选真上架：配置 Play 密钥后 `PUBLISHER_DRY_RUN=false`，终态改为 `published` / Console 见 versionCode。详见 [project-summary.md §10.3](project-summary.md)。
+
+自动化回归：`python -m pytest -q`（仓库根，期望 147 passed）。
+
+---
+
+## 8) 产物与观测
 
 终态反馈中重点看：
 
@@ -198,7 +260,7 @@ cd hunter
 
 ---
 
-## 7) 真上架（internal track）
+## 9) 真上架（internal track）
 
 完整配置清单见 [`play-console-setup-checklist.md`](play-console-setup-checklist.md)。
 

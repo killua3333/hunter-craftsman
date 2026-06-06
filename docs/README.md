@@ -14,6 +14,8 @@
 
 ## 架构与运维
 
+- [project-summary.md §9–§10](project-summary.md) — **Pipeline Dashboard 运维** + **Agent 闭环验收清单**
+- [../dashboard/README.md](../dashboard/README.md) — Gateway / UI 启动与 API
 - [agent-c-architecture.md](agent-c-architecture.md) — Agent C 模块与 A→B→C 数据流
 - [execution-runtime-ops.md](execution-runtime-ops.md) — 运行时、backend pool
 - [secret-management-plan.md](secret-management-plan.md) — 密钥 provider 策略

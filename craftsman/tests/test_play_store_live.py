@@ -82,6 +82,7 @@ def test_sync_listing_to_edit_calls_api():
 
 
 def test_upload_to_play_live_success(monkeypatch, tmp_path):
+    pytest.importorskip("googleapiclient")
     monkeypatch.setattr(settings, "publisher_dry_run", False)
     aab = tmp_path / "app-release.aab"
     aab.write_bytes(b"fake-aab")
@@ -113,6 +114,7 @@ def test_upload_to_play_live_success(monkeypatch, tmp_path):
 
 
 def test_upload_to_play_maps_api_error(monkeypatch, tmp_path):
+    pytest.importorskip("googleapiclient")
     monkeypatch.setattr(settings, "publisher_dry_run", False)
     aab = tmp_path / "app-release.aab"
     aab.write_bytes(b"fake-aab")

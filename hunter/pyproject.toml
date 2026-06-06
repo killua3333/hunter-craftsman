@@ -33,3 +33,4 @@ packages = ["src/hunter"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = ["-p", "no:flask"]

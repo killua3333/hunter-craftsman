@@ -10,11 +10,12 @@ from __future__ import annotations
 from typing import Any
 from uuid import uuid4
 
-from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.prebuilt import create_react_agent
 
 from hunter.config import get_agent_settings, get_chat_model
+from hunter.observability import get_active_pipeline
 from hunter.prompts import load_discovery_prompt, load_system_prompt
 from hunter.schemas import (
     AppOpportunityBlueprint,
@@ -27,8 +28,29 @@ from hunter.tools import get_default_tools, get_discovery_tools
 
 _DISCOVERY_JSON_RULE = """
 ## 最终输出（Autopilot 必遵）
-最后一条助手消息必须是**纯 JSON**。必须 `accepted: true` 并含完整 requirement。
-features 每项含 id、title、type、items（字符串数组）；platform.target 默认 android。
+最后一条助手消息必须是**仅一个 JSON 对象**的纯文本（禁止 Markdown、禁止 app_idea/opportunity 外层包裹）。
+
+必含顶层字段：accepted, app_name, core_logic, ui_layout, keywords, data_quality, evidence, requirement
+
+### 工具调用（极重要，防步数耗尽）
+- **最多调用 1 次** `play_search`，拿到结果后**立刻**输出 JSON，禁止再调工具
+- 禁止调用 web_search、play_category_scan（不存在于本模式）
+
+### 防截断（极重要）
+- requirement.features **最多 3 项**；每项 items **最多 3 条**短句
+- 禁止嵌套 app_idea、opportunity；证据写在顶层 evidence 数组
+- features.type 只能是 list|form|detail|tab_root（禁止 core/main）
+
+### requirement 形状
+- platform: {"target":"android"}
+- app: {"name","bundle_id":"com.hunter.xxx"}
+- core_logic: {"persistence":"SharedPreferences","description":"一句话"}
+- ui_layout: {"navigation":"single|tab|stack","screens":["主屏"]}（禁止 navigation=tab_root，多 Tab 用 tab）
+- branding: {"primary_color":"#4A90D9","icon_text":"倒"}
+- store: {"subtitle","description","keywords":["词1"],"privacy_url":"https://example.com/privacy"}
+
+### 最小示例（须同结构，内容可换）
+{"accepted":true,"app_name":"极简倒数日","core_logic":"本地倒计时列表","ui_layout":"单屏卡片列表","keywords":["倒数日","widget"],"data_quality":"mixed","evidence":[{"query":"Countdown Widget 广告","source":"assumption://play","snippet":"用户抱怨广告过多"}],"requirement":{"platform":{"target":"android"},"app":{"name":"极简倒数日","bundle_id":"com.hunter.countdown"},"features":[{"id":"list","type":"list","title":"事件列表","items":["卡片显示剩余天数","增删改事件"]},{"id":"widget","type":"detail","title":"桌面 Widget","items":["显示最近事件倒计时"]}],"core_logic":{"persistence":"SharedPreferences","description":"SharedPreferences 存事件列表"},"ui_layout":{"navigation":"single","screens":["事件列表"]},"branding":{"primary_color":"#4A90D9","icon_text":"倒"},"store":{"subtitle":"无广告倒数日","description":"极简倒计时","keywords":["倒数日","widget"],"privacy_url":"https://example.com/privacy"},"budget":{"max_features":8,"max_hours":2}}}
 """
 
 _JSON_OUTPUT_RULE = """
@@ -46,6 +68,9 @@ accepted=true 时必填：app_name, core_logic, ui_layout, keywords, data_qualit
 
 ### requirement.platform
 必须输出：{"target": "android"|"ios"}；用户未指定平台时默认 target="android"。
+
+### requirement.ui_layout.navigation
+只能是 stack | tab | single。多 Tab 底部导航用 tab；禁止 tab_root（tab_root 仅用于 features[].type）。
 
 ### 篇幅控制（防截断）
 - requirement.features 建议 2～4 项；每项 items 最多 5 条短句
@@ -93,6 +118,42 @@ def _last_ai_content(messages: list[BaseMessage]) -> str:
     return ""
 
 
+def _emit_tool_events(messages: list[BaseMessage], *, session: str) -> None:
+    """Extract tool_calls from new messages and emit observability events."""
+    ctx = get_active_pipeline()
+    if ctx is None:
+        return
+    for msg in messages:
+        if isinstance(msg, AIMessage) and msg.tool_calls:
+            for call in msg.tool_calls:
+                args = call.get("args") if isinstance(call, dict) else getattr(call, "args", {})
+                ctx.emit(
+                    "tool_start",
+                    session=session,
+                    tool=call.get("name") if isinstance(call, dict) else getattr(call, "name", ""),
+                    args=_safe_args(args),
+                    tool_call_id=(
+                        call.get("id") if isinstance(call, dict) else getattr(call, "id", None)
+                    ),
+                )
+        elif isinstance(msg, ToolMessage):
+            content = str(msg.content or "")
+            ctx.emit(
+                "tool_end",
+                session=session,
+                tool=msg.name,
+                tool_call_id=msg.tool_call_id,
+                summary=content[:280],
+                length=len(content),
+            )
+
+
+def _safe_args(args: Any) -> dict[str, Any] | str:
+    if isinstance(args, dict):
+        return {k: (v if isinstance(v, (str, int, float, bool, type(None))) else str(v)[:200]) for k, v in args.items()}
+    return str(args)[:200]
+
+
 class DiscoverySession:
     """Autopilot 发现会话：自动搜索 Play 机会并出单。"""
 
@@ -100,10 +161,13 @@ class DiscoverySession:
         self.agent = build_discovery_agent()
         self.thread_id = thread_id or f"autopilot-{uuid4().hex[:8]}"
         agent_cfg = get_agent_settings()
-        max_iterations = int(agent_cfg.get("max_iterations", 12))
+        default_discovery = int(agent_cfg.get("max_iterations", 20)) * 2
+        max_iterations = int(
+            agent_cfg.get("discovery_max_iterations", default_discovery)
+        )
         self._config = {
             "configurable": {"thread_id": self.thread_id},
-            "recursion_limit": max_iterations,
+            "recursion_limit": max(24, max_iterations),
         }
 
     def send(self, user_input: str) -> dict[str, Any]:
@@ -112,6 +176,7 @@ class DiscoverySession:
             config=self._config,
         )
         messages = result.get("messages", [])
+        _emit_tool_events(messages, session="discovery")
         blueprint, parse_error = extract_blueprint_from_messages(messages)
         if blueprint is not None and not blueprint.accepted:
             blueprint = blueprint.model_copy(update={"accepted": True})
@@ -148,6 +213,7 @@ class SpecialistSession:
             config=self._config,
         )
         messages = result.get("messages", [])
+        _emit_tool_events(messages, session="specialist")
         blueprint, parse_error = extract_blueprint_from_messages(messages)
         if blueprint is None and result.get("structured_response") is not None:
             try:

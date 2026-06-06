@@ -61,9 +61,16 @@ def get_chat_model() -> BaseChatModel:
     else:
         raise ValueError(f"暂不支持的 model.provider: {provider}（可选: openai, deepseek）")
 
+    # max_tokens：从环境变量或配置读取，默认 8192 防止 JSON 回复截断
+    max_tokens = int(
+        os.getenv("HUNTER_MAX_TOKENS")
+        or model_cfg.get("max_tokens", 8192)
+    )
+
     kwargs: dict[str, Any] = {
         "model": model_name,
         "temperature": temperature,
+        "max_tokens": max_tokens,
     }
     if api_key:
         kwargs["api_key"] = api_key

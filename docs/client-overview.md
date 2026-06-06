@@ -139,10 +139,13 @@ flowchart LR
 
 甲方验收时可按以下顺序检查（无需懂代码）：
 
-1. **演示全自动：** 执行 `hunter autopilot`，观察是否产出应用名称、截图、演示页。
-2. **检查交付文件夹：** `craftsman/workspace/` 下应有完整工程与 `artifacts/` 素材。
-3. **演练上架：** 执行 `hunter autopilot --publish`，确认返回「dry-run 完成」及 Play 操作清单。
-4. **（可选）真上架：** 按 [Play 清单](play-console-setup-checklist.md) 配置密钥后，在 internal 轨道看到新版本。
+1. **打开运维界面：** 按 [操作指南](operator-step-by-step-guide.md) 启动 Craftsman + Dashboard；浏览器可看到流水线五步进度（发现 → 上架）。
+2. **演示全自动：** 执行 `hunter autopilot --publish --timeout 1800`，终端会打印 **Dashboard 链接**；界面五步均完成，发布步显示 **dry-run 完成**。
+3. **检查交付文件夹：** `craftsman/workspace/` 下应有完整工程与 `artifacts/` 素材、演示页或截图。
+4. **演练上架：** 确认 CLI/界面终态为 **dry_run_complete**，且生成 **Play 操作清单**（`play_console_setup.txt`）。
+5. **（可选）真上架：** 按 [Play 清单](play-console-setup-checklist.md) 配置密钥后，在 internal 轨道看到新版本。
+
+技术同事可用 [project-summary.md §10](project-summary.md) 做分层验收（pytest → dry-run 闭环 → 可选 live）。
 
 ---
 
@@ -158,4 +161,4 @@ flowchart LR
 
 ---
 
-*文档版本：2026-05-24 · 与 Master Roadmap + Automation Hardening 实现对齐*
+*文档版本：2026-06-01 · 含 Pipeline Dashboard 运维与闭环验收*

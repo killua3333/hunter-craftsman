@@ -10,8 +10,8 @@ def get_research_tools():
 
 
 def get_discovery_tools():
-    """Autopilot 发现模式：Play 优先 + 类目扫描 + 通用搜索。"""
-    return [play_search, play_category_scan, web_search]
+    """Autopilot 发现模式：仅 play_search，避免多工具 + 类目扫描耗尽 LangGraph 步数。"""
+    return [play_search]
 
 
 def get_default_tools():

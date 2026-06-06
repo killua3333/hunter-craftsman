@@ -89,6 +89,9 @@ def _print_pipeline_outcome(outcome: dict) -> int:
     if outcome.get("correlation_id"):
         print(f"\nCorrelation ID: {outcome['correlation_id']}", flush=True)
 
+    if outcome.get("dashboard_url"):
+        print(f"\nDashboard: {outcome['dashboard_url']}", flush=True)
+
     feedback = outcome.get("feedback") or {}
     print("\n=== Agent B 反馈 ===", flush=True)
     print(json.dumps(feedback, ensure_ascii=False, indent=2), flush=True)

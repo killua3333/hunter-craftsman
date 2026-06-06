@@ -23,6 +23,11 @@ craftsman/*.db
 hunter/feedback/*.json
 !hunter/feedback/examples/
 
+# Pipeline dashboard runtime
+pipeline_runs/
+dashboard/ui/node_modules/
+dashboard/gateway/static/
+
 # Autopilot 运行时追加的 learnings（可删，会自动再生）
 hunter/prompts/inline_learnings.md
 
