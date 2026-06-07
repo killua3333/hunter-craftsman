@@ -23,9 +23,12 @@ _LOADER = Environment(
 def detect_demo_kind(req: dict[str, Any]) -> str:
     blob = json.dumps(req, ensure_ascii=False).lower()
     timer_keys = ("番茄", "pomodoro", "倒计时", "计时", "timer", "专注")
+    converter_keys = ("单位换算", "换算", "converter", "单位转换")
     calc_keys = ("计算器", "calculator", "四则", "运算")
     if any(k in blob for k in timer_keys):
         return "timer"
+    if any(k in blob for k in converter_keys):
+        return "converter"
     if any(k in blob for k in calc_keys):
         return "calculator"
     return "list"

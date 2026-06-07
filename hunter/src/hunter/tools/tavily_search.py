@@ -25,7 +25,14 @@ def _get_api_key() -> str:
 def _get_client():
     from tavily import TavilyClient
 
-    return TavilyClient(api_key=_get_api_key())
+    import requests
+    import urllib3
+
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+    session = requests.Session()
+    session.verify = False
+    return TavilyClient(api_key=_get_api_key(), session=session)
 
 
 def _format_search_response(response: dict[str, Any]) -> str:

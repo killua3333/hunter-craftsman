@@ -15,6 +15,11 @@ from hunter.messages import (
     build_conversation,
 )
 from hunter.prompts import load_system_prompt
+from hunter.observability import (
+    finish_pipeline_run,
+    get_active_pipeline,
+    start_pipeline_run,
+)
 
 
 def _configure_stdio() -> None:
@@ -371,6 +376,12 @@ def cmd_connect_demo(
         print("请提供问题文本，例如: hunter connect-demo \"做一个离线番茄钟\"", file=sys.stderr)
         return 2
 
+    pipeline_ctx = start_pipeline_run(
+        mode="run",
+        question=question,
+        base_url=base_url,
+    )
+
     print("运行编排流水线（Agent A → Gate → 澄清 → implement）...", flush=True)
     seen_phases: set[str] = set()
 
@@ -382,6 +393,9 @@ def cmd_connect_demo(
             return
         seen_phases.add(key)
         print(f"[run] {phase}: {detail}", flush=True)
+        ctx = pipeline_ctx or get_active_pipeline()
+        if ctx is not None:
+            ctx.emit("phase", phase=phase, detail=detail)
 
     try:
         outcome = run_opportunity_pipeline(
@@ -396,8 +410,15 @@ def cmd_connect_demo(
             publish=publish,
             auto_approve_release=auto_approve_release,
         )
+        dashboard = finish_pipeline_run(outcome)
+        if dashboard:
+            print(f"Dashboard: {dashboard}", flush=True)
     except (ValueError, RuntimeError) as exc:
         print(f"失败: {exc}", file=sys.stderr)
+        finish_pipeline_run({
+            "accepted": False,
+            "stopped": str(exc),
+        })
         return 2
 
     return _print_pipeline_outcome(outcome)
@@ -417,6 +438,11 @@ def cmd_autopilot(
     """Autopilot：人类只触发开始，自动发现机会 → B → 可选 C。"""
     from hunter.orchestrator import run_autopilot_pipeline
 
+    pipeline_ctx = start_pipeline_run(
+        mode="autopilot",
+        base_url=base_url,
+    )
+
     print("Autopilot：自动搜索 Play 机会 → Gate → implement → 可选发布...", flush=True)
     seen_phases: set[str] = set()
 
@@ -428,6 +454,9 @@ def cmd_autopilot(
             return
         seen_phases.add(key)
         print(f"[autopilot] {phase}: {detail}", flush=True)
+        ctx = pipeline_ctx or get_active_pipeline()
+        if ctx is not None:
+            ctx.emit("phase", phase=phase, detail=detail)
 
     try:
         outcome = run_autopilot_pipeline(
@@ -441,8 +470,15 @@ def cmd_autopilot(
             publish=publish,
             auto_approve_release=auto_approve_release,
         )
+        dashboard = finish_pipeline_run(outcome)
+        if dashboard:
+            print(f"Dashboard: {dashboard}", flush=True)
     except (ValueError, RuntimeError) as exc:
         print(f"失败: {exc}", file=sys.stderr)
+        finish_pipeline_run({
+            "accepted": False,
+            "stopped": str(exc),
+        })
         return 2
 
     return _print_pipeline_outcome(outcome)

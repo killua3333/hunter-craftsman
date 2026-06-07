@@ -8,6 +8,7 @@
 - 格式：`{"files":[{"path":"相对路径","content":"完整文件内容"}, ...]}`
 - 必须至少包含：
   - `app/src/main/java/com/craftsman/MainActivity.kt`（`package com.craftsman` 固定不变；`ComponentActivity` + Compose 主界面）
+  - `index.html`（**Windows 可双击预览的交互 Demo**：单文件 HTML+CSS+JS，逻辑与 Kotlin/Compose 版一致，持久化用 `localStorage` 对应 `core_logic.persistence`，UI 布局必须与 Compose 版一一对应）
 - 可选：同包下额外 `.kt` 文件（数据模型 `Model.kt`、本地存储 `Storage.kt` 等），路径均在 `app/src/main/java/com/craftsman/` 下
 - 使用 Jetpack Compose + Material3；实现 `features` 中的**真实交互逻辑**（点击事件、输入框、状态变更、数据持久化）
 - 持久化遵循 `core_logic.persistence`：`none` / `SharedPreferences` / 本地文件；禁止网络 API

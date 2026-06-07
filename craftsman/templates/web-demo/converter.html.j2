@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ app_name }}</title>
+  <style>
+    :root { --primary: {{ primary_color }}; --bg: #F2F2F7; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #1a1a2e; min-height: 100vh; display: flex;
+      align-items: center; justify-content: center; padding: 24px;
+    }
+    .phone {
+      width: 390px; max-width: 100%; min-height: 700px; background: var(--bg);
+      border-radius: 40px; box-shadow: 0 24px 80px rgba(0,0,0,.45);
+      overflow: hidden; display: flex; flex-direction: column;
+    }
+    .header {
+      padding: 48px 20px 8px; font-size: 26px; font-weight: 700;
+      color: var(--primary); text-align: center;
+    }
+    .subtitle { padding: 0 20px 12px; color: #8E8E93; font-size: 13px; text-align: center; }
+    .tabs {
+      display: flex; overflow-x: auto; padding: 0 8px 8px; gap: 6px;
+      -webkit-overflow-scrolling: touch;
+    }
+    .tabs button {
+      flex-shrink: 0; padding: 8px 14px; border: 1px solid #E5E5EA; border-radius: 20px;
+      background: #fff; font-size: 13px; cursor: pointer; white-space: nowrap;
+    }
+    .tabs button.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .panel { flex: 1; padding: 8px 16px 16px; overflow-y: auto; }
+    .unit-row {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+    }
+    .unit-row label {
+      width: 80px; font-size: 13px; color: #3C3C43; flex-shrink: 0;
+    }
+    .unit-row input {
+      flex: 1; padding: 10px 12px; border: 1px solid #E5E5EA; border-radius: 8px;
+      font-size: 16px; background: #fff;
+    }
+    .history-title {
+      font-size: 13px; color: #8E8E93; margin: 12px 0 6px; padding: 0 4px;
+    }
+    .history-item {
+      display: flex; justify-content: space-between; align-items: center;
+      background: #fff; padding: 10px 12px; border-radius: 8px; margin-bottom: 4px;
+      font-size: 14px;
+    }
+    .history-item .rec-text { flex: 1; }
+    .history-item .del-btn {
+      border: none; background: none; color: #FF3B30; cursor: pointer; font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="phone">
+    <div class="header">{{ app_name }}</div>
+    {% if subtitle %}<div class="subtitle">{{ subtitle }}</div>{% endif %}
+
+    <div class="tabs" id="tabs"></div>
+    <div class="panel" id="panel"></div>
+    <div class="history-title">最近使用</div>
+    <div class="panel" id="history" style="max-height:180px"></div>
+  </div>
+  <script>
+    const CATEGORIES = [
+      { name: '长度', units: [
+        {name:'米', sym:'m', f:1}, {name:'千米', sym:'km', f:1000},
+        {name:'厘米', sym:'cm', f:0.01}, {name:'英里', sym:'mi', f:1609.34},
+        {name:'英尺', sym:'ft', f:0.3048}, {name:'英寸', sym:'in', f:0.0254}
+      ]},
+      { name: '重量', units: [
+        {name:'千克', sym:'kg', f:1}, {name:'克', sym:'g', f:0.001},
+        {name:'吨', sym:'t', f:1000}, {name:'磅', sym:'lb', f:0.4536}, {name:'盎司', sym:'oz', f:0.02835}
+      ]},
+      { name: '体积', units: [
+        {name:'升', sym:'L', f:1}, {name:'毫升', sym:'mL', f:0.001},
+        {name:'加仑', sym:'gal', f:3.785}, {name:'立方米', sym:'m³', f:1000}
+      ]},
+      { name: '面积', units: [
+        {name:'平方米', sym:'m²', f:1}, {name:'平方千米', sym:'km²', f:1e6},
+        {name:'公顷', sym:'ha', f:10000}, {name:'亩', sym:'mu', f:666.67}
+      ]},
+      { name: '速度', units: [
+        {name:'m/s', sym:'m/s', f:1}, {name:'km/h', sym:'km/h', f:0.2778},
+        {name:'mph', sym:'mph', f:0.447}, {name:'节', sym:'kn', f:0.5144}
+      ]},
+      { name: '时间', units: [
+        {name:'秒', sym:'s', f:1}, {name:'分钟', sym:'min', f:60},
+        {name:'小时', sym:'h', f:3600}, {name:'天', sym:'d', f:86400}
+      ]},
+      { name: '数据', units: [
+        {name:'字节', sym:'B', f:1}, {name:'KB', sym:'KB', f:1024},
+        {name:'MB', sym:'MB', f:1048576}, {name:'GB', sym:'GB', f:1073741824}
+      ]}
+    ];
+
+    const STORAGE = 'craftsman_converter_history';
+    let activeCat = 0;
+    let baseValue = 0;
+    let history = JSON.parse(localStorage.getItem(STORAGE) || '[]');
+
+    function renderTabs() {
+      document.getElementById('tabs').innerHTML = CATEGORIES.map((c,i) =>
+        `<button class="${i===activeCat?'active':''}" data-i="${i}">${c.name}</button>`
+      ).join('');
+      document.querySelectorAll('#tabs button').forEach(b => {
+        b.onclick = () => { activeCat = +b.dataset.i; renderTabs(); renderPanel(); };
+      });
+    }
+
+    function renderPanel() {
+      const cat = CATEGORIES[activeCat];
+      const vals = cat.units.map(u => {
+        const v = baseValue / u.f;
+        return v === 0 ? '0' : parseFloat(v.toPrecision(10));
+      });
+      document.getElementById('panel').innerHTML = vals.map((v,i) => `
+        <div class="unit-row">
+          <label>${cat.units[i].name} (${cat.units[i].sym})</label>
+          <input type="text" value="${v}" data-i="${i}" />
+        </div>`).join('');
+      document.querySelectorAll('#panel input').forEach(inp => {
+        inp.oninput = () => {
+          const val = parseFloat(inp.value);
+          if (isNaN(val)) return;
+          const unitIdx = +inp.dataset.i;
+          baseValue = val * CATEGORIES[activeCat].units[unitIdx].f;
+          saveHistory(val, unitIdx);
+          renderPanel();
+        };
+      });
+    }
+
+    function saveHistory(val, unitIdx) {
+      const cat = CATEGORIES[activeCat];
+      const u = cat.units[unitIdx];
+      const entry = { cat: activeCat, catName: cat.name, val, sym: u.sym, unit: u.name, ts: Date.now() };
+      history.unshift(entry);
+      if (history.length > 10) history.length = 10;
+      localStorage.setItem(STORAGE, JSON.stringify(history));
+      renderHistory();
+    }
+
+    function renderHistory() {
+      document.getElementById('history').innerHTML = history.length === 0
+        ? '<div style="color:#8E8E93;font-size:14px;padding:8px">暂无记录</div>'
+        : history.map((h,i) => `
+          <div class="history-item">
+            <span class="rec-text" style="cursor:pointer" data-i="${i}">
+              ${h.val} ${h.sym} (${h.catName})
+            </span>
+            <button class="del-btn" data-i="${i}">✕</button>
+          </div>`).join('');
+      document.querySelectorAll('#history .rec-text').forEach(el => {
+        el.onclick = () => {
+          const h = history[+el.dataset.i];
+          activeCat = h.cat;
+          baseValue = h.val * CATEGORIES[activeCat].units.find(u=>u.sym===h.sym).f;
+          renderTabs(); renderPanel();
+        };
+      });
+      document.querySelectorAll('#history .del-btn').forEach(btn => {
+        btn.onclick = () => {
+          history.splice(+btn.dataset.i, 1);
+          localStorage.setItem(STORAGE, JSON.stringify(history));
+          renderHistory();
+        };
+      });
+    }
+
+    renderTabs();
+    renderPanel();
+    renderHistory();
+  </script>
+</body>
+</html>

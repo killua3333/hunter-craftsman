@@ -7,6 +7,7 @@ from typing import Any, Callable
 
 from hunter.agents.specialist import SpecialistSession
 from hunter.feedback import save_feedback_raw
+from hunter.observability import get_active_pipeline
 from hunter.orchestrator.repair import ensure_blueprint
 from hunter.integrations.craftsman import (
     build_requirement_from_blueprint,
@@ -89,6 +90,10 @@ def _maybe_publish(
         outcome["publish"] = {"publish_status": "skipped", "reason": f"platform {target} uses non-android publisher"}
         return outcome
     try:
+        pipeline_ctx = get_active_pipeline()
+        if pipeline_ctx is not None:
+            pipeline_ctx.emit("publish_start", source="agent_a")
+
         _emit_progress(progress_callback, "publish", "starting agent_c publish pipeline", source="agent_a")
         outcome["publish"] = run_publish_pipeline(
             feedback,
@@ -157,6 +162,14 @@ def run_autopilot_pipeline(
             }
             attempts.append(last_outcome)
             continue
+        pipeline_ctx = get_active_pipeline()
+        if pipeline_ctx is not None:
+            pipeline_ctx.emit(
+                "blueprint",
+                accepted=blueprint.accepted,
+                app_name=blueprint.app_name,
+                evidence_count=len(blueprint.evidence),
+            )
         if not blueprint.accepted:
             outcome = {
                 "accepted": False,
@@ -242,6 +255,8 @@ def run_blueprint_pipeline(
 
     chat 的 /make 与 run 的后半段共用此函数。
     """
+    pipeline_ctx = get_active_pipeline()
+
     if not blueprint.accepted:
         return {
             "accepted": False,
@@ -276,6 +291,12 @@ def run_blueprint_pipeline(
         )
         analyze_history.append({"revision": revision, "feedback": feedback})
         status = feedback.get("agent_b_status", "")
+        if pipeline_ctx is not None:
+            pipeline_ctx.emit(
+                "gate_result",
+                revision=revision,
+                agent_b_status=status,
+            )
         _emit_progress(
             progress_callback,
             "analyze_result",
@@ -425,6 +446,16 @@ def run_opportunity_pipeline(
     """
     session = SpecialistSession()
     blueprint, result = ensure_blueprint(session, question, max_attempts=3)
+
+    pipeline_ctx = get_active_pipeline()
+    if pipeline_ctx is not None:
+        pipeline_ctx.emit(
+            "blueprint",
+            accepted=blueprint.accepted,
+            app_name=blueprint.app_name,
+            evidence_count=len(blueprint.evidence),
+        )
+
     if not blueprint.accepted:
         return {
             "accepted": False,
