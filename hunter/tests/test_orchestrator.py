@@ -267,3 +267,13 @@ def test_run_opportunity_pipeline_appends_product_focus():
         "audience": "自由职业者",
         "scenario": "深度工作",
     }
+
+
+def test_discovery_prompt_mentions_agent_reach_search():
+    from hunter.prompts import load_discovery_prompt
+
+    prompt = load_discovery_prompt()
+    assert "agent_reach_search" in prompt
+    assert "analysis.pain_points" in prompt
+    assert "AppOpportunityBlueprint" in prompt
+    assert "play_search" in prompt

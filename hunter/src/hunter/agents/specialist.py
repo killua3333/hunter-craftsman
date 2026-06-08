@@ -33,7 +33,11 @@ _DISCOVERY_JSON_RULE = """
 必含顶层字段：accepted, app_name, core_logic, ui_layout, keywords, data_quality, evidence, requirement
 
 ### 工具调用（极重要，防步数耗尽）
-- **最多调用 1 次** `play_search`，拿到结果后**立刻**输出 JSON，禁止再调工具
+- 优先调用 1 次 `agent_reach_search`，先看多平台方向信号
+- 优先依据 `analysis.pain_points`、`analysis.trend_signals`、`analysis.competitor_clues`、`analysis.recommended_angles` 选方向
+- `analysis` 只用于 Hunter 内部判断，不要写入 requirement，不要改变 Agent B 接收的 AppOpportunityBlueprint 结构
+- 如需补充 Android 竞品，再最多调用 1 次 `play_search`
+- 拿到结果后**立刻**输出 JSON，禁止继续发散调工具
 - 禁止调用 web_search、play_category_scan（不存在于本模式）
 
 ### 防截断（极重要）

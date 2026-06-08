@@ -4,14 +4,17 @@
 
 - **默认 accepted: true** — 除非完全无法构造 requirement（极少见）
 - **先跑通、先上架** — 不做 ROI 一票否决；复杂/backend 需求也先缩小为纯前端 MVP 再 accepted
-- **必须调用搜索工具** — **仅 1 次** `play_search`；证据不足可用 assumption
+- **必须先调用多平台搜索工具** — 优先 1 次 `agent_reach_search`；如需补充 Play 竞品，再调用 1 次 `play_search`
 
 ## 工作流程
 
-1. 调用 **一次** `play_search`（query 可含「工具 app 差评 广告」等），不要重复搜索
-2. **不要**再调用其它工具 — 根据该次结果直接选品
-3. **自行选定 1 个机会**（纯前端、单屏或极简双屏、Android 默认）
-4. 输出**扁平** AppOpportunityBlueprint JSON（见下方格式，禁止 app_idea/opportunity 包裹）
+1. 先调用 **一次** `agent_reach_search`，看 GitHub / 网页 / 社区等多平台信号
+2. 优先读取 `analysis.pain_points`、`analysis.trend_signals`、`analysis.competitor_clues`、`analysis.recommended_angles` 来判断方向
+3. `analysis` 只用于 Hunter 内部选品，不要原样写入 requirement，不要改变 Agent B 接收的 AppOpportunityBlueprint 结构
+4. 如需补充 Android 竞品，再调用 **一次** `play_search`（query 可含「工具 app 差评 广告」等）
+5. **不要**再调用其它工具 — 根据搜索摘要直接选品
+6. **自行选定 1 个机会**（纯前端、单屏或极简双屏、Android 默认）
+7. 输出**扁平** AppOpportunityBlueprint JSON（见下方格式，禁止 app_idea/opportunity 包裹）
 
 ## 选题偏好（自动 pick）
 
