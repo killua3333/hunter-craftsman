@@ -39,3 +39,35 @@ def test_run_autopilot_passes_minimum_1800_to_cmd(monkeypatch):
         main_mod.main()
     assert exc.value.code == 0
     assert captured["timeout"] == 1800.0
+
+
+def test_autopilot_focus_flags_are_passed_to_cmd(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_autopilot(**kwargs):
+        captured["product_focus"] = kwargs["product_focus"]
+        return 0
+
+    monkeypatch.setattr(main_mod, "cmd_autopilot", fake_autopilot)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "hunter",
+            "autopilot",
+            "--region",
+            "东南亚",
+            "--audience",
+            "大学生",
+            "--scenario",
+            "通勤碎片时间",
+        ],
+    )
+    with pytest.raises(SystemExit) as exc:
+        main_mod.main()
+    assert exc.value.code == 0
+    assert captured["product_focus"].model_dump(exclude_none=True) == {
+        "region": "东南亚",
+        "audience": "大学生",
+        "scenario": "通勤碎片时间",
+    }

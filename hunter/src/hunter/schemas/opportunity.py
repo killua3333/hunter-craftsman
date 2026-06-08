@@ -78,6 +78,29 @@ class BlueprintBudget(BaseModel):
     max_hours: float = 2.0
 
 
+def _clean_optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    text = value.strip()
+    return text or None
+
+
+class ProductSearchFocus(BaseModel):
+    region: str | None = None
+    audience: str | None = None
+    scenario: str | None = None
+
+    @model_validator(mode="after")
+    def _normalize_values(self) -> ProductSearchFocus:
+        self.region = _clean_optional_text(self.region)
+        self.audience = _clean_optional_text(self.audience)
+        self.scenario = _clean_optional_text(self.scenario)
+        return self
+
+    def has_any(self) -> bool:
+        return any((self.region, self.audience, self.scenario))
+
+
 class BlueprintRequirement(BaseModel):
     """与 Craftsman requirement.v1 对齐的详细需求（accepted=true 时必填）。"""
 
@@ -175,6 +198,19 @@ class AppOpportunityBlueprint(BaseModel):
         elif not (self.rejection_reason or "").strip():
             raise ValueError("accepted=false 时必须提供 rejection_reason")
         return self
+
+
+def format_product_focus_block(product_focus: ProductSearchFocus | None) -> str:
+    if product_focus is None or not product_focus.has_any():
+        return ""
+    lines = [
+        "选品方向约束：",
+        f"- 地区：{product_focus.region or '未指定'}",
+        f"- 受众人群：{product_focus.audience or '未指定'}",
+        f"- 应用场景：{product_focus.scenario or '未指定'}",
+        "- 若某维度未指定，可自行补足；已指定维度必须优先满足。",
+    ]
+    return "\n".join(lines)
 
 
 def format_parse_error(exc: BaseException) -> str:

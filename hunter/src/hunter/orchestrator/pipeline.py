@@ -18,7 +18,11 @@ from hunter.integrations.craftsman import (
     wait_for_run_completion,
 )
 from hunter.integrations.publisher import run_publish_pipeline
-from hunter.schemas import AppOpportunityBlueprint
+from hunter.schemas import (
+    AppOpportunityBlueprint,
+    ProductSearchFocus,
+    format_product_focus_block,
+)
 
 MAX_CLARIFICATION_ROUNDS = 3
 MAX_AUTOPILOT_OPPORTUNITY_ATTEMPTS = 3
@@ -116,6 +120,13 @@ AUTOPILOT_TRIGGER = (
 )
 
 
+def _append_product_focus(text: str, product_focus: ProductSearchFocus | None) -> str:
+    focus_block = format_product_focus_block(product_focus)
+    if not focus_block:
+        return text
+    return f"{text}\n\n{focus_block}"
+
+
 def run_autopilot_pipeline(
     *,
     base_url: str = "http://127.0.0.1:8791",
@@ -129,6 +140,7 @@ def run_autopilot_pipeline(
     publish: bool = False,
     auto_approve_release: bool = True,
     max_opportunity_attempts: int = MAX_AUTOPILOT_OPPORTUNITY_ATTEMPTS,
+    product_focus: ProductSearchFocus | None = None,
 ) -> dict[str, Any]:
     """人类仅触发「开始」：自动发现机会 → B → 可选 C；失败可 pick 下一个机会。"""
     from hunter.agents.specialist import DiscoverySession
@@ -146,7 +158,7 @@ def run_autopilot_pipeline(
             attempt=attempt,
         )
         session = DiscoverySession()
-        trigger = AUTOPILOT_TRIGGER
+        trigger = _append_product_focus(AUTOPILOT_TRIGGER, product_focus)
         if attempt > 1:
             trigger += f"\n\n（第 {attempt} 次选品：请避开上一轮失败方向，换一个新的工具类机会。）"
         blueprint, result = ensure_blueprint(session, trigger, max_attempts=3)
@@ -159,6 +171,7 @@ def run_autopilot_pipeline(
                 "mode": "autopilot",
                 "stopped": "discovery_parse_failed",
                 "autopilot_attempt": attempt,
+                "product_focus": product_focus.model_dump(exclude_none=True) if product_focus else None,
             }
             attempts.append(last_outcome)
             continue
@@ -179,6 +192,7 @@ def run_autopilot_pipeline(
                 "stopped": "blueprint_rejected_by_specialist",
                 "autopilot_attempt": attempt,
                 "reasons": blueprint.reasons or [],
+                "product_focus": product_focus.model_dump(exclude_none=True) if product_focus else None,
             }
             attempts.append(outcome)
             append_inline_learning(
@@ -204,6 +218,7 @@ def run_autopilot_pipeline(
         outcome["mode"] = "autopilot"
         outcome["discovery_answer"] = result.get("answer")
         outcome["autopilot_attempt"] = attempt
+        outcome["product_focus"] = product_focus.model_dump(exclude_none=True) if product_focus else None
         attempts.append(outcome)
         last_outcome = outcome
 
@@ -228,6 +243,7 @@ def run_autopilot_pipeline(
             "mode": "autopilot",
             "stopped": "autopilot_exhausted",
             "autopilot_attempts": attempts,
+            "product_focus": product_focus.model_dump(exclude_none=True) if product_focus else None,
         }
     else:
         last_outcome["autopilot_attempts"] = attempts
@@ -249,6 +265,7 @@ def run_blueprint_pipeline(
     save_feedback: bool = True,
     publish: bool = False,
     auto_approve_release: bool = True,
+    product_focus: ProductSearchFocus | None = None,
 ) -> dict[str, Any]:
     """
     从已有机会单启动：Gate analyze → 必要时用 session 澄清 → implement。
@@ -438,6 +455,7 @@ def run_opportunity_pipeline(
     save_feedback: bool = True,
     publish: bool = False,
     auto_approve_release: bool = True,
+    product_focus: ProductSearchFocus | None = None,
 ) -> dict[str, Any]:
     """
     完整编排：Agent A 出单 → Gate analyze → 必要时澄清 → implement。
@@ -445,7 +463,11 @@ def run_opportunity_pipeline(
     返回 dict：blueprint, requirement, revision, rounds, analyze_history, feedback
     """
     session = SpecialistSession()
-    blueprint, result = ensure_blueprint(session, question, max_attempts=3)
+    blueprint, result = ensure_blueprint(
+        session,
+        _append_product_focus(question, product_focus),
+        max_attempts=3,
+    )
 
     pipeline_ctx = get_active_pipeline()
     if pipeline_ctx is not None:
@@ -462,6 +484,7 @@ def run_opportunity_pipeline(
             "blueprint": blueprint.model_dump(),
             "answer": result.get("answer"),
             "feedback": None,
+            "product_focus": product_focus.model_dump(exclude_none=True) if product_focus else None,
         }
 
     outcome = run_blueprint_pipeline(
@@ -478,4 +501,5 @@ def run_opportunity_pipeline(
         publish=publish,
         auto_approve_release=auto_approve_release,
     )
+    outcome["product_focus"] = product_focus.model_dump(exclude_none=True) if product_focus else None
     return _attach_correlation(outcome)

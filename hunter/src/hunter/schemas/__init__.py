@@ -1,9 +1,11 @@
 from hunter.schemas.normalize import coerce_string_list, normalize_blueprint_dict
 from hunter.schemas.opportunity import (
     AppOpportunityBlueprint,
+    ProductSearchFocus,
     blueprint_for_agent_b,
     extract_blueprint_from_messages,
     extract_blueprint_from_text,
+    format_product_focus_block,
     format_blueprint_json,
     format_parse_error,
     load_blueprint_dict_from_text,
@@ -12,10 +14,12 @@ from hunter.schemas.opportunity import (
 
 __all__ = [
     "AppOpportunityBlueprint",
+    "ProductSearchFocus",
     "blueprint_for_agent_b",
     "coerce_string_list",
     "extract_blueprint_from_messages",
     "extract_blueprint_from_text",
+    "format_product_focus_block",
     "format_blueprint_json",
     "format_parse_error",
     "load_blueprint_dict_from_text",

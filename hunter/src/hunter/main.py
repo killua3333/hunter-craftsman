@@ -20,6 +20,19 @@ from hunter.observability import (
     get_active_pipeline,
     start_pipeline_run,
 )
+from hunter.schemas import ProductSearchFocus
+
+
+def _build_product_focus(
+    *,
+    region: str | None,
+    audience: str | None,
+    scenario: str | None,
+) -> ProductSearchFocus | None:
+    focus = ProductSearchFocus(region=region, audience=audience, scenario=scenario)
+    if not focus.has_any():
+        return None
+    return focus
 
 
 def _configure_stdio() -> None:
@@ -368,6 +381,7 @@ def cmd_connect_demo(
     max_rounds: int,
     publish: bool = False,
     auto_approve_release: bool = True,
+    product_focus: ProductSearchFocus | None = None,
 ) -> int:
     """一键联通 A→B（含 Gate 澄清循环，最多 3 轮）。"""
     from hunter.orchestrator import run_opportunity_pipeline
@@ -409,6 +423,7 @@ def cmd_connect_demo(
             max_rounds=max_rounds,
             publish=publish,
             auto_approve_release=auto_approve_release,
+            product_focus=product_focus,
         )
         dashboard = finish_pipeline_run(outcome)
         if dashboard:
@@ -434,6 +449,7 @@ def cmd_autopilot(
     max_rounds: int,
     publish: bool = False,
     auto_approve_release: bool = True,
+    product_focus: ProductSearchFocus | None = None,
 ) -> int:
     """Autopilot：人类只触发开始，自动发现机会 → B → 可选 C。"""
     from hunter.orchestrator import run_autopilot_pipeline
@@ -469,6 +485,7 @@ def cmd_autopilot(
             max_rounds=max_rounds,
             publish=publish,
             auto_approve_release=auto_approve_release,
+            product_focus=product_focus,
         )
         dashboard = finish_pipeline_run(outcome)
         if dashboard:
@@ -495,6 +512,7 @@ def cmd_run(
     max_rounds: int,
     publish: bool = False,
     auto_approve_release: bool = True,
+    product_focus: ProductSearchFocus | None = None,
 ) -> int:
     """与 connect-demo 相同：完整 A→B 编排；--publish 追加 Agent C。"""
     return cmd_connect_demo(
@@ -507,6 +525,7 @@ def cmd_run(
         max_rounds=max_rounds,
         publish=publish,
         auto_approve_release=auto_approve_release,
+        product_focus=product_focus,
     )
 
 
@@ -577,6 +596,9 @@ def main() -> None:
     )
     run_p.add_argument("--base-url", default="http://127.0.0.1:8791")
     run_p.add_argument("--opportunity-id", default=None)
+    run_p.add_argument("--region", default=None, help="限定 hunter 选品地区")
+    run_p.add_argument("--audience", default=None, help="限定 hunter 选品受众人群")
+    run_p.add_argument("--scenario", default=None, help="限定 hunter 选品应用场景")
     run_p.add_argument("--timeout", type=float, default=600.0)
     run_p.add_argument("--poll-interval", type=float, default=2.0)
     run_p.add_argument(
@@ -611,6 +633,9 @@ def main() -> None:
         default=None,
         help="可选：固定机会单 ID（默认自动生成）",
     )
+    connect_p.add_argument("--region", default=None, help="限定 hunter 选品地区")
+    connect_p.add_argument("--audience", default=None, help="限定 hunter 选品受众人群")
+    connect_p.add_argument("--scenario", default=None, help="限定 hunter 选品应用场景")
     connect_p.add_argument(
         "--timeout",
         type=float,
@@ -646,6 +671,9 @@ def main() -> None:
     )
     autopilot_p.add_argument("--base-url", default="http://127.0.0.1:8791")
     autopilot_p.add_argument("--opportunity-id", default=None)
+    autopilot_p.add_argument("--region", default=None, help="限定 hunter 选品地区")
+    autopilot_p.add_argument("--audience", default=None, help="限定 hunter 选品受众人群")
+    autopilot_p.add_argument("--scenario", default=None, help="限定 hunter 选品应用场景")
     autopilot_p.add_argument("--timeout", type=float, default=600.0)
     autopilot_p.add_argument("--poll-interval", type=float, default=2.0)
     autopilot_p.add_argument("--sync-implement", action="store_true")
@@ -677,6 +705,11 @@ def main() -> None:
 
     if args.command == "autopilot":
         auto_approve = not args.no_auto_approve
+        product_focus = _build_product_focus(
+            region=getattr(args, "region", None),
+            audience=getattr(args, "audience", None),
+            scenario=getattr(args, "scenario", None),
+        )
         raise SystemExit(
             cmd_autopilot(
                 base_url=args.base_url,
@@ -687,12 +720,18 @@ def main() -> None:
                 max_rounds=args.max_rounds,
                 publish=args.publish,
                 auto_approve_release=auto_approve,
+                product_focus=product_focus,
             )
         )
 
     if args.command in ("connect-demo", "run"):
         question = args.question
         auto_approve = not getattr(args, "no_auto_approve", False)
+        product_focus = _build_product_focus(
+            region=getattr(args, "region", None),
+            audience=getattr(args, "audience", None),
+            scenario=getattr(args, "scenario", None),
+        )
         if args.command == "run" and getattr(args, "autopilot", False):
             autopilot_timeout = max(float(args.timeout), 1800.0)
             raise SystemExit(
@@ -705,6 +744,7 @@ def main() -> None:
                     max_rounds=args.max_rounds,
                     publish=getattr(args, "publish", False),
                     auto_approve_release=auto_approve,
+                    product_focus=product_focus,
                 )
             )
         raise SystemExit(
@@ -718,6 +758,7 @@ def main() -> None:
                 max_rounds=args.max_rounds,
                 publish=getattr(args, "publish", False),
                 auto_approve_release=auto_approve,
+                product_focus=product_focus,
             )
         )
 
