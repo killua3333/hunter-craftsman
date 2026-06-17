@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_ROOT="${1:-/opt/hunter-agent}"
+REPO_ROOT="${1:-/home/admin/hunter-craftsman}"
 SITE_NAME="${2:-craftsman}"
 NGINX_TARGET="/etc/nginx/sites-available/${SITE_NAME}"
 NGINX_LINK="/etc/nginx/sites-enabled/${SITE_NAME}"

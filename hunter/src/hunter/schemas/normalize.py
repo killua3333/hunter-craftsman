@@ -155,6 +155,58 @@ def _slug_bundle_id(name: str) -> str:
     return f"com.hunter.{slug.replace('-', '')[:24]}"
 
 
+def _generic_label(text: str) -> bool:
+    value = str(text or "").strip().lower()
+    if not value:
+        return True
+    generic_tokens = {
+        "main",
+        "home",
+        "screen",
+        "page",
+        "main screen",
+        "home screen",
+        "主屏",
+        "首页",
+        "主页",
+        "功能",
+        "核心功能",
+    }
+    return value in generic_tokens
+
+
+def _apply_product_quality_self_check(req: dict[str, Any]) -> None:
+    quality = dict(req.get("product_quality") or {})
+    risks = [str(r).strip() for r in quality.get("risks") or [] if str(r).strip()]
+    features = req.get("features") if isinstance(req.get("features"), list) else []
+    ui = req.get("ui_layout") if isinstance(req.get("ui_layout"), dict) else {}
+    screens = ui.get("screens") if isinstance(ui.get("screens"), list) else []
+    core_logic = req.get("core_logic") if isinstance(req.get("core_logic"), dict) else {}
+
+    if any(_generic_label(f.get("title")) for f in features if isinstance(f, dict)):
+        risks.append("generic_feature_titles")
+    if any(_generic_label(screen) for screen in screens):
+        risks.append("generic_screen_definition")
+    if len(str(core_logic.get("description") or "").strip()) < 4:
+        risks.append("thin_core_logic_description")
+
+    seen: list[str] = []
+    for risk in risks:
+        if risk not in seen:
+            seen.append(risk)
+    quality["risks"] = seen
+    if any(
+        risk in seen
+        for risk in {
+            "generic_feature_titles",
+            "thin_interaction_detail",
+            "generic_screen_definition",
+        }
+    ):
+        quality["interaction_depth"] = "generic"
+    req["product_quality"] = quality
+
+
 def _flatten_discovery_shape(data: dict[str, Any]) -> dict[str, Any]:
     """Autopilot 常见变体：app_idea / opportunity 嵌套 → 扁平 AppOpportunityBlueprint。"""
     out = dict(data)
@@ -237,6 +289,24 @@ def _ensure_requirement_defaults(req: dict[str, Any], out: dict[str, Any]) -> di
         }
     if not isinstance(req.get("budget"), dict):
         req["budget"] = {"max_features": 8, "max_hours": 2.0}
+    if not isinstance(req.get("product_quality"), dict):
+        req["product_quality"] = {
+            "target": "verified",
+            "interaction_depth": "task_focused",
+            "risks": [],
+        }
+    else:
+        product_quality = dict(req["product_quality"])
+        target = str(product_quality.get("target") or "").strip().lower()
+        if target not in {"verified", "demo"}:
+            product_quality["target"] = "verified"
+        depth = str(product_quality.get("interaction_depth") or "").strip().lower()
+        if depth not in {"generic", "task_focused", "polished"}:
+            product_quality["interaction_depth"] = "task_focused"
+        risks = product_quality.get("risks")
+        if not isinstance(risks, list):
+            product_quality["risks"] = coerce_string_list(risks)
+        req["product_quality"] = product_quality
 
     features = req.get("features")
     if not isinstance(features, list) or not features:
@@ -248,6 +318,7 @@ def _ensure_requirement_defaults(req: dict[str, Any], out: dict[str, Any]) -> di
                 "items": [str(out.get("core_logic") or "主流程")[:120]],
             }
         ]
+    _apply_product_quality_self_check(req)
     return req
 
 

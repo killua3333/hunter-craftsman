@@ -65,6 +65,8 @@ def run_weekly_learning(
         }
 
     feedback_items = [load_feedback_file(p) for p in pending]
+    inline_learnings_path = PROMPTS_DIR / "inline_learnings.md"
+    inline_learnings = inline_learnings_path.read_text(encoding="utf-8").strip() if inline_learnings_path.is_file() else ""
     feedback_json = "\n\n".join(
         f"### {fb.get('opportunity_id', 'unknown')}\n```json\n"
         f"{json.dumps(fb, ensure_ascii=False, indent=2)}\n```"
@@ -82,6 +84,9 @@ def run_weekly_learning(
 
 ## 当前 specialist_learnings.md
 {current_learnings}
+
+## 当前 inline_learnings.md
+{inline_learnings}
 
 ## 本周 Agent B 反馈（共 {len(feedback_items)} 条）
 {feedback_json}

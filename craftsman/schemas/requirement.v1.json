@@ -106,6 +106,21 @@
         "max_features": { "type": "integer", "default": 8 },
         "max_hours": { "type": "number", "default": 2.0 }
       }
+    },
+    "agent_a_context": {
+      "type": "object",
+      "properties": {
+        "summary": { "type": "string" },
+        "estimated_complexity": { "type": "string" },
+        "open_questions": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "reasons": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
     }
   }
 }

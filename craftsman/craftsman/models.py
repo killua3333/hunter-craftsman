@@ -56,6 +56,13 @@ class EvidenceItem(BaseModel):
     snippet: str
 
 
+class AgentAContext(BaseModel):
+    summary: str | None = None
+    estimated_complexity: str | None = None
+    open_questions: list[str] = Field(default_factory=list)
+    reasons: list[str] = Field(default_factory=list)
+
+
 class RequirementPayload(BaseModel):
     schema_version: str
     opportunity_id: str
@@ -72,6 +79,7 @@ class RequirementPayload(BaseModel):
     store: dict[str, Any] | None = None
     applied_rules: list[str] | None = None
     budget: dict[str, Any] | None = None
+    agent_a_context: AgentAContext | dict[str, Any] | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return self.model_dump(exclude_none=True)

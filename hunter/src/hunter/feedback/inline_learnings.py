@@ -21,12 +21,14 @@ def append_inline_learning(
     opportunity_id: str,
     reason: str,
     feedback: dict | None = None,
+    learning: str | None = None,
 ) -> None:
     """追加一条失败摘要，供 Discovery/Spec 会话读取。"""
+    text = (learning or reason).strip()
     entry = {
         "at": _utc_now(),
         "opportunity_id": opportunity_id,
-        "reason": reason[:500],
+        "reason": text[:500],
         "agent_b_status": (feedback or {}).get("agent_b_status"),
         "reasons": ((feedback or {}).get("reasons") or [])[:5],
     }

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_ROOT="${1:-/opt/hunter-agent}"
+REPO_ROOT="${1:-/home/admin/hunter-craftsman}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 
 echo "== apt update =="

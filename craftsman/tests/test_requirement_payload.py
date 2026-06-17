@@ -44,3 +44,26 @@ def test_payload_preserves_data_quality_and_evidence():
     fb = analyze_requirement(raw)
     assert fb.blueprint.accepted is True
     assert fb.agent_b_status.value == "accepted"
+
+
+def test_payload_preserves_agent_a_context():
+    raw = {
+        "schema_version": "1.0",
+        "opportunity_id": "ctx-001",
+        "revision": 1,
+        "app": {"name": "Ctx"},
+        "features": [{"id": "home", "type": "list", "title": "Home"}],
+        "core_logic": {"persistence": "none", "description": "test"},
+        "ui_layout": {"navigation": "single", "screens": ["Home"]},
+        "branding": {"primary_color": "#007AFF", "icon_text": "C"},
+        "store": {"subtitle": "s", "description": "d", "keywords": [], "privacy_url": "https://example.com"},
+        "agent_a_context": {
+            "summary": "Keep the product small",
+            "estimated_complexity": "low",
+            "open_questions": ["Need offline support?"],
+            "reasons": ["Optimize for first release"],
+        },
+    }
+    payload = RequirementPayload.model_validate(raw).as_dict()
+    assert payload["agent_a_context"]["summary"] == "Keep the product small"
+    assert payload["agent_a_context"]["open_questions"] == ["Need offline support?"]

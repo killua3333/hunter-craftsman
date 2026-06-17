@@ -141,14 +141,58 @@ def _files_from_response(data: dict[str, Any] | None) -> dict[str, str] | None:
     return out or None
 
 
+def _build_context_text(req: dict[str, Any]) -> str:
+    ctx = req.get("agent_a_context") or {}
+    if not isinstance(ctx, dict):
+        return ""
+    parts: list[str] = []
+    summary = str(ctx.get("summary") or "").strip()
+    if summary:
+        parts.append(f"Agent A summary:\n{summary}")
+    complexity = str(ctx.get("estimated_complexity") or "").strip()
+    if complexity:
+        parts.append(f"Agent A complexity: {complexity}")
+    open_questions = ctx.get("open_questions") or []
+    if open_questions:
+        parts.append(
+            "Agent A open questions:\n"
+            + json.dumps(open_questions, ensure_ascii=False, indent=2)
+        )
+    reasons = ctx.get("reasons") or []
+    if reasons:
+        parts.append(
+            "Agent A reasons:\n"
+            + json.dumps(reasons, ensure_ascii=False, indent=2)
+        )
+    return "\n\n".join(parts)
+
+
+def _build_codegen_prompt(req: dict[str, Any]) -> str:
+    context = _build_context_text(req)
+    hints = (
+        "Implementation checklist:\n"
+        "- Implement every declared feature with concrete interaction behavior.\n"
+        "- Keep persistence behavior aligned with core_logic.persistence.\n"
+        "- Mirror ui_layout.screens in the UI structure instead of collapsing to a generic screen.\n"
+        "- Use branding.primary_color as the primary accent.\n"
+        "- Do not add undeclared features or backend/network logic.\n"
+        "- Return complete file contents only.\n"
+    )
+    requirement_json = json.dumps(req, ensure_ascii=False, indent=2)
+    if context:
+        return f"{context}\n\n{hints}\nRequirement JSON:\n{requirement_json}"
+    return f"{hints}\nRequirement JSON:\n{requirement_json}"
+
+
 def analyze_requirement_llm(req: dict[str, Any]) -> dict[str, Any] | None:
     """Gate 语义补充（反馈 Agent A）— 使用 deepseek-chat。"""
     hig = _HIG_PATH.read_text(encoding="utf-8") if _HIG_PATH.exists() else ""
     system = load_prompt(_GATE_SYSTEM)
-    user = (
-        f"HIG 摘要:\n{hig[:4000]}\n\n"
-        f"需求 JSON:\n{json.dumps(req, ensure_ascii=False)}"
-    )
+    context = _build_context_text(req)
+    user = f"HIG 摘要:\n{hig[:4000]}\n\n"
+    if context:
+        user += f"{context}\n\n"
+    user += f"需求 JSON:\n{json.dumps(req, ensure_ascii=False)}"
     data = _chat_json(
         model=settings.deepseek_chat_model,
         system=system,
@@ -173,7 +217,7 @@ def generate_code_llm(req: dict[str, Any], *, platform: str = "ios") -> dict[str
     else:
         system = load_prompt(_CODEGEN_SYSTEM)
         required = {"Sources/App.swift", "Sources/ContentView.swift", "Sources/Color+Hex.swift"}
-    user = json.dumps(req, ensure_ascii=False, indent=2)
+    user = _build_codegen_prompt(req)
     data = _chat_json(
         model=settings.deepseek_pro_model,
         system=system,
@@ -217,6 +261,7 @@ def fix_code_llm(
     user = (
         f"轮次: {round_num}\n"
         f"应用: {req.get('app', {}).get('name')}\n"
+        f"{_build_context_text(req)}\n"
         f"编译错误:\n{json.dumps(errors, ensure_ascii=False)}\n"
         f"当前文件:\n{json.dumps(files, ensure_ascii=False)[:12000]}"
     )

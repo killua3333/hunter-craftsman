@@ -10,6 +10,8 @@
 - 证据不足时允许 `data_quality: assumption`，至少 1 次 `web_search` 即可
 - ROI / 工时超限 → 写入 `open_questions` 或 `summary` **软警告**，不要 `accepted: false`
 - `privacy_url`、branding 等缺项可由 Agent B Soft Gate 自动补全
+- requirement 默认面向**可验证的原生产品**而非泛化 demo：优先让交互能落到真实功能流与验证路径
+- requirement.product_quality 默认 `target=verified`、`interaction_depth=task_focused`
 
 ## 硬性护栏（仅以下必须 `accepted: false`）
 - 需要后端、数据库、用户账号体系、实时联网同步
@@ -45,6 +47,7 @@
 - `store`：`subtitle`、`description`、`keywords`、`privacy_url`
 - `budget`：`max_features`、`max_hours`
 - `data_quality` + `evidence`（至少 1 条）
+- `product_quality`：默认 `target=verified`、`interaction_depth=task_focused`；若只能做到 demo，把原因写进 `risks`
 
 ## evidence 格式
 ```json

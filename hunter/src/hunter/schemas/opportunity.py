@@ -78,6 +78,17 @@ class BlueprintBudget(BaseModel):
     max_hours: float = 2.0
 
 
+class BlueprintProductQuality(BaseModel):
+    target: Literal["verified", "demo"] = "verified"
+    interaction_depth: Literal["generic", "task_focused", "polished"] = "task_focused"
+    risks: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _trim_risks(self) -> BlueprintProductQuality:
+        self.risks = [str(r).strip() for r in self.risks if str(r).strip()]
+        return self
+
+
 class BlueprintRequirement(BaseModel):
     """与 Craftsman requirement.v1 对齐的详细需求（accepted=true 时必填）。"""
 
@@ -91,6 +102,7 @@ class BlueprintRequirement(BaseModel):
     budget: BlueprintBudget = Field(default_factory=BlueprintBudget)
     capabilities: list[str] = Field(default_factory=list)
     applied_rules: list[str] = Field(default_factory=list)
+    product_quality: BlueprintProductQuality = Field(default_factory=BlueprintProductQuality)
 
 
 class AppOpportunityBlueprint(BaseModel):
@@ -121,6 +133,10 @@ class AppOpportunityBlueprint(BaseModel):
         default_factory=list,
         description="上架关键词（应与 store.keywords 一致）",
     )
+    summary: str = Field(default="", description="机会单摘要，供 Agent B 理解实现优先级")
+    estimated_complexity: str | None = Field(default=None, description="复杂度预估")
+    open_questions: list[str] = Field(default_factory=list, description="待澄清问题")
+    reasons: list[str] = Field(default_factory=list, description="补充说明或限制条件")
     data_quality: Literal["measured", "assumption", "mixed"] | None = Field(
         default=None,
         description="市场结论依据：实测 / 假设 / 混合",

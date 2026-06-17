@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_ROOT="${1:-/opt/hunter-agent}"
+REPO_ROOT="${1:-/home/admin/hunter-craftsman}"
 SERVICE_NAME="${2:-hunter-autopilot}"
 ENV_TARGET="${3:-/etc/hunter-craftsman/hunter.env}"
 SERVICE_TARGET="/etc/systemd/system/${SERVICE_NAME}.service"

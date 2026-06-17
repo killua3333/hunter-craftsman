@@ -17,8 +17,10 @@ def run_verify_hard_gates(
 ) -> dict[str, Any]:
     failures: list[str] = []
     suggested_rules: list[str] = []
+    signals: list[str] = []
 
     if backend_mode == "macos_xcode":
+        signals.append("native_ios_verification")
         if compile_exit_code != 0:
             failures.append("native compile gate failed")
             suggested_rules.append("修复编译错误后再进入打包阶段")
@@ -29,6 +31,7 @@ def run_verify_hard_gates(
             failures.append("build.log missing")
             suggested_rules.append("保留原生构建日志用于可追溯验证")
     elif backend_mode in {"android_gradle", "android_gradle_docker"}:
+        signals.append("native_android_verification")
         if compile_exit_code != 0:
             failures.append("android compile gate failed")
             suggested_rules.append("修复 Gradle 构建错误后再进入打包阶段")
@@ -39,6 +42,7 @@ def run_verify_hard_gates(
             failures.append("android manifest missing")
             suggested_rules.append("确保 AndroidManifest.xml 存在")
     else:
+        signals.append("demo_only_verification")
         if not Path(preview_html).is_file():
             failures.append("preview_html missing")
             suggested_rules.append("先生成 web demo 预览页")
@@ -60,5 +64,6 @@ def run_verify_hard_gates(
     return {
         "ok": not failures,
         "failures": failures,
+        "signals": signals,
         "suggested_rules": suggested_rules or ["检查 verify 阶段 hard gates 配置"],
     }

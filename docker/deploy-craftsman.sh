@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_ROOT="${1:-/opt/hunter-agent}"
+REPO_ROOT="${1:-/home/admin/hunter-craftsman}"
 SERVICE_NAME="${2:-craftsman}"
 ENV_TARGET="${3:-/etc/hunter-craftsman/craftsman.env}"
 INSTALL_NGINX="${INSTALL_NGINX:-false}"

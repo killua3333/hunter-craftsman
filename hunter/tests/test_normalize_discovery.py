@@ -54,6 +54,9 @@ def test_normalize_discovery_app_idea_variant():
     assert bp.requirement.app.bundle_id.startswith("com.hunter.")
     assert bp.requirement.core_logic.persistence == "SharedPreferences"
     assert bp.requirement.core_logic.description
+    assert bp.requirement.product_quality.target == "verified"
+    assert bp.requirement.product_quality.interaction_depth == "task_focused"
+    assert "generic_feature_titles" not in bp.requirement.product_quality.risks
     assert len(bp.requirement.features) <= 6
     assert bp.requirement.features[0].type == "list"
     assert bp.requirement.store.privacy_url

@@ -112,7 +112,7 @@ def scaffold_project(workspace: Path, req: dict[str, Any]) -> Path:
             yml_tpl = _IOS_LOADER.get_template("project.yml.j2")
             (project_dir / "project.yml").write_text(yml_tpl.render(**ctx), encoding="utf-8")
     else:
-        _render_android_templates(project_dir, ctx, include_main_activity=False)
+        _render_android_templates(project_dir, ctx, include_main_activity=True)
         llm_files = _codegen_with_retry(req, platform="android", max_retries=3)
         if llm_files:
             _write_codegen_files(
@@ -120,11 +120,7 @@ def scaffold_project(workspace: Path, req: dict[str, Any]) -> Path:
                 protected=_ANDROID_PROTECTED_PATHS,
             )
         else:
-            raise RuntimeError(
-                "Android codegen failed after retries: "
-                "LLM did not return valid Kotlin/Compose source files. "
-                "Check requirement.features completeness and retry with more detail."
-            )
+            logger.warning("Android codegen fell back to template scaffold")
 
     manifest = {
         "app_name": app_name,

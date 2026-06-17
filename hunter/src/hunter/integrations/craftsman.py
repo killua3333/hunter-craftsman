@@ -177,6 +177,12 @@ def build_requirement_from_blueprint(
         body["data_quality"] = blueprint.data_quality
     if blueprint.evidence:
         body["evidence"] = [e.model_dump() for e in blueprint.evidence]
+    body["agent_a_context"] = {
+        "summary": blueprint.summary,
+        "open_questions": blueprint.open_questions,
+        "estimated_complexity": blueprint.estimated_complexity,
+        "reasons": blueprint.reasons,
+    }
 
     return body
 

@@ -1,0 +1,17 @@
+[Unit]
+Description=Dashboard Gateway Service
+After=network.target craftsman.service
+Wants=craftsman.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/admin/hunter-craftsman/dashboard/gateway
+EnvironmentFile=/home/admin/hunter-craftsman/craftsman/.env
+ExecStart=/home/admin/hunter-craftsman/.venv/bin/python main.py
+Restart=always
+RestartSec=5
+User=admin
+Group=admin
+
+[Install]
+WantedBy=multi-user.target

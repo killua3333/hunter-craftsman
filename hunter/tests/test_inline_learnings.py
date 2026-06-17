@@ -12,3 +12,15 @@ def test_inline_learnings_append_and_load(tmp_path, monkeypatch):
     text = load_inline_learnings()
     assert "opp-1" in text
     assert "implementation_failed" in text
+
+
+def test_inline_learnings_support_learning_text(tmp_path, monkeypatch):
+    learnings = tmp_path / "inline_learnings.md"
+    monkeypatch.setattr("hunter.feedback.inline_learnings.INLINE_LEARNINGS_PATH", learnings)
+    append_inline_learning(
+        opportunity_id="opp-2",
+        reason="fallback",
+        learning="avoid: broad fallback | rule: prefer hard cutover",
+    )
+    text = load_inline_learnings()
+    assert "prefer hard cutover" in text

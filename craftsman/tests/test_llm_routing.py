@@ -25,6 +25,31 @@ def test_generate_code_uses_pro_model():
         assert "Sources/App.swift" in files
 
 
+def test_generate_code_includes_agent_a_context_in_user_prompt():
+    payload = {
+        "files": [
+            {"path": "Sources/App.swift", "content": "@main struct XApp: App { var body: some Scene { WindowGroup { ContentView() } } }"},
+            {"path": "Sources/ContentView.swift", "content": "struct ContentView: View { var body: some View { Text(\"Hi\") } }"},
+            {"path": "Sources/Color+Hex.swift", "content": "import SwiftUI\nextension Color { static let brandPrimary = Color.blue }"},
+        ]
+    }
+    req = {
+        "app": {"name": "T"},
+        "agent_a_context": {
+            "summary": "Focus on a single timer flow",
+            "estimated_complexity": "low",
+            "open_questions": ["Should history be editable?"],
+            "reasons": ["Keep the MVP offline only"],
+        },
+    }
+    with patch.object(llm, "_chat_json", return_value=payload) as mock:
+        llm.generate_code_llm(req)
+        user_prompt = mock.call_args.kwargs["user"]
+        assert "Agent A summary" in user_prompt
+        assert "Focus on a single timer flow" in user_prompt
+        assert "Should history be editable?" in user_prompt
+
+
 def test_generate_code_android_requires_main_activity():
     payload = {
         "files": [
@@ -57,6 +82,16 @@ def test_fix_code_android_uses_kotlin_prompt():
             platform="android",
         )
         assert "Kotlin" in mock.call_args.kwargs["system"]
+
+
+def test_fix_code_includes_agent_a_context():
+    req = {
+        "app": {"name": "T"},
+        "agent_a_context": {"summary": "Preserve calculator behavior"},
+    }
+    with patch.object(llm, "_chat_json", return_value={"files": [{"path": "Sources/App.swift", "content": "x"}]}) as mock:
+        llm.fix_code_llm(req, {"Sources/App.swift": "old"}, [{"message": "error"}], 1)
+        assert "Preserve calculator behavior" in mock.call_args.kwargs["user"]
 
 
 def test_android_build_gradle_namespace_fixed(tmp_path):

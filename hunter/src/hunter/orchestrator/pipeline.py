@@ -49,9 +49,15 @@ def _build_clarification_prompt(feedback: dict[str, Any], revision: int) -> str:
     reasons = feedback.get("reasons") or []
     rules = feedback.get("suggested_rules") or []
     questions = (feedback.get("blueprint") or {}).get("open_questions") or []
+    artifacts = feedback.get("artifacts") or {}
+    quality = artifacts.get("quality") or {}
+    quality_summary = str(quality.get("summary") or "").strip()
+    quality_risks = quality.get("risks") or []
     return (
         f"Agent B 返回 needs_clarification（第 {revision} 轮修订）。"
         "请根据以下反馈修订机会单，输出**完整** AppOpportunityBlueprint JSON（含 requirement、evidence、data_quality）。\n\n"
+        f"## quality_summary\n{quality_summary or 'none'}\n\n"
+        f"## quality_risks\n{json.dumps(quality_risks, ensure_ascii=False, indent=2)}\n\n"
         f"## reasons\n{json.dumps(reasons, ensure_ascii=False, indent=2)}\n\n"
         f"## suggested_rules\n{json.dumps(rules, ensure_ascii=False, indent=2)}\n\n"
         f"## open_questions\n{json.dumps(questions, ensure_ascii=False, indent=2)}\n"
@@ -66,6 +72,33 @@ def _attach_correlation(outcome: dict[str, Any]) -> dict[str, Any]:
     if feedback.get("run_id"):
         outcome["correlation_id"] = str(feedback["run_id"])
     return outcome
+
+
+def _feedback_learning(fb: dict[str, Any], *, prefix: str = "") -> str:
+    bp = fb.get("blueprint") or {}
+    artifacts = fb.get("artifacts") or {}
+    quality = artifacts.get("quality") or {}
+    reasons = [str(r).strip() for r in (fb.get("reasons") or []) if str(r).strip()]
+    rules = [str(r).strip() for r in (fb.get("suggested_rules") or []) if str(r).strip()]
+    questions = [str(q).strip() for q in (bp.get("open_questions") or []) if str(q).strip()]
+    parts: list[str] = []
+    if prefix:
+        parts.append(prefix.strip())
+    quality_summary = str(quality.get("summary") or "").strip()
+    if quality_summary:
+        parts.append(f"quality: {quality_summary[:140]}")
+    quality_risks = [str(r).strip() for r in (quality.get("risks") or []) if str(r).strip()]
+    if quality_risks:
+        parts.append(f"risks: {', '.join(quality_risks[:3])}")
+    if reasons:
+        parts.append(f"avoid: {reasons[0][:140]}")
+    if rules:
+        parts.append(f"rule: {rules[0][:140]}")
+    if questions:
+        parts.append(f"ask: {questions[0][:120]}")
+    if not parts:
+        parts.append(str(fb.get("agent_b_status") or "feedback"))
+    return " | ".join(parts)
 
 
 def _maybe_publish(
@@ -310,6 +343,12 @@ def run_blueprint_pipeline(
             if round_num >= max_rounds:
                 if save_feedback:
                     save_feedback_raw(feedback)
+                    append_inline_learning(
+                        opportunity_id=oid,
+                        reason=f"clarification exhausted: {feedback.get('agent_b_status')}",
+                        feedback=feedback,
+                        learning=_feedback_learning(feedback, prefix="clarification"),
+                    )
                 return {
                     "accepted": True,
                     "blueprint": blueprint.model_dump(),
@@ -377,6 +416,12 @@ def run_blueprint_pipeline(
                 )
             if save_feedback:
                 save_feedback_raw(impl_feedback)
+                append_inline_learning(
+                    opportunity_id=str(impl_feedback.get("opportunity_id") or oid),
+                    reason=f"implementation: {impl_feedback.get('agent_b_status')}",
+                    feedback=impl_feedback,
+                    learning=_feedback_learning(impl_feedback, prefix="implementation"),
+                )
             outcome = {
                 "accepted": True,
                 "blueprint": blueprint.model_dump(),
@@ -409,6 +454,12 @@ def run_blueprint_pipeline(
             )
             if save_feedback:
                 save_feedback_raw(feedback)
+                append_inline_learning(
+                    opportunity_id=str(feedback.get("opportunity_id") or oid),
+                    reason=f"terminal: {status}",
+                    feedback=feedback,
+                    learning=_feedback_learning(feedback, prefix="terminal"),
+                )
             return {
                 "accepted": status != "rejected",
                 "blueprint": blueprint.model_dump(),

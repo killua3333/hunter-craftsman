@@ -127,6 +127,23 @@ def test_sync_implement_endpoint():
         assert body["release_handoff"]["platform"]["target"] == "android"
 
 
+def test_sync_implement_preserves_agent_a_context():
+    req = json.loads(SAMPLE.read_text(encoding="utf-8"))
+    req["agent_a_context"] = {
+        "summary": "Keep the app focused",
+        "estimated_complexity": "low",
+        "open_questions": ["Should history be editable?"],
+        "reasons": ["Prefer a narrow first release"],
+    }
+    with TestClient(create_app()) as client:
+        resp = client.post("/v1/runs/sync-implement", json={"requirement": req})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "artifacts" in body
+        assert "quality" in body["artifacts"]
+        assert "summary" in body["artifacts"]["quality"]
+
+
 def test_release_endpoints_agent_c_android(monkeypatch):
     monkeypatch.setattr(settings, "release_require_human_approval", True)
     monkeypatch.setattr(settings, "release_require_policy_checks", True)

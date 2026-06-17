@@ -143,6 +143,37 @@ def _build_release_handoff(
     }
 
 
+def _quality_summary(
+    *,
+    verification: str,
+    backend_mode: str,
+    gate_result: dict[str, Any],
+    smoke_skip_reason: str,
+    build_skip_reason: str,
+) -> dict[str, Any]:
+    signals = list(gate_result.get("signals") or [])
+    risks: list[str] = []
+    if verification != "verified":
+        risks.append("native_verification_skipped_or_unavailable")
+    if "demo_only_verification" in signals:
+        risks.append("demo_only_output")
+    if smoke_skip_reason:
+        risks.append("android_smoke_not_executed")
+    if build_skip_reason:
+        risks.append("native_build_backend_unavailable")
+    return {
+        "verification": verification,
+        "backend_mode": backend_mode,
+        "signals": signals,
+        "risks": risks,
+        "summary": (
+            "native verified build"
+            if verification == "verified"
+            else "demo-level artifact with reduced native validation"
+        ),
+    }
+
+
 def analyze_requirement(raw: dict[str, Any]) -> CraftsmanFeedback:
     from craftsman.requirement_normalize import normalize_requirement, soft_fill_requirement
 
@@ -618,12 +649,21 @@ def run_implementation(
             return _maybe_scope_retry(store, run_id, fb, req, scope_retry_depth)
 
         status = AgentBStatus.IMPLEMENTATION_COMPLETE
+        quality = _quality_summary(
+            verification=verification,
+            backend_mode=backend.mode,
+            gate_result=gate_result,
+            smoke_skip_reason=smoke_skip_reason,
+            build_skip_reason=build_skip_reason,
+        )
 
         reasons: list[str] = []
         if verification == "demo":
             reasons.append(build_skip_reason or "demo-only：已跳过原生编译验证")
         else:
             reasons.append("实现与验证完成，发布步骤由 Agent C 负责")
+        if quality["risks"]:
+            reasons.append("quality_risks: " + ", ".join(quality["risks"][:3]))
         if smoke_skip_reason:
             reasons.append(smoke_skip_reason)
         if privacy_note:
@@ -677,6 +717,7 @@ def run_implementation(
         }
         artifacts_payload["metrics"] = metrics_payload
         artifacts_payload["verification"] = verification
+        artifacts_payload["quality"] = quality
         release_handoff = _build_release_handoff(
             run_id=run_id,
             req=req,

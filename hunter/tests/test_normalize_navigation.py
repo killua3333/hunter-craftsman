@@ -51,3 +51,5 @@ def test_navigation_tab_root_maps_to_tab():
     assert bp.requirement is not None
     assert bp.requirement.ui_layout.navigation == "tab"
     assert len(bp.requirement.ui_layout.screens) == 3
+    assert bp.requirement.product_quality.target == "verified"
+    assert bp.requirement.product_quality.risks == []

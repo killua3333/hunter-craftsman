@@ -17,6 +17,7 @@ REPAIR_PROMPT = (
     "- features 最多 3 项；每项 id、title、type=list|form|detail|tab_root；items 为字符串数组（每项≤3条）\n"
     "- requirement 含 app, core_logic.description, ui_layout, branding, store\n"
     "- ui_layout.navigation 只能是 stack|tab|single（多 Tab 用 tab，禁止 tab_root）\n"
+    "- requirement.product_quality 默认用 {\"target\":\"verified\",\"interaction_depth\":\"task_focused\",\"risks\":[]}；若只能做到 demo，把原因写进 risks\n"
     "- 总 JSON 尽量控制在 3500 字符以内，避免被截断"
 )
 
@@ -24,7 +25,8 @@ REPAIR_STEP_LIMIT_PROMPT = (
     "上一轮因 ReAct 步数上限中断，未输出 JSON。\n"
     "请**不要调用任何工具**，根据对话里已有的 play_search 结果（若无则用 assumption），\n"
     "**仅**输出完整 AppOpportunityBlueprint JSON（纯 JSON，无 Markdown）。\n"
-    "features 最多 3 项、每项 items 最多 3 条；禁止 app_idea/opportunity 外层。"
+    "features 最多 3 项、每项 items 最多 3 条；禁止 app_idea/opportunity 外层。\n"
+    "requirement.product_quality 默认用 verified/task_focused；若只能做到 demo，把原因写进 risks。"
 )
 
 
