@@ -143,8 +143,8 @@ def _maybe_publish(
 
 
 AUTOPILOT_TRIGGER = (
-    "Autopilot 已启动。请自动搜索 Google Play 工具类 app 机会，"
-    "选定 1 个最适合纯前端 Android MVP 的方向，"
+    "Autopilot 已启动。请用底层搜索信号自动搜索 Google Play app 机会，"
+    "从搜索结果里选定 1 个证据最硬、最适合纯前端 Android MVP 的方向，"
     "输出 accepted=true 的完整 AppOpportunityBlueprint JSON（含 requirement）。"
 )
 
@@ -181,7 +181,7 @@ def run_autopilot_pipeline(
         session = DiscoverySession()
         trigger = AUTOPILOT_TRIGGER
         if attempt > 1:
-            trigger += f"\n\n（第 {attempt} 次选品：请避开上一轮失败方向，换一个新的工具类机会。）"
+            trigger += f"\n\n（第 {attempt} 次选品：请避开上一轮失败方向、同义品类和相同关键词，换一个新的机会。）"
         blueprint, result = ensure_blueprint(session, trigger, max_attempts=3)
         if blueprint is None:
             last_outcome = {

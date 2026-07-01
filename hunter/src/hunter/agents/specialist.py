@@ -32,6 +32,11 @@ _DISCOVERY_JSON_RULE = """
 
 必含顶层字段：accepted, app_name, core_logic, ui_layout, keywords, data_quality, evidence, requirement
 
+### 选题约束（避免偏置）
+- 最终 app 类型必须来自本轮 `play_search` 的返回结果或其直接可推断的用户任务
+- 不要从下面的字段模板、历史示例、常见类别或训练记忆中挑选品类
+- 若用户要求“换一个方向”或“避开上一轮”，必须避开已有 app_name、bundle_id、keywords 和同义品类
+
 ### 工具调用（极重要，防步数耗尽）
 - **最多调用 1 次** `play_search`，拿到结果后**立刻**输出 JSON，禁止再调工具
 - 禁止调用 web_search、play_category_scan（不存在于本模式）
@@ -49,8 +54,8 @@ _DISCOVERY_JSON_RULE = """
 - branding: {"primary_color":"#4A90D9","icon_text":"倒"}
 - store: {"subtitle","description","keywords":["词1"],"privacy_url":"https://example.com/privacy"}
 
-### 最小示例（须同结构，内容可换）
-{"accepted":true,"app_name":"极简倒数日","core_logic":"本地倒计时列表","ui_layout":"单屏卡片列表","keywords":["倒数日","widget"],"data_quality":"mixed","evidence":[{"query":"Countdown Widget 广告","source":"assumption://play","snippet":"用户抱怨广告过多"}],"requirement":{"platform":{"target":"android"},"app":{"name":"极简倒数日","bundle_id":"com.hunter.countdown"},"features":[{"id":"list","type":"list","title":"事件列表","items":["卡片显示剩余天数","增删改事件"]},{"id":"widget","type":"detail","title":"桌面 Widget","items":["显示最近事件倒计时"]}],"core_logic":{"persistence":"SharedPreferences","description":"SharedPreferences 存事件列表"},"ui_layout":{"navigation":"single","screens":["事件列表"]},"branding":{"primary_color":"#4A90D9","icon_text":"倒"},"store":{"subtitle":"无广告倒数日","description":"极简倒计时","keywords":["倒数日","widget"],"privacy_url":"https://example.com/privacy"},"budget":{"max_features":8,"max_hours":2}}}
+### 字段模板（只展示结构，不代表选题建议）
+{"accepted":true,"app_name":"<从搜索结果抽取的应用名>","core_logic":"<一句话核心逻辑>","ui_layout":"<一句话界面结构>","keywords":["<关键词1>","<关键词2>"],"data_quality":"mixed","evidence":[{"query":"<实际 play_search query>","source":"<结果 URL 或 play.google.com>","snippet":"<搜索结果中的痛点或可推断信号>"}],"requirement":{"platform":{"target":"android"},"app":{"name":"<应用名>","bundle_id":"com.hunter.<shortslug>"},"features":[{"id":"main","type":"list","title":"<主功能>","items":["<短句1>","<短句2>"]},{"id":"settings","type":"form","title":"<设置或辅助功能>","items":["<短句1>"]}],"core_logic":{"persistence":"SharedPreferences","description":"<本地状态/计算/记录方式>"},"ui_layout":{"navigation":"single","screens":["<主屏>"]},"branding":{"primary_color":"#4A90D9","icon_text":"<1字>"},"store":{"subtitle":"<无广告/离线/轻量等差异化>","description":"<简短商店描述>","keywords":["<关键词1>","<关键词2>"],"privacy_url":"https://example.com/privacy"},"budget":{"max_features":8,"max_hours":2}}}
 """
 
 _JSON_OUTPUT_RULE = """
