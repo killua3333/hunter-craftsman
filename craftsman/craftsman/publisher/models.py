@@ -19,6 +19,7 @@ class PublisherStatus(StrEnum):
     BUILDING = "building"
     UPLOADING = "uploading"
     SUBMITTED = "submitted"
+    INTERNAL_SUBMITTED = "internal_submitted"
     DRY_RUN_COMPLETE = "dry_run_complete"
     FAILED = "failed"
 
@@ -27,6 +28,7 @@ class PublisherStatus(StrEnum):
 class ReleaseBuildResult:
     ok: bool
     aab_path: str | None = None
+    apk_path: str | None = None
     log: str = ""
     reasons: list[str] = field(default_factory=list)
     dry_run: bool = False

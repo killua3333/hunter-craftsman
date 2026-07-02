@@ -12,7 +12,25 @@ import json
 import os
 from typing import Any
 
-from langchain_core.tools import tool
+try:
+    from langchain_core.tools import tool
+except ModuleNotFoundError:
+    class _LocalTool:
+        def __init__(self, fn):
+            self.fn = fn
+            self.__name__ = getattr(fn, "__name__", "local_tool")
+            self.__doc__ = getattr(fn, "__doc__", None)
+
+        def __call__(self, *args, **kwargs):
+            return self.fn(*args, **kwargs)
+
+        def invoke(self, payload):
+            if isinstance(payload, dict):
+                return self.fn(**payload)
+            return self.fn(payload)
+
+    def tool(fn):
+        return _LocalTool(fn)
 
 
 def _ensure_play_proxy() -> None:

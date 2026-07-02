@@ -5,7 +5,7 @@ from pathlib import Path
 
 from craftsman.config import settings
 from craftsman.publisher.android_build import build_release_aab
-from craftsman.publisher.handoff import application_id, resolve_project_dir
+from craftsman.publisher.handoff import application_id, resolve_icon_path, resolve_project_dir
 from craftsman.publisher.orchestrator import run_android_release
 
 
@@ -25,6 +25,11 @@ def _sample_handoff(workspace_root: Path, *, run_id: str = "run-test") -> dict:
     (metadata / "title.txt").write_text("Test App", encoding="utf-8")
     (metadata / "short_description.txt").write_text("Short", encoding="utf-8")
     (metadata / "full_description.txt").write_text("Full description", encoding="utf-8")
+    artifacts = workspace / "artifacts"
+    artifacts.mkdir(parents=True, exist_ok=True)
+    (artifacts / "icon.png").write_bytes(b"icon")
+    (artifacts / "ic_launcher_512x512.png").write_bytes(b"launcher")
+    (artifacts / "screenshot-1.png").write_bytes(b"shot")
 
     base = f"object://local/runs/{run_id}"
     return {
@@ -39,7 +44,7 @@ def _sample_handoff(workspace_root: Path, *, run_id: str = "run-test") -> dict:
             "project_path": f"{base}/project",
             "metadata_path": f"{base}/project/play/metadata/zh-CN",
             "icon": f"{base}/artifacts/icon.png",
-            "screenshots": [f"{base}/artifacts/shot.png"],
+            "screenshots": [f"{base}/artifacts/screenshot-1.png"],
         },
         "build_provenance": {
             "backend": "android_gradle",
@@ -66,6 +71,21 @@ def test_handoff_resolves_project_dir(tmp_path, monkeypatch):
     assert project is not None
     assert project.name == "project"
     assert application_id(handoff) == "com.test.publisher"
+
+
+def test_handoff_resolves_launcher_icon_fallback(tmp_path, monkeypatch):
+    root = tmp_path / "workspace"
+    monkeypatch.setattr(settings, "workspace_root", root)
+    handoff = _sample_handoff(root, run_id="icon-fallback")
+    bundle = handoff["release_bundle"]
+    bundle["icon"] = "object://local/runs/icon-fallback/artifacts/AppIcon.png"
+    icon = root / "icon-fallback" / "artifacts" / "icon.png"
+    icon.unlink(missing_ok=True)
+
+    resolved = resolve_icon_path(handoff)
+
+    assert resolved is not None
+    assert resolved.name == "ic_launcher_512x512.png"
 
 
 def test_build_release_aab_dry_run(tmp_path, monkeypatch):
@@ -103,3 +123,22 @@ def test_run_android_release_rejects_ios(tmp_path, monkeypatch):
     result = run_android_release(handoff, release_id="rel-ios")
     assert result["agent_c_status"] == "failed"
     assert "not android" in " ".join(result.get("reasons") or []).lower()
+
+
+def test_run_android_release_blocks_low_quality_handoff(tmp_path, monkeypatch):
+    root = tmp_path / "workspace"
+    monkeypatch.setattr(settings, "workspace_root", root)
+    handoff = _sample_handoff(root)
+    handoff["quality_score"] = 61
+    handoff["release_ready"] = False
+    handoff["quality_report"] = {
+        "quality_score": 61,
+        "release_ready": False,
+        "failure_classes": ["weak_core_flow"],
+    }
+
+    result = run_android_release(handoff, release_id="rel-low-quality", dry_run=True)
+
+    assert result["agent_c_status"] == "failed"
+    assert result["failure_class"] == "quality_gate_blocked"
+    assert "quality" in " ".join(result.get("reasons") or []).lower()

@@ -22,6 +22,7 @@ def upload_to_play(
     metadata_dir: Path | None = None,
     icon_path: Path | None = None,
     screenshot_paths: list[Path] | None = None,
+    sync_store_assets: bool = True,
 ) -> ReleaseUploadResult:
     """
     Upload AAB to Google Play via Edits API: listing → bundle → track → commit.
@@ -68,28 +69,38 @@ def upload_to_play(
     shots = screenshot_paths or []
     store_response: dict[str, Any] = {"package_name": package_name, "track": release_track}
 
+    failed_stage = "start"
     try:
+        failed_stage = "edit_insert"
         edit = service.edits().insert(packageName=package_name, body={}).execute()
         edit_id = str(edit["id"])
         store_response["edit_id"] = edit_id
 
-        listing_result = sync_listing_to_edit(
-            service,
-            package_name=package_name,
-            edit_id=edit_id,
-            metadata_dir=metadata_dir,
-        )
-        store_response["listing"] = listing_result
+        if sync_store_assets:
+            failed_stage = "listing"
+            listing_result = sync_listing_to_edit(
+                service,
+                package_name=package_name,
+                edit_id=edit_id,
+                metadata_dir=metadata_dir,
+            )
+            store_response["listing"] = listing_result
 
-        images_result = sync_images_to_edit(
-            service,
-            package_name=package_name,
-            edit_id=edit_id,
-            icon_path=icon_path,
-            screenshot_paths=shots,
-        )
-        store_response["images"] = images_result
+            failed_stage = "images"
+            images_result = sync_images_to_edit(
+                service,
+                package_name=package_name,
+                edit_id=edit_id,
+                icon_path=icon_path,
+                screenshot_paths=shots,
+            )
+            store_response["images"] = images_result
+        else:
+            store_response["listing"] = {"skipped": True, "reason": "store asset sync disabled for release retry"}
+            store_response["images"] = {"uploaded": [], "errors": [], "skipped": True}
+            store_response["store_assets_skipped"] = True
 
+        failed_stage = "bundle_upload"
         media = MediaFileUpload(str(aab_path), mimetype="application/octet-stream", resumable=True)
         bundle = (
             service.edits()
@@ -101,6 +112,7 @@ def upload_to_play(
         store_response["bundle"] = {"versionCode": version_code}
 
         if not version_code:
+            store_response["failed_stage"] = "bundle_upload"
             service.edits().delete(packageName=package_name, editId=edit_id).execute()
             return ReleaseUploadResult(
                 ok=False,
@@ -109,6 +121,7 @@ def upload_to_play(
                 store_response=store_response,
             )
 
+        failed_stage = "track_update"
         track_body = {
             "releases": [
                 {
@@ -130,6 +143,7 @@ def upload_to_play(
         )
         store_response["track_update"] = track_result
 
+        failed_stage = "commit"
         commit = service.edits().commit(packageName=package_name, editId=edit_id).execute()
         store_response["commit"] = commit
 
@@ -143,6 +157,7 @@ def upload_to_play(
     except Exception as exc:
         mapped = map_play_api_error(exc)
         store_response["error"] = mapped
+        store_response["failed_stage"] = failed_stage
         return ReleaseUploadResult(
             ok=False,
             track=release_track,

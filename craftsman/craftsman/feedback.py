@@ -25,7 +25,21 @@ def build_feedback(
     artifacts: dict | None = None,
     release_handoff: dict | None = None,
     verification: str | None = None,
+    quality_report: dict | None = None,
 ) -> CraftsmanFeedback:
+    quality_score = None
+    release_ready = None
+    polish_required = None
+    quality_failure_classes: list[str] = []
+    if isinstance(quality_report, dict):
+        raw_score = quality_report.get("quality_score")
+        if raw_score is not None:
+            quality_score = int(raw_score)
+        release_ready = bool(quality_report.get("release_ready"))
+        polish_required = bool(quality_report.get("polish_required"))
+        quality_failure_classes = [
+            str(item) for item in (quality_report.get("failure_classes") or [])
+        ]
     return CraftsmanFeedback(
         opportunity_id=opportunity_id,
         revision=revision,
@@ -44,4 +58,9 @@ def build_feedback(
         artifacts=artifacts,
         release_handoff=release_handoff,
         verification=verification,
+        quality_report=quality_report,
+        quality_score=quality_score,
+        release_ready=release_ready,
+        polish_required=polish_required,
+        quality_failure_classes=quality_failure_classes,
     )

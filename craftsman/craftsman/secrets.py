@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from craftsman.config import settings
+from craftsman.config import ROOT
 
 
 def _secret_file_candidates(env_name: str, root: Path) -> list[Path]:
@@ -38,3 +39,20 @@ def resolve_secret_value(env_name: str, current_value: str | None) -> str | None
     if current_value:
         return current_value
     return _read_secret_from_store(env_name)
+
+
+def resolve_secret_path(env_name: str, current_value: str | None) -> Path | None:
+    value = resolve_secret_value(env_name, current_value)
+    if not value:
+        return None
+    path = Path(value)
+    if path.is_absolute():
+        return path
+    candidates = [
+        ROOT / path,
+        Path.cwd() / path,
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return ROOT / path

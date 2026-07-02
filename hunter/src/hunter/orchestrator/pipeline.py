@@ -25,12 +25,18 @@ _TERMINAL_STATUSES = frozenset(
     {
         "implementation_failed",
         "implementation_complete",
+        "needs_polish",
         "ready_for_release",
         "submitted",
         "platform_unavailable",
         "rejected",
     }
 )
+
+
+def _safe_str(value: Any, max_len: int = 400) -> str:
+    text = str(value or "")
+    return text[:max_len] + "..." if len(text) > max_len else text
 
 
 def _emit_progress(
@@ -107,14 +113,11 @@ def _maybe_publish(
 AUTOPILOT_TRIGGER = (
     "Autopilot 已启动。请自动搜索 Google Play 工具类 app 机会。\n\n"
     "## 工作流程\n"
-    "1. 先调 play_competitive_analysis(query=\"工具类关键词\") 做竞品横向对比\n"
-    "2. 对 ripe 竞品调 play_analyze_reviews(app_id=\"...\") 批量分析差评\n"
-    "3. 基于差评数据，在最终 Blueprint 的 product_brief 字段中输出：\n"
-    "   - target_users: 目标用户画像（1句话）\n"
-    "   - pain_points: 从差评中归纳的 3 个核心痛点\n"
-    "   - differentiation: 3 个差异化角度\n"
-    "   - feature_priority: 按优先级排序的功能列表\n"
-    "4. 输出 accepted=true 的完整 AppOpportunityBlueprint JSON（含 requirement + product_brief）\n\n"
+    "1. 先调 play_competitive_analysis(query=\"工具类关键词\", count=5) 做竞品横向对比\n"
+    "2. 对 2 个 ripe 竞品调 play_analyze_reviews(app_id=\"...\", max_reviews=30) 批量分析差评（数据量小避免截断）\n"
+    "3. 基于差评数据，输出 product_brief（含 target_users / pain_points / differentiation / feature_priority）\n"
+    "4. 基于差评数据做变现决策（monetization + price_tier）\n"
+    "5. 输出 accepted=true 的 AppOpportunityBlueprint JSON（features 最多 3 个，description 一句话，JSON 务必精简避免截断）\n\n"
     "选定 1 个最适合纯前端 Android MVP 的方向。"
 )
 
@@ -132,9 +135,11 @@ def run_autopilot_pipeline(
     publish: bool = False,
     auto_approve_release: bool = True,
     max_opportunity_attempts: int = MAX_AUTOPILOT_OPPORTUNITY_ATTEMPTS,
+    earnings_signal: str = "",
 ) -> dict[str, Any]:
     """人类仅触发「开始」：自动发现机会 → B → 可选 C；失败可 pick 下一个机会。"""
     from hunter.agents.specialist import DiscoverySession
+    from hunter.discovery import build_play_discovery_run, discovery_run_to_prompt
     from hunter.feedback.inline_learnings import append_inline_learning
 
     attempts: list[dict[str, Any]] = []
@@ -149,7 +154,10 @@ def run_autopilot_pipeline(
             attempt=attempt,
         )
         session = DiscoverySession()
-        trigger = AUTOPILOT_TRIGGER
+        discovery_run = build_play_discovery_run()
+        trigger = AUTOPILOT_TRIGGER + "\n\n" + discovery_run_to_prompt(discovery_run)
+        if earnings_signal:
+            trigger += "\n" + earnings_signal
         if attempt > 1:
             trigger += f"\n\n（第 {attempt} 次选品：请避开上一轮失败方向，换一个新的工具类机会。）"
         blueprint, result = ensure_blueprint(session, trigger, max_attempts=3)
@@ -162,6 +170,7 @@ def run_autopilot_pipeline(
                 "mode": "autopilot",
                 "stopped": "discovery_parse_failed",
                 "autopilot_attempt": attempt,
+                "discovery_run": discovery_run,
             }
             attempts.append(last_outcome)
             continue
@@ -173,12 +182,33 @@ def run_autopilot_pipeline(
                 "mode": "autopilot",
                 "stopped": "blueprint_rejected_by_specialist",
                 "autopilot_attempt": attempt,
+                "discovery_run": discovery_run,
                 "reasons": blueprint.reasons or [],
             }
             attempts.append(outcome)
             append_inline_learning(
                 opportunity_id=opportunity_id,
                 reason=f"autopilot attempt {attempt}: specialist rejected blueprint — {blueprint.summary or 'no summary'}",
+            )
+            continue
+
+        build_fit = blueprint.build_fit_score
+        has_alternatives = bool(getattr(blueprint, "rejected_candidates", None))
+        if build_fit is not None and build_fit < 60 and has_alternatives:
+            outcome = {
+                "accepted": False,
+                "blueprint": blueprint.model_dump(),
+                "feedback": None,
+                "mode": "autopilot",
+                "stopped": "build_fit_too_low",
+                "autopilot_attempt": attempt,
+                "discovery_run": discovery_run,
+                "reasons": [f"build_fit_score={build_fit} below 60"],
+            }
+            attempts.append(outcome)
+            append_inline_learning(
+                opportunity_id=opportunity_id,
+                reason=f"autopilot attempt {attempt}: build fit too low ({build_fit})",
             )
             continue
 
@@ -198,10 +228,34 @@ def run_autopilot_pipeline(
                 f"core_logic: {blueprint.core_logic}\n"
                 f"store description: {blueprint.requirement.store.get('description', '')}\n"
             )
-            answer = session.send(brief_prompt, max_rounds=1)
+            answer = session.send(brief_prompt)
             brief_text = answer.get("final_answer") or answer.get("answer") or ""
             if brief_text:
                 blueprint.product_brief = _safe_str(brief_text, 2000)
+
+        # 如果没有 monetization 字段，基于 product_brief 中差评数据自动计算
+        if not blueprint.monetization or blueprint.monetization not in ("free", "paid_once"):
+            _emit_progress(
+                progress_callback,
+                "autopilot_discovery",
+                "computing monetization decision",
+                source="agent_a",
+                attempt=attempt,
+            )
+            brief = (blueprint.product_brief or "").lower()
+            # 简单规则：差评中提及广告/订阅 → 付费买断；否则免费
+            ad_signals = sum(1 for kw in ["广告", "ad", "ads", "advertisement", "订阅", "subscription"] if kw in brief)
+            free_signals = sum(1 for kw in ["免费", "free", "no ads", "offline"] if kw in brief)
+            if ad_signals >= 2:
+                blueprint.monetization = "paid_once"
+                blueprint.price_tier = "0.99"
+            elif free_signals >= 3:
+                blueprint.monetization = "free"
+                blueprint.price_tier = None
+            else:
+                # 默认：纯前端离线工具 → 免费冲锋
+                blueprint.monetization = "free"
+                blueprint.price_tier = None
 
         outcome = run_blueprint_pipeline(
             blueprint,
@@ -219,6 +273,7 @@ def run_autopilot_pipeline(
         )
         outcome["mode"] = "autopilot"
         outcome["discovery_answer"] = result.get("answer")
+        outcome["discovery_run"] = discovery_run
         outcome["autopilot_attempt"] = attempt
         attempts.append(outcome)
         last_outcome = outcome

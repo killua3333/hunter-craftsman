@@ -20,7 +20,7 @@ agent:
   # 输出契约（Pydantic）：AppOpportunityBlueprint；DeepSeek 从助手 JSON 文本解析
   output_schema: AppOpportunityBlueprint
   # ReAct 循环最大步数（防止无限调工具）
-  max_iterations: 16
+  max_iterations: 10
 
 # 方案 B：每周从 feedback/ 归纳，主要更新 specialist_learnings.md
 learning:

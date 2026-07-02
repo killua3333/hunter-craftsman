@@ -1,35 +1,39 @@
-# Documentation Index
+# Hunter-Craftsman 文档索引
 
-## 审查入口（推荐先看）
+建议接手方按下面顺序阅读。
 
-- **[project-summary.md](project-summary.md)** — 仓库结构、三 Agent 分工、Master Roadmap 完成度、配置与边界
-- **[client-overview.md](client-overview.md)** — **甲方 / 非技术版**：价值说明、交付物、验收方式、能力边界
+## 第一组：交接必读
 
-## 操作与上架
+- [handoff.md](handoff.md)：项目现状、真实能力、启动方式、配置边界、已知问题。
+- [operations-manual.md](operations-manual.md)：日常操作手册，从启动服务到处理失败。
+- [play-console-setup-checklist.md](play-console-setup-checklist.md)：Google Play internal track 所需账号、包名池、签名和 service account 配置。
+- [demo-script.md](demo-script.md)：给客户或内部评审演示时的推荐脚本。
 
-- [operator-step-by-step-guide.md](operator-step-by-step-guide.md) — 环境、Autopilot、手动 run、发布治理流
-- [play-console-setup-checklist.md](play-console-setup-checklist.md) — Google Play 密钥与 Console 一次性配置
-- [cloudflare-privacy-setup.md](cloudflare-privacy-setup.md) — 隐私政策 Cloudflare Pages 部署
-- [docker-android-ci.md](docker-android-ci.md) — Docker builder 真编译与冒烟测试
-- [windows-scheduler-guide.md](windows-scheduler-guide.md) — Windows 自动调度：循环触发 autopilot 发现→实现→上架
+## 第二组：产品与前端
 
-## 前端控制台
+- [product-roadmap.md](product-roadmap.md)：产品路线图和阶段目标。
+- [frontend-product-spec.md](frontend-product-spec.md)：用户工作台的信息架构、字段和交互说明。
+- [client-overview.md](client-overview.md)：非技术视角的项目介绍。
 
-- [frontend-foolproof-guide.md](frontend-foolproof-guide.md) — Dashboard 傻瓜操作说明
+## 第三组：三段智能体
 
-## 商业模式
+- [agent-a-demand-discovery.md](agent-a-demand-discovery.md)：Google Play 需求发现、证据和评分逻辑。
+- [agent-b-code-quality.md](agent-b-code-quality.md)：App 生成、质量报告、发布门槛和修复策略。
+- [agent-c-internal-testing.md](agent-c-internal-testing.md)：internal track 发布状态、失败分类和操作原则。
+- [agent-c-architecture.md](agent-c-architecture.md)：Agent C 更详细的架构说明。
 
-- [business-model-ai-remission-analysis.md](business-model-ai-remission-analysis.md) — 「AI 赚钱赎身」模式可行性分析
+## 第四组：运维与扩展
 
-## 架构与运维
+- [windows-scheduler-guide.md](windows-scheduler-guide.md)：Windows 自动调度。
+- [docker-android-ci.md](docker-android-ci.md)：Android Docker 构建环境。
+- [cloudflare-privacy-setup.md](cloudflare-privacy-setup.md)：隐私政策页面部署。
+- [secret-management-plan.md](secret-management-plan.md)：密钥管理方案。
+- [execution-runtime-ops.md](execution-runtime-ops.md)：执行运行时和 worker 运维。
 
-- [agent-c-architecture.md](agent-c-architecture.md) — Agent C 模块与 A→B→C 数据流
-- [execution-runtime-ops.md](execution-runtime-ops.md) — 运行时、backend pool
-- [secret-management-plan.md](secret-management-plan.md) — 密钥 provider 策略
+## 当前阶段判断
 
-## 归档
+项目已经具备“真实 Play 需求发现 -> 人工选择 -> App 生成 -> internal track 发布尝试”的主链路，但仍需要继续打磨：
 
-- [archive/legacy-plans/dual-agent-upgrade-architecture.md](archive/legacy-plans/dual-agent-upgrade-architecture.md)
-- [archive/legacy-plans/runtime-foundation-checklist.md](archive/legacy-plans/runtime-foundation-checklist.md)
-
-归档文档仅作历史决策追溯；**当前执行以 Master Roadmap + project-summary 为准**。
+- Agent B 生成质量需要持续提高，避免“能编译但不像真实产品”。
+- 包名池必须和 Play Console 预创建 App 严格对齐。
+- 用户前端应继续减少技术术语，只在技术日志中保留 run_id、release_id 和原始事件。

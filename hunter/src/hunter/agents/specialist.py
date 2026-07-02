@@ -29,6 +29,8 @@ _DISCOVERY_JSON_RULE = """
 ## 最终输出（Autopilot 必遵）
 最后一条助手消息必须是**纯 JSON**。必须 `accepted: true` 并含完整 requirement。
 features 每项含 id、title、type、items（字符串数组）；platform.target 默认 android。
+features 数量严格控制在 2-4 个（超过 4 个会被截断导致解析失败）。
+items 每项 1-2 条，描述简洁。
 """
 
 _JSON_OUTPUT_RULE = """

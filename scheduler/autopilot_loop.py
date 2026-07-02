@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import signal
@@ -198,8 +199,9 @@ def run_hunter_autopilot(
     publish: bool = True,
     timeout: float = 3600.0,
     auto_approve: bool = True,
+    earnings_signal: str = "",
 ) -> dict[str, object]:
-    """触发 hunter autopilot --publish，返回结果状态。"""
+    """触发 hunter autopilot --publish，返回结果状态。可注入收入品类信号。"""
     args = [
         sys.executable, "-m", "hunter.main", "autopilot",
         "--base-url", f"http://{CRAFTSMAN_HOST}:{CRAFTSMAN_PORT}",
@@ -211,8 +213,12 @@ def run_hunter_autopilot(
     if not auto_approve:
         args.append("--no-auto-approve")
 
+    env = _build_env()
+    if earnings_signal:
+        env["AUTOPILOT_EARNINGS_SIGNAL"] = earnings_signal
+
     logging.info(f"触发 hunter autopilot{' --publish' if publish else ''}...")
-    result = _run_command(args, cwd=HUNTER_DIR, timeout=timeout + 120)
+    result = _run_command(args, cwd=HUNTER_DIR, timeout=timeout + 120, env=env)
 
     outcome: dict[str, object] = {
         "returncode": result.returncode,
@@ -280,25 +286,43 @@ def run_loop(
                     time.sleep(60)
                     continue
 
-            # 2. 触发 hunter autopilot
+            # 2. (Phase 3) Agent D — 拉取收入数据，生成品类信号
+            earnings_signal = ""
             try:
-                outcome = run_hunter_autopilot(publish=publish, auto_approve=True)
+                from hunter.tools.play_earnings import play_get_earnings
+                earnings_raw = play_get_earnings.invoke({"months": 3})
+                logging.info(f"[Accountant] 收入数据拉取完成：{earnings_raw[:200]}...")
+                # 简单提取总收入，作为 AUTOPILOT_TRIGGER 的信号
+                data = json.loads(earnings_raw) if isinstance(earnings_raw, str) else earnings_raw
+                total_earnings = data.get("sales", {}).get("total_gross", 0)
+                if total_earnings > 0:
+                    earnings_signal = (
+                        f"\n极收信号：累计总收入 ${total_earnings}。"
+                        f"优先选择高收入同类品类方向。\n"
+                    )
+            except Exception as exc:
+                logging.debug(f"[Accountant] 收入数据拉取跳过（可能未配置 GCS）：{exc}")
+                earnings_signal = ""
+
+            # 3. 触发 hunter autopilot（注入品类信号）
+            try:
+                outcome = run_hunter_autopilot(publish=publish, auto_approve=True, earnings_signal=earnings_signal)
                 if outcome.get("status") == "failed":
                     exit_code = 1
             except Exception as exc:
                 logging.exception(f"Autopilot 抛出异常: {exc}")
 
-            # 3. 检查是否只跑一轮
+            # 4. 检查是否只跑一轮
             if once:
                 logging.info("--once 模式：本轮结束，退出。")
                 break
 
-            # 4. 检查是否达到最大轮数
+            # 5. 检查是否达到最大轮数
             if max_rounds > 0 and round_num >= max_rounds:
                 logging.info(f"达到最大轮数 {max_rounds}，退出。")
                 break
 
-            # 5. 休眠
+            # 6. 休眠
             sleep_seconds = interval_minutes * 60
             logging.info(f"本轮完成。休眠 {interval_minutes} 分钟后开始下一轮（{round_num + 1}）...")
             # 分片 sleep，便于响应 Ctrl+C

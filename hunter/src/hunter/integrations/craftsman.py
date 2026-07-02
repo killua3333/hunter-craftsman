@@ -95,6 +95,36 @@ def _platform_target(requirement: dict[str, Any]) -> str:
             return target
     return "android"
 
+def _opportunity_meta_from_blueprint(blueprint: AppOpportunityBlueprint) -> dict[str, Any]:
+    meta: dict[str, Any] = {}
+    for field in (
+        "app_name",
+        "niche",
+        "target_users",
+        "pain_points",
+        "competitor_gap",
+        "opportunity_score",
+        "build_fit_score",
+        "evidence_score",
+        "source_apps",
+        "review_pain_summary",
+        "discovery_run_id",
+        "decision_reason",
+        "data_quality",
+    ):
+        value = getattr(blueprint, field, None)
+        if value is not None:
+            meta[field] = value
+    if blueprint.evidence:
+        meta["evidence"] = [e.model_dump() for e in blueprint.evidence]
+    if blueprint.rejected_candidates:
+        meta["rejected_candidates"] = [
+            candidate.model_dump(exclude_none=True)
+            for candidate in blueprint.rejected_candidates
+        ]
+    if blueprint.keywords:
+        meta["keywords"] = list(blueprint.keywords)
+    return meta
 
 def build_requirement_from_blueprint(
     blueprint: AppOpportunityBlueprint,
@@ -177,6 +207,9 @@ def build_requirement_from_blueprint(
         body["data_quality"] = blueprint.data_quality
     if blueprint.evidence:
         body["evidence"] = [e.model_dump() for e in blueprint.evidence]
+    meta = _opportunity_meta_from_blueprint(blueprint)
+    if meta:
+        body["opportunity_meta"] = meta
 
     return body
 
@@ -314,7 +347,7 @@ def wait_for_run_completion(
 ) -> dict[str, Any]:
     """Poll async run until terminal state and return terminal feedback payload."""
     started = datetime.now(timezone.utc).timestamp()
-    terminal = {"failed", "ready_for_release", "submitted", "platform_unavailable", "cancelled", "implementation_complete"}
+    terminal = {"failed", "ready_for_release", "submitted", "platform_unavailable", "cancelled", "implementation_complete", "needs_polish"}
     after_id = 0
     while True:
         row = get_run_status(run_id, base_url=base_url, timeout_seconds=30.0)

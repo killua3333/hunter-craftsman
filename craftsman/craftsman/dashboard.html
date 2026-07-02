@@ -1,973 +1,282 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Hunter Craftsman 控制台</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>应用机会工作台</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23246bfe'/%3E%3Cpath d='M9 17h14M16 10v14' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
   <style>
-    :root {
-      --bg: #050505;
-      --panel: #0d0d0d;
-      --panel-2: #141414;
-      --line: #2a2a2a;
-      --soft: #9d9d9d;
-      --text: #f5f5f5;
-      --muted: #c7c7c7;
-      --ok: #f5f5f5;
-      --warn: #d0d0d0;
-      --bad: #7f7f7f;
-      --accent: #ffffff;
-      --mono: "Consolas", "SFMono-Regular", "Liberation Mono", monospace;
-    }
-
+    :root { --bg:#f6f7fb; --panel:#ffffff; --ink:#17202a; --muted:#667085; --line:#d9dee8; --accent:#246bfe; --ok:#16794c; --warn:#a15c00; --bad:#b42318; --soft:#eef4ff; }
     * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: var(--mono);
-      background:
-        radial-gradient(circle at top left, rgba(255,255,255,0.08), transparent 28%),
-        linear-gradient(180deg, #0b0b0b 0%, #040404 100%);
-      color: var(--text);
-      min-height: 100vh;
-    }
-
-    .shell {
-      max-width: 1600px;
-      margin: 0 auto;
-      padding: 20px;
-    }
-
-    .topbar {
-      display: flex;
-      justify-content: space-between;
-      gap: 16px;
-      align-items: center;
-      border: 1px solid var(--line);
-      background: rgba(9, 9, 9, 0.9);
-      padding: 16px 18px;
-      margin-bottom: 16px;
-      box-shadow: 0 0 0 1px rgba(255,255,255,0.04) inset;
-    }
-
-    .title {
-      font-size: 24px;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-    }
-
-    .subtitle {
-      color: var(--soft);
-      font-size: 12px;
-      margin-top: 4px;
-    }
-
-    .actions {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-
-    button, input {
-      font: inherit;
-    }
-
-    button {
-      background: transparent;
-      color: var(--text);
-      border: 1px solid var(--line);
-      padding: 8px 12px;
-      cursor: pointer;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    button:hover { border-color: var(--accent); }
-    button:disabled { opacity: 0.45; cursor: wait; }
-
-    .grid {
-      display: grid;
-      grid-template-columns: 1.2fr 1fr;
-      gap: 16px;
-    }
-
-    .col {
-      display: grid;
-      gap: 16px;
-      align-content: start;
-    }
-
-    .panel {
-      border: 1px solid var(--line);
-      background: linear-gradient(180deg, rgba(22,22,22,0.92), rgba(7,7,7,0.95));
-      overflow: hidden;
-    }
-
-    .panel-head {
-      padding: 12px 14px;
-      border-bottom: 1px solid var(--line);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 12px;
-      background: rgba(255,255,255,0.03);
-    }
-
-    .panel-title {
-      font-size: 12px;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }
-
-    .panel-body {
-      padding: 14px;
-    }
-
-    .stats {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 12px;
-    }
-
-    .stat {
-      border: 1px solid var(--line);
-      background: var(--panel);
-      padding: 12px;
-      min-height: 88px;
-    }
-
-    .stat-label {
-      font-size: 11px;
-      color: var(--soft);
-      text-transform: uppercase;
-      margin-bottom: 8px;
-    }
-
-    .stat-value {
-      font-size: 28px;
-      line-height: 1;
-    }
-
-    .stat-meta {
-      font-size: 11px;
-      color: var(--soft);
-      margin-top: 8px;
-    }
-
-    .list {
-      display: grid;
-      gap: 10px;
-      max-height: 460px;
-      overflow: auto;
-    }
-
-    .item {
-      border: 1px solid var(--line);
-      background: var(--panel);
-      padding: 12px;
-      display: grid;
-      gap: 8px;
-    }
-
-    .item-top, .kv {
-      display: flex;
-      gap: 10px;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-
-    .badge {
-      border: 1px solid var(--line);
-      padding: 2px 8px;
-      font-size: 11px;
-      color: var(--muted);
-      text-transform: uppercase;
-      white-space: nowrap;
-    }
-
-    .muted {
-      color: var(--soft);
-      font-size: 12px;
-    }
-
-    .id {
-      word-break: break-all;
-      font-size: 12px;
-    }
-
-    .timeline {
-      display: grid;
-      gap: 10px;
-      max-height: 620px;
-      overflow: auto;
-    }
-
-    .event {
-      border-left: 2px solid var(--accent);
-      padding-left: 10px;
-    }
-
-    .event .meta {
-      color: var(--soft);
-      font-size: 11px;
-    }
-
-    .empty {
-      color: var(--soft);
-      border: 1px dashed var(--line);
-      padding: 16px;
-      text-align: center;
-    }
-
-    /* ---------- 发布进度 popover ---------- */
-    .overlay {
-      display: none;
-      position: fixed;
-      top: 0; left: 0; width: 100%; height: 100%;
-      background: rgba(0,0,0,0.6);
-      z-index: 100;
-      justify-content: center;
-      align-items: center;
-    }
-    .overlay.open { display: flex; }
-
-    .popover {
-      border: 1px solid var(--line);
-      background: var(--panel-2);
-      padding: 18px;
-      max-width: 520px;
-      width: 90%;
-      max-height: 80vh;
-      overflow: auto;
-    }
-    .popover-head {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      border-bottom: 1px solid var(--line);
-      padding-bottom: 10px;
-      margin-bottom: 12px;
-    }
-
-    .progress-line {
-      display: grid;
-      gap: 6px;
-    }
-    .progress-step {
-      display: flex;
-      align-items: flex-start;
-      gap: 10px;
-      padding: 4px 0;
-    }
-    .progress-icon {
-      width: 20px;
-      text-align: center;
-      flex-shrink: 0;
-      font-size: 14px;
-    }
-    .progress-icon.done { color: #4caf50; }
-    .progress-icon.current { color: #2196f3; animation: pulse 1.2s infinite; }
-    .progress-icon.pending { color: var(--soft); }
-    .progress-body { flex: 1; }
-    .progress-phase { font-size: 12px; }
-    .progress-detail { font-size: 11px; color: var(--soft); }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.4; }
-    }
-
-    /* ---------- 错误展开面板 ---------- */
-    .expandable {
-      border-top: 1px solid var(--line);
-      margin-top: 8px;
-      padding-top: 8px;
-      display: none;
-    }
-    .expandable.open { display: block; }
-    .expandable pre {
-      margin: 0;
-      font: inherit;
-      font-size: 11px;
-      color: var(--soft);
-      white-space: pre-wrap;
-      word-break: break-all;
-      max-height: 300px;
-      overflow: auto;
-      background: var(--bg);
-      padding: 8px;
-      border: 1px solid var(--line);
-    }
-
-    /* ---------- Play Console 链接样式 ---------- */
-    .play-link {
-      color: #66bb6a;
-      text-decoration: none;
-      border: 1px solid #66bb6a;
-      padding: 6px 10px;
-      font-size: 11px;
-      display: inline-block;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-    .play-link:hover { background: rgba(102,187,106,0.1); }
-
-    .footer {
-      margin-top: 16px;
-      color: var(--soft);
-      font-size: 11px;
-      text-align: right;
-    }
-
-    @media (max-width: 1100px) {
-      .grid {
-        grid-template-columns: 1fr;
-      }
-      .stats {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-    }
-
-    @media (max-width: 700px) {
-      .shell { padding: 12px; }
-      .topbar { flex-direction: column; align-items: flex-start; }
-      .stats {
-        grid-template-columns: 1fr;
-      }
-    }
+    body { margin:0; font-family: -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",Arial,sans-serif; background:var(--bg); color:var(--ink); }
+    button { font:inherit; cursor:pointer; border:1px solid var(--line); background:#fff; color:var(--ink); border-radius:6px; padding:8px 12px; }
+    button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+    button.danger { border-color:#f3b7b1; color:var(--bad); }
+    button:disabled { opacity:.55; cursor:not-allowed; }
+    .shell { max-width: 1360px; margin:0 auto; padding:22px; }
+    .topbar { display:flex; justify-content:space-between; gap:18px; align-items:flex-start; margin-bottom:18px; }
+    .title { font-size:26px; font-weight:760; letter-spacing:0; }
+    .subtitle { margin-top:6px; color:var(--muted); line-height:1.45; }
+    .actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
+    .tabs { display:flex; gap:8px; border-bottom:1px solid var(--line); margin-bottom:18px; overflow:auto; }
+    .tab { border:0; border-bottom:3px solid transparent; background:transparent; border-radius:0; padding:12px 10px; white-space:nowrap; color:var(--muted); }
+    .tab.active { color:var(--accent); border-bottom-color:var(--accent); font-weight:700; }
+    .view { display:none; }
+    .view.active { display:block; }
+    .grid { display:grid; grid-template-columns: repeat(12, 1fr); gap:14px; }
+    .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:16px; min-width:0; }
+    .span-3 { grid-column: span 3; } .span-4 { grid-column: span 4; } .span-5 { grid-column: span 5; } .span-6 { grid-column: span 6; } .span-7 { grid-column: span 7; } .span-8 { grid-column: span 8; } .span-12 { grid-column: span 12; }
+    .panel-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:12px; }
+    .panel-title { font-weight:750; font-size:16px; }
+    .muted { color:var(--muted); font-size:13px; }
+    .metric { font-size:28px; font-weight:760; margin:6px 0 2px; }
+    .cards { display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap:14px; }
+    .card { border:1px solid var(--line); border-radius:8px; padding:14px; background:#fff; }
+    .card-title { font-weight:760; margin-bottom:6px; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .badge { display:inline-flex; align-items:center; border:1px solid var(--line); border-radius:999px; padding:3px 8px; font-size:12px; color:#344054; background:#fff; }
+    .badge.ok { border-color:#abefc6; color:var(--ok); background:#ecfdf3; }
+    .badge.warn { border-color:#fedf89; color:var(--warn); background:#fffaeb; }
+    .badge.bad { border-color:#fecdca; color:var(--bad); background:#fef3f2; }
+    .score { height:8px; background:#edf1f7; border-radius:999px; overflow:hidden; margin-top:6px; }
+    .score > i { display:block; height:100%; background:var(--accent); width:0; }
+    .list { display:grid; gap:10px; }
+    .pipeline { display:grid; gap:12px; }
+    .pipe-card { border:1px solid var(--line); border-radius:8px; padding:14px; background:#fff; }
+    .steps { display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; margin-top:12px; }
+    .discovery-steps { grid-template-columns: repeat(6, minmax(120px, 1fr)); overflow:auto; }
+    .step { border:1px solid var(--line); border-radius:8px; padding:12px; min-height:96px; }
+    .discovery-steps .step { min-width:120px; min-height:82px; }
+    .step.done { background:#ecfdf3; border-color:#abefc6; } .step.running { background:var(--soft); border-color:#b2ccff; } .step.failed { background:#fef3f2; border-color:#fecdca; }
+    .step-name { font-weight:700; margin-bottom:6px; }
+    .kv { display:grid; grid-template-columns: 120px 1fr; gap:6px; font-size:13px; margin:8px 0; }
+    .empty { color:var(--muted); padding:24px; text-align:center; border:1px dashed var(--line); border-radius:8px; }
+    pre { white-space:pre-wrap; word-break:break-word; background:#101828; color:#e4e7ec; padding:12px; border-radius:8px; max-height:360px; overflow:auto; }
+    .timeline { display:grid; gap:8px; }
+    .event { border-left:3px solid var(--line); padding:8px 10px; background:#fff; }
+    .event.failed { border-left-color:var(--bad); background:#fef3f2; }
+    .event.running { border-left-color:var(--accent); background:#eef4ff; }
+    .metric-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:12px 0; }
+    .mini-metric { border:1px solid var(--line); border-radius:8px; padding:10px; background:#fff; }
+    .mini-metric b { display:block; font-size:20px; margin-top:4px; }
+    .footer { color:var(--muted); font-size:12px; margin-top:18px; }
+    .opp-card { display:flex; flex-direction:column; gap:12px; min-height:420px; }
+    .opp-title { font-size:18px; font-weight:780; line-height:1.25; }
+    .opp-subtitle { color:var(--muted); line-height:1.45; }
+    .insight-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .insight { border:1px solid var(--line); border-radius:8px; padding:10px; background:#fbfcff; }
+    .insight b { display:block; font-size:12px; color:var(--muted); margin-bottom:4px; }
+    .insight span { font-weight:720; }
+    .section-label { font-weight:720; font-size:13px; margin-bottom:6px; }
+    .pill-list { display:flex; gap:6px; flex-wrap:wrap; }
+    .evidence-list { display:grid; gap:6px; }
+    .evidence-item { color:#475467; font-size:13px; line-height:1.35; }
+    .card-actions { margin-top:auto; display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .plain-list { margin:0; padding-left:18px; color:#344054; line-height:1.45; }
+    @media (max-width: 900px) { .span-3,.span-4,.span-5,.span-6,.span-7,.span-8,.span-12 { grid-column: span 12; } .topbar { flex-direction:column; } .steps { grid-template-columns:1fr; } .discovery-steps { grid-template-columns:1fr; } .metric-grid { grid-template-columns:repeat(2,1fr); } .kv { grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
   <div class="shell">
     <div class="topbar">
       <div>
-        <div class="title">Hunter Craftsman 控制台</div>
-        <div class="subtitle">查看 Agent A / B / C 运行状态、队列情况和发布流程</div>
+        <div class="title">应用机会工作台</div>
+        <div class="subtitle">用真实应用商店数据发现可做的 App 机会，确认后自动生成应用并进入测试发布流程。</div>
       </div>
       <div class="actions">
-        <label class="muted">自动刷新 <input id="autorefresh" type="checkbox" checked></label>
-        <button id="refresh">刷新</button>
+        <label class="muted"><input id="autorefresh" type="checkbox" checked /> 自动刷新</label>
+        <button id="refreshBtn">刷新</button>
+        <button id="startBtn" class="primary">搜索新机会</button>
       </div>
     </div>
 
-    <!-- 进度 popover 浮层 -->
-    <div class="overlay" id="progressOverlay">
-      <div class="popover" id="progressPopover"></div>
+    <div class="tabs" id="tabs">
+      <button class="tab active" data-tab="discover">找机会</button>
+      <button class="tab" data-tab="pool">可做的 App</button>
+      <button class="tab" data-tab="progress">生成进度</button>
+      <button class="tab" data-tab="advanced">技术日志</button>
     </div>
 
-    <div class="grid">
-      <div class="col">
-        <section class="panel">
-          <div class="panel-head">
-            <div class="panel-title">系统总览</div>
-            <div class="muted" id="healthLine">加载中...</div>
-          </div>
-          <div class="panel-body">
-            <div class="stats" id="stats"></div>
-            <div class="timeline" id="opsChecks" style="margin-top:12px;"></div>
-          </div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-head">
-            <div class="panel-title">运行任务</div>
-            <div class="muted" id="runCount"></div>
-          </div>
-          <div class="panel-body">
-            <div class="list" id="runs"></div>
-          </div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-head">
-            <div class="panel-title">发布任务</div>
-            <div class="muted" id="releaseCount"></div>
-          </div>
-          <div class="panel-body">
-            <div class="list" id="releases"></div>
-          </div>
-        </section>
+    <section class="view active" id="view-discover">
+      <div class="grid">
+        <div class="panel span-3"><div class="muted">找机会</div><div class="metric" id="aStatus">-</div><div class="muted" id="aStep">等待数据</div></div>
+        <div class="panel span-3"><div class="muted">应用生成</div><div class="metric" id="bStatus">-</div><div class="muted" id="bStep">等待数据</div></div>
+        <div class="panel span-3"><div class="muted">测试发布</div><div class="metric" id="cStatus">-</div><div class="muted" id="cStep">等待数据</div></div>
+        <div class="panel span-3"><div class="muted">发布状态</div><div class="metric" id="trackStatus">测试通道</div><div class="muted" id="dryRunStatus">-</div></div>
+        <div class="panel span-7">
+          <div class="panel-head"><div><div class="panel-title">搜索应用商店机会</div><div class="muted">输入你想关注的方向。系统会搜索 Google Play，读取竞品和低分评论，然后把可做的 App 机会列出来。</div></div></div>
+          <div class="kv"><b>关注方向</b><textarea id="seedQueries" rows="4" style="width:100%;resize:vertical;border:1px solid var(--line);border-radius:6px;padding:8px">simple timer
+checklist app
+unit converter
+habit tracker
+expense tracker
+water reminder</textarea><b>模式</b><select id="discoveryMode" style="border:1px solid var(--line);border-radius:6px;padding:8px"><option value="manual">我确认后再生成</option><option value="auto">符合条件就自动生成</option></select></div>
+          <div id="latestDiscovery"></div>
+          <div class="timeline" id="discoverySteps"></div>
+        </div>
+        <div class="panel span-5"><div class="panel-title">搜索过程</div><div class="muted" id="discoveryHint">启动后会显示搜索、竞品分析、评论读取和候选评分的进展。</div><div class="timeline" id="discoveryEvents"></div></div>
+        <div class="panel span-7"><div class="panel-head"><div><div class="panel-title">本轮推荐</div><div class="muted">这里只展示有应用商店来源的候选。</div></div></div><div id="latestOpportunity"></div></div>
+        <div class="panel span-5"><div class="panel-title">系统状态</div><div class="timeline" id="opsChecks"></div></div>
       </div>
+    </section>
 
-      <div class="col">
-        <section class="panel">
-          <div class="panel-head">
-            <div class="panel-title">当前运行时间线</div>
-            <div class="muted" id="selectedRunLabel">尚未选择运行任务</div>
-          </div>
-          <div class="panel-body">
-            <div class="timeline" id="timeline"></div>
-          </div>
-        </section>
+    <section class="view" id="view-pool">
+      <div class="panel"><div class="panel-head"><div><div class="panel-title">可做的 App</div><div class="muted">每张卡片都说明：适合谁、用户在抱怨什么、建议先做什么、证据来自哪些竞品。</div></div><span class="badge" id="oppCount">0 个候选</span></div><div class="cards" id="opportunities"></div></div>
+    </section>
 
-        <section class="panel">
-          <div class="panel-head">
-            <div class="panel-title">当前运行审计</div>
-            <div class="muted">交接记录与操作轨迹</div>
-          </div>
-          <div class="panel-body">
-            <div class="timeline" id="runAudit"></div>
-          </div>
-        </section>
+    <section class="view" id="view-progress">
+      <div class="panel"><div class="panel-head"><div><div class="panel-title">生成进度</div><div class="muted">查看已确认机会的生成、质量检查和测试发布进度。</div></div><span class="badge" id="pipeCount">0 个流程</span></div><div class="pipeline" id="pipeline"></div></div>
+    </section>
 
-        <section class="panel">
-          <div class="panel-head">
-            <div class="panel-title">当前发布详情</div>
-            <div class="muted" id="selectedReleaseLabel">尚未选择发布任务</div>
-          </div>
-          <div class="panel-body">
-            <div class="timeline" id="releaseDetail"></div>
-          </div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-head">
-            <div class="panel-title">审计流</div>
-            <div class="muted">最近的 agent 交接记录</div>
-          </div>
-          <div class="panel-body">
-            <div class="timeline" id="audit"></div>
-          </div>
-        </section>
+    <section class="view" id="view-advanced">
+      <div class="grid">
+        <div class="panel span-6"><div class="panel-title">生成任务</div><div class="list" id="runs"></div></div>
+        <div class="panel span-6"><div class="panel-title">发布任务</div><div class="list" id="releases"></div></div>
+        <div class="panel span-6"><div class="panel-title">当前任务过程</div><div class="timeline" id="timeline"></div></div>
+        <div class="panel span-6"><div class="panel-title">操作记录</div><div class="timeline" id="audit"></div></div>
       </div>
-    </div>
-
+    </section>
     <div class="footer" id="updatedAt">尚未同步</div>
   </div>
 
-  <script>
-    const state = {
-      selectedRunId: null,
-      selectedReleaseId: null,
-      loading: false,
-      timer: null,
-    };
-
-    const el = (id) => document.getElementById(id);
-
-    const fmt = (value) => value == null || value === "" ? "-" : String(value);
-
-    const BOOL_LABELS = {
-      true: "是",
-      false: "否"
-    };
-
-    const STATUS_LABELS = {
-      implementation_complete: "实现完成",
-      implementation_failed: "实现失败",
-      in_progress: "进行中",
-      pending: "等待中",
-      queued: "已入队",
-      failed: "失败",
-      dead_letter: "死信",
-      done: "完成",
-      approved: "已批准",
-      rejected: "已拒绝",
-      prepared: "已准备",
-      submitting: "提交中",
-      published: "已发布",
-      dry_run_complete: "演练完成",
-      platform_unavailable: "平台不可用",
-      accepted: "已接受",
-      needs_clarification: "需要澄清",
-      sync_implement: "同步实现",
-      complete: "完成"
-    };
-
-    const PHASE_LABELS = {
-      autopilot_discovery: "自动发现",
-      analyze: "需求分析",
-      analyze_result: "分析结果",
-      clarify: "澄清修正",
-      implement: "开始实现",
-      spec_normalize: "需求标准化",
-      plan: "规划",
-      codegen: "代码生成",
-      verify: "验证",
-      package: "打包",
-      complete: "完成",
-      failed: "失败",
-      queued: "排队中",
-      release_prepare: "发布准备",
-      release_approval: "发布审批",
-      release_submit: "发布提交",
-      release_poll: "发布轮询",
-      release_complete: "发布完成",
-      production_promote: "生产推进",
-      terminal: "终态"
-    };
-
-    const EVENT_LABELS = {
-      release_prepared: "发布准备完成",
-      release_approval_recorded: "发布审批已记录",
-      release_submit_queued: "发布提交已入队",
-      release_submit_completed: "发布提交完成",
-      release_requeued: "发布任务重新入队",
-      release_jobs_repaired: "发布队列自动修复",
-      run_queued: "运行任务已入队",
-      run_requeued: "运行任务重新入队",
-      run_sync_started: "同步运行开始",
-      run_sync_completed: "同步运行完成"
-    };
-
-    function zh(value, mapping = STATUS_LABELS) {
-      if (value === true || value === false) return BOOL_LABELS[String(value)];
-      if (value == null || value === "") return "-";
-      return mapping[value] || String(value);
-    }
-
-    function card(label, value, meta) {
-      return `
-        <div class="stat">
-          <div class="stat-label">${label}</div>
-          <div class="stat-value">${fmt(value)}</div>
-          <div class="stat-meta">${fmt(meta)}</div>
-        </div>
-      `;
-    }
-
-    function badge(text) {
-      return `<span class="badge">${fmt(text)}</span>`;
-    }
-
-    function renderSummary(summary) {
-      const runCounts = summary.run_counts || {};
-      const releaseCounts = summary.release_counts || {};
-      const stats = [
-        card("运行总数", summary.runs_total, `进行中 ${runCounts.in_progress || 0}`),
-        card("死信任务", summary.dead_letter_runs, `发布死信 ${summary.dead_letter_releases}`),
-        card("发布总数", summary.releases_total, `提交中 ${releaseCounts.submitting || 0}`),
-        card("Worker 数", summary.job_worker_count, `租约 ${summary.job_lease_seconds}s`)
-      ];
-      el("stats").innerHTML = stats.join("");
-      el("healthLine").textContent = `服务=${summary.service} 就绪=${zh(summary.ready, BOOL_LABELS)} Gate=${summary.gate_mode} 演练=${zh(summary.publisher_dry_run, BOOL_LABELS)}`;
-      const checks = summary.checks || {};
-      el("opsChecks").innerHTML = [
-        `<div class="event"><div>工作区 :: ${zh(checks.workspace_ok, BOOL_LABELS)}</div><div class="meta">craftsman workspace 是否可用</div></div>`,
-        `<div class="event"><div>回调目录 :: ${zh(checks.callbacks_ok, BOOL_LABELS)}</div><div class="meta">callbacks 目录是否可用</div></div>`,
-        `<div class="event"><div>数据库 :: ${zh(checks.database_ok, BOOL_LABELS)}</div><div class="meta">sqlite 是否可连接</div></div>`,
-        `<div class="event"><div>已修复任务 :: ${fmt(summary.repaired_release_jobs)}</div><div class="meta">本次请求顺手修复的历史发布脏状态</div></div>`
-      ].join("");
-    }
-
-    function renderRuns(runs) {
-      el("runCount").textContent = `最近 ${runs.length} 条`;
-      if (!runs.length) {
-        el("runs").innerHTML = '<div class="empty">暂时还没有运行任务</div>';
-        return;
-      }
-      el("runs").innerHTML = runs.map((run) => `
-        <div class="item">
-          <div class="item-top">
-            <strong>${fmt(run.opportunity_id)}</strong>
-            <div>
-              ${badge(zh(run.status))}
-              ${badge(zh(run.phase, PHASE_LABELS))}
-            </div>
-          </div>
-          <div class="id">${fmt(run.run_id)}</div>
-          <div class="kv">
-            <span class="muted">版本 ${fmt(run.revision)} | 尝试 ${fmt(run.job?.attempts)}/${fmt(run.job?.max_attempts)}</span>
-            <div>
-              <button data-open-run="${run.run_id}">时间线</button>
-              <button data-requeue-run="${run.run_id}" ${run.can_requeue ? "" : "disabled"}>重新入队</button>
-            </div>
-          </div>
-          <div class="muted">${fmt(run.phase_detail)}</div>
-          <div class="muted">更新时间 ${fmt(run.updated_at)}</div>
-        </div>
-      `).join("");
-    }
-
-    function renderReleases(releases) {
-      el("releaseCount").textContent = `最近 ${releases.length} 条`;
-      if (!releases.length) {
-        el("releases").innerHTML = '<div class="empty">暂时还没有发布任务</div>';
-        return;
-      }
-      el("releases").innerHTML = releases.map((release) => `
-        <div class="item" data-release-id="${release.release_id}">
-          <div class="item-top">
-            <strong>${fmt(release.release_id)}</strong>
-            <div>
-              ${badge(zh(release.status))}
-              ${badge(release.platform_target === "android" ? "安卓" : release.platform_target === "ios" ? "iOS" : "未知")}
-            </div>
-          </div>
-          <div class="muted">${fmt(release.message)}</div>
-          <div class="muted">策略通过 ${zh(release.policy_passed, BOOL_LABELS)} | 审批 ${zh(release.approval_decision)}</div>
-          <div class="kv">
-            <span class="muted">Agent C ${zh(release.agent_c_status)} | 尝试 ${fmt(release.job?.attempts)}/${fmt(release.job?.max_attempts)}</span>
-            <div>
-              <button data-open-release="${release.release_id}">详情</button>
-              <button data-progress-release="${release.release_id}">进度</button>
-              <button data-approve-release="${release.release_id}" ${release.approval_decision === "approved" ? "disabled" : ""}>批准</button>
-              <button data-reject-release="${release.release_id}" ${release.status === "rejected" ? "disabled" : ""}>拒绝</button>
-              <button data-submit-release="${release.release_id}" ${release.policy_passed === false ? "disabled" : ""}>提交</button>
-              <button data-requeue-release="${release.release_id}" ${release.can_requeue ? "" : "disabled"}>重新入队</button>
-            </div>
-          </div>
-          <div class="muted">更新时间 ${fmt(release.updated_at)}</div>
-        </div>
-      `).join("");
-    }
-
-    function renderTimeline(events, selectedRunId) {
-      el("selectedRunLabel").textContent = selectedRunId || "尚未选择运行任务";
-      if (!events.length) {
-        el("timeline").innerHTML = '<div class="empty">选择一个运行任务后，这里会显示阶段时间线</div>';
-        return;
-      }
-      el("timeline").innerHTML = events.map((event) => `
-        <div class="event">
-          <div>${zh(event.phase, PHASE_LABELS)} :: ${fmt(event.detail)}</div>
-          <div class="meta">#${fmt(event.id)} 于 ${fmt(event.created_at)}</div>
-        </div>
-      `).join("");
-    }
-
-    function renderAudit(events) {
-      if (!events.length) {
-        el("audit").innerHTML = '<div class="empty">暂时还没有审计事件</div>';
-        return;
-      }
-      el("audit").innerHTML = events.map((event) => `
-        <div class="event">
-          <div>${zh(event.event_type, EVENT_LABELS)} ${event.run_id ? `:: ${event.run_id}` : event.release_id ? `:: ${event.release_id}` : ""}</div>
-          <div class="meta">${fmt(event.actor)} 于 ${fmt(event.created_at)}</div>
-        </div>
-      `).join("");
-    }
-
-    function renderRunAudit(events) {
-      if (!events.length) {
-        el("runAudit").innerHTML = '<div class="empty">当前运行任务还没有审计记录</div>';
-        return;
-      }
-      el("runAudit").innerHTML = events.map((event) => `
-        <div class="event">
-          <div>${zh(event.event_type, EVENT_LABELS)}</div>
-          <div class="meta">${fmt(event.actor)} 于 ${fmt(event.created_at)}</div>
-        </div>
-      `).join("");
-    }
-
-    function renderReleaseDetail(data, selectedReleaseId) {
-      el("selectedReleaseLabel").textContent = selectedReleaseId || "尚未选择发布任务";
-      if (!data) {
-        el("releaseDetail").innerHTML = '<div class="empty">选择一个发布任务后，这里会显示策略、审批、队列和 Agent C 详情</div>';
-        return;
-      }
-      const release = data.release || {};
-      const policy = data.policy || {};
-      const approval = data.approval || {};
-      const job = data.job || {};
-      const detail = release.details || {};
-      const agentC = detail.agent_c || {};
-      const issues = policy.issues || [];
-      const audit = data.audit || [];
-      const agentCStatus = agentC.agent_c_status || "";
-
-      // Play Console 链接
-      let playLink = "";
-      const pkg = agentC?.upload?.store_response?.package_name;
-      if (pkg && (agentCStatus === "submitted" || agentCStatus === "published" || agentCStatus === "dry_run_complete")) {
-        playLink = `
-          <div class="event">
-            <div>Play Console</div>
-            <div class="meta">
-              <a class="play-link" href="https://play.google.com/console/developers/${fmt(pkg)}" target="_blank" rel="noopener">在 Play Console 中查看</a>
-            </div>
-          </div>`;
-      }
-
-      // Production 推进状态
-      let productionLine = "";
-      const prod = agentC?.production || {};
-      if (prod && prod.promoted_to_production !== undefined) {
-        const prodIcon = prod.promoted_to_production ? "\u2713" : "\u2717";
-        const prodColor = prod.promoted_to_production ? "#66bb6a" : "#e57373";
-        productionLine = `
-          <div class="event">
-            <div>Production :: <span style="color:${prodColor}">${prodIcon} ${prod.promoted_to_production ? "已提交审核" : "推进失败"}</span></div>
-            <div class="meta">${fmt(prod.message)}</div>
-          </div>`;
-      }
-
-      // 错误详情
-      let errorPanel = "";
-      const reasons = agentC?.reasons || [];
-      const buildLog = agentC?.build_log || "";
-      const errorMsg = release.message || job.last_error || "";
-      if (agentCStatus === "failed" || release.status === "failed" || reasons.length > 0 || buildLog || errorMsg) {
-        const errBody = [
-          reasons.length ? `原因: ${reasons.join(" | ")}` : "",
-          buildLog ? `构建日志:\n${buildLog}` : "",
-          errorMsg && !reasons.includes(errorMsg) ? `错误: ${errorMsg}` : "",
-        ].filter(Boolean).join("\n\n");
-        errorPanel = `
-          <div class="event">
-            <div>
-              <button data-toggle-error="${selectedReleaseId}" style="font-size:11px;padding:4px 8px;">
-                错误详情 ${badge("展开")}
-              </button>
-            </div>
-            <div class="expandable" id="errPanel-${selectedReleaseId.replace(/[^a-zA-Z0-9-]/g, "")}">
-              <pre>${fmt(errBody) || "无详细信息"}</pre>
-            </div>
-          </div>`;
-      }
-
-      const rows = [
-        `<div class="event"><div>状态 :: ${zh(release.status)}</div><div class="meta">更新时间 ${fmt(release.updated_at)}</div></div>`,
-        `<div class="event"><div>策略检查 :: 通过=${zh(policy.passed, BOOL_LABELS)}</div><div class="meta">${issues.length ? issues.join(" | ") : "没有策略问题"}</div></div>`,
-        `<div class="event"><div>审批 :: ${zh(approval.decision)}</div><div class="meta">${fmt(approval.approved_by)} ${approval.approved_at ? `于 ${fmt(approval.approved_at)}` : ""}</div></div>`,
-        `<div class="event"><div>队列 :: ${zh(job.status)}</div><div class="meta">尝试 ${fmt(job.attempts)}/${fmt(job.max_attempts)} ${job.last_error ? `| ${fmt(job.last_error)}` : ""}</div></div>`,
-        `<div class="event"><div>平台 :: ${detail.platform_target === "android" ? "安卓" : detail.platform_target === "ios" ? "iOS" : fmt(detail.platform_target)}</div><div class="meta">${fmt(detail.message)}</div></div>`,
-        `<div class="event"><div>Agent C :: ${zh(agentCStatus)}</div><div class="meta">审计事件数 ${fmt(audit.length)}</div></div>`,
-        productionLine,
-        playLink,
-        errorPanel,
-      ];
-      el("releaseDetail").innerHTML = rows.filter(Boolean).join("");
-    }
-
-    async function request(path, options = {}) {
-      const resp = await fetch(path, {
-        ...options,
-        headers: { "Content-Type": "application/json", ...(options.headers || {}) }
-      });
-      if (!resp.ok) {
-        const payload = await resp.json().catch(() => ({}));
-        throw new Error(payload?.detail?.error?.message || `HTTP ${resp.status}`);
-      }
-      return resp.json();
-    }
-
-    async function loadDashboard() {
-      if (state.loading) return;
-      state.loading = true;
-      try {
-        const data = await request("/dashboard/api/overview");
-        renderSummary(data.summary || {});
-        renderRuns(data.runs || []);
-        renderReleases(data.releases || []);
-        renderAudit(data.audit || []);
-
-        const runId = state.selectedRunId || data.runs?.[0]?.run_id || null;
-        state.selectedRunId = runId;
-        if (runId) {
-          const detail = await request(`/dashboard/api/runs/${encodeURIComponent(runId)}`);
-          renderTimeline(detail.events || [], runId);
-          renderRunAudit(detail.audit || []);
-        } else {
-          renderTimeline([], null);
-          renderRunAudit([]);
-        }
-        const releaseId = state.selectedReleaseId || data.releases?.[0]?.release_id || null;
-        state.selectedReleaseId = releaseId;
-        if (releaseId) {
-          const detail = await request(`/dashboard/api/releases/${encodeURIComponent(releaseId)}`);
-          renderReleaseDetail(detail, releaseId);
-        } else {
-          renderReleaseDetail(null, null);
-        }
-        el("updatedAt").textContent = `最近同步时间 ${new Date().toLocaleString()}`;
-      } catch (error) {
-        el("updatedAt").textContent = `同步失败：${error.message}`;
-      } finally {
-        state.loading = false;
-      }
-    }
-
-    async function requeueRun(runId) {
-      await request(`/dashboard/api/runs/${encodeURIComponent(runId)}/requeue`, { method: "POST" });
-      state.selectedRunId = runId;
-      await loadDashboard();
-    }
-
-    async function requeueRelease(releaseId) {
-      await request(`/dashboard/api/releases/${encodeURIComponent(releaseId)}/requeue`, { method: "POST" });
-      await loadDashboard();
-    }
-
-    async function decideRelease(releaseId, decision, note) {
-      await request(`/dashboard/api/releases/${encodeURIComponent(releaseId)}/decision`, {
-        method: "POST",
-        body: JSON.stringify({ approved_by: "dashboard-operator", decision, note })
-      });
-      state.selectedReleaseId = releaseId;
-      await loadDashboard();
-    }
-
-    async function approveRelease(releaseId) {
-      await decideRelease(releaseId, "approved", "由控制台批准");
-    }
-
-    async function rejectRelease(releaseId) {
-      await decideRelease(releaseId, "rejected", "由控制台拒绝");
-    }
-
-    async function submitRelease(releaseId) {
-      await request(`/dashboard/api/releases/${encodeURIComponent(releaseId)}/submit`, { method: "POST" });
-      state.selectedReleaseId = releaseId;
-      await loadDashboard();
-    }
-
-    // ---- 进度 popover ----
-    async function showProgress(releaseId) {
-      const detail = await request(`/dashboard/api/releases/${encodeURIComponent(releaseId)}`);
-      const agentC = detail?.release?.details?.agent_c || {};
-      const phases = agentC.phases || [];
-      const agentCStatus = agentC.agent_c_status || "";
-
-      // 如果 phases 为空，从 release 状态推断
-      const isRunning = ["prepared", "submitting"].includes(detail?.release?.status || "");
-      const isDone = ["published", "dry_run_complete", "failed"].includes(detail?.release?.status || "");
-
-      let steps = [];
-      if (phases.length > 0) {
-        // 使用真实 phases
-        const phaseNames = phases.map(p => p.phase || "");
-        const allPhases = ["validate", "sign", "build", "upload", "complete", "failed"];
-        const seen = new Set(phaseNames);
-        for (const pn of allPhases) {
-          const detailObj = phases.find(p => p.phase === pn);
-          steps.push({
-            phase: pn,
-            detail: detailObj?.detail || "",
-            status: seen.has(pn) ? (pn === "failed" ? "failed" : "done") : (agentCStatus === "failed" && !seen.has(pn) ? "cancelled" : "pending"),
-          });
-        }
-      } else {
-        // 从状态推断
-        steps = [
-          { phase: "validate", detail: "验证 release_handoff", status: isDone || isRunning ? "done" : "pending" },
-          { phase: "sign", detail: "配置签名", status: isDone || isRunning ? "done" : "pending" },
-          { phase: "build", detail: "Gradle 构建 AAB", status: isDone || isRunning ? "done" : "pending" },
-          { phase: "upload", detail: "上传到 Google Play", status: isDone ? "done" : isRunning ? "current" : "pending" },
-          { phase: "complete", detail: agentCStatus === "failed" ? "发布失败" : agentCStatus === "dry_run_complete" ? "演练完成" : "发布完成", status: isDone ? (agentCStatus === "failed" ? "failed" : "done") : "pending" },
-        ];
-      }
-
-      // 如果没有 current 且有 running，最后一个 pending 视为 current
-      if (!steps.some(s => s.status === "current") && (isRunning)) {
-        for (let i = steps.length - 1; i >= 0; i--) {
-          if (steps[i].status === "pending") { steps[i].status = "current"; break; }
-        }
-      }
-
-      const icons = { done: "\u2713", current: "\u23f3", pending: "\u25cb", failed: "\u2717", cancelled: "\u2014" };
-      const iconClass = { done: "done", current: "current", pending: "pending", failed: "done", cancelled: "pending" };
-      const phaseLabels = {
-        validate: "验证", sign: "签名", build: "构建", upload: "上传",
-        complete: "完成", failed: "失败", production: "生产"
-      };
-
-      el("progressPopover").innerHTML = `
-        <div class="popover-head">
-          <div class="panel-title">发布进度</div>
-          <button id="closeProgress">关闭</button>
-        </div>
-        <div class="muted" style="margin-bottom:10px;">release_id: ${fmt(releaseId)}</div>
-        <div class="progress-line">
-          ${steps.map(s => `
-            <div class="progress-step">
-              <div class="progress-icon ${iconClass[s.status]}">${icons[s.status]}</div>
-              <div class="progress-body">
-                <div class="progress-phase">${phaseLabels[s.phase] || s.phase}</div>
-                <div class="progress-detail">${fmt(s.detail) || ""}</div>
-              </div>
-            </div>
-          `).join("")}
-        </div>
-      `;
-      el("progressOverlay").classList.add("open");
-    }
-
-    el("progressOverlay").addEventListener("click", (e) => {
-      if (e.target === el("progressOverlay") || e.target.id === "closeProgress") {
-        el("progressOverlay").classList.remove("open");
-      }
+<script>
+const state = { data:null, selectedRunId:null };
+const $ = id => document.getElementById(id);
+const fmt = v => v === undefined || v === null || v === "" ? "-" : String(v);
+const local = iso => iso ? new Date(iso).toLocaleString() : "-";
+const statusText = s => ({ready:"\u5c31\u7eea", idle:"\u7a7a\u95f2", queued:"\u6392\u961f\u4e2d", checking_environment:"\u51c6\u5907\u91c7\u96c6", searching_play:"\u641c\u7d22\u5e94\u7528", play_tools_loaded:"\u91c7\u96c6\u5de5\u5177\u5df2\u5c31\u7eea", searching_query:"\u641c\u7d22\u5173\u952e\u8bcd", query_search_complete:"\u641c\u7d22\u5b8c\u6210", query_search_failed:"\u641c\u7d22\u5931\u8d25", query_no_competitors:"\u6ca1\u6709\u7ade\u54c1", scanning_competitors:"\u5206\u6790\u7ade\u54c1", fetching_reviews:"\u8bfb\u53d6\u8bc4\u8bba", reviews_complete:"\u8bc4\u8bba\u8bfb\u53d6\u5b8c\u6210", reviews_skipped:"\u672a\u8bfb\u53d6\u8bc4\u8bba", review_fetch_failed:"\u8bc4\u8bba\u8bfb\u53d6\u5931\u8d25", candidate_scored:"\u5019\u9009\u5df2\u8bc4\u5206", candidate_saved:"\u5019\u9009\u5df2\u5165\u6c60", candidate_rejected:"\u5019\u9009\u672a\u5165\u6c60", scoring_candidates:"\u5019\u9009\u8bc4\u5206", waiting_for_selection:"\u7b49\u5f85\u9009\u62e9", auto_submitted:"\u5df2\u81ea\u52a8\u8fdb\u5165\u751f\u6210", in_progress:"\u8fdb\u884c\u4e2d", implementation_complete:"\u5df2\u751f\u6210", needs_polish:"\u9700\u8981\u6253\u78e8", failed:"\u5931\u8d25", prepared:"\u5df2\u51c6\u5907", approved:"\u5df2\u5ba1\u6279", submitting:"\u63d0\u4ea4\u4e2d", dry_run_complete:"\u6a21\u62df\u5b8c\u6210", internal_submitted:"\u5df2\u63d0\u4ea4\u6d4b\u8bd5", published:"\u5df2\u53d1\u5e03", rejected:"已驳回", done:"\u5b8c\u6210", running:"\u8fdb\u884c\u4e2d", waiting:"\u7b49\u5f85", ready_for_review:"\u5f85\u9009\u62e9", submitted_to_b:"\u5df2\u8fdb\u5165\u751f\u6210", unknown:"\u672a\u77e5"})[s] || fmt(s);
+const badgeClass = s => ["done","ready","implementation_complete","dry_run_complete","internal_submitted","published","waiting_for_selection","ready_for_review","submitted_to_b","auto_submitted"].includes(s) ? "ok" : (["failed","dead_letter","needs_manual_action","rejected"].includes(s) ? "bad" : "warn");
+function humanDetail(text){
+  const raw = fmt(text);
+  const dict = {
+    'implementation complete and handoff generated':'应用已生成，等待进入测试发布',
+    'start verification':'正在检查生成结果',
+    'scaffold project and derive scheme':'正在准备项目结构',
+    'project scaffold/codegen complete':'应用代码已生成，正在检查',
+    'Google Play internal track':'Google Play 内部测试通道',
+    'release handoff not found; call /v1/releases/prepare first':'等待生成发布材料',
+    'rejected':'已驳回，需要重新确认后再发布'
+  };
+  return dict[raw] || raw;
+}
+function modeText(mode){ return mode === 'auto' ? '符合条件就自动生成' : '我确认后再生成'; }
+function esc(s){ return fmt(s).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
+async function request(path, options={}){ const r = await fetch(path, options); const p = await r.json().catch(()=>({})); if(!r.ok) throw new Error(p?.detail?.error?.message || p?.message || r.statusText); return p; }
+function scoreBar(value){ const n = Number(value); const w = Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 0; return `<div class="score"><i style="width:${w}%"></i></div>`; }
+function cleanAppName(name){ return fmt(name).replace(/\s*MVP\s*$/i,'').trim() || '候选应用'; }
+function qualityText(q){ return ({measured:'证据较充分', mixed:'证据一般', assumption:'仅供参考'})[q] || '证据待确认'; }
+function reasonText(reason){
+  const r = fmt(reason);
+  if(!r || r === '-') return '基于本轮应用商店搜索和评论痛点推荐。';
+  if(r.includes('Google Play') || r.includes('low-score')) return '来自应用商店竞品和低分评论的综合判断。';
+  return r;
+}
+function userText(text, niche){
+  const raw = fmt(text);
+  if(raw.startsWith('Users looking for a simpler')) return `想要更简单、更少打扰的 ${esc(niche || '工具类 App')} 用户`;
+  return esc(raw);
+}
+function painText(p){ return esc(({广告:'广告太多', 通知骚扰:'通知打扰', 功能缺失:'缺少关键功能', '订阅/付费':'付费压力', 无法编辑:'编辑不方便', 同步问题:'同步不稳定', 权限过多:'权限太多'}[p]) || p); }
+function featureSuggestions(o){
+  const niche = String(o.niche || o.app_name || '').toLowerCase();
+  if(niche.includes('checklist') || niche.includes('task') || niche.includes('todo')) return ['添加清单事项', '勾选完成状态', '查看今日待办'];
+  if(niche.includes('timer') || niche.includes('pomodoro')) return ['设置计时', '开始/暂停/重置', '保存常用时长'];
+  if(niche.includes('converter') || niche.includes('unit')) return ['输入数值', '选择单位', '查看换算结果'];
+  if(niche.includes('habit')) return ['创建习惯', '每日打卡', '查看连续记录'];
+  if(niche.includes('expense') || niche.includes('budget')) return ['记录支出', '分类汇总', '编辑历史记录'];
+  if(niche.includes('water')) return ['记录饮水', '设置每日目标', '查看完成进度'];
+  return (o.recommended_features || []).slice(0,3).map(fmt).filter(Boolean).filter(x=>!['广告','通知骚扰','功能缺失','订阅/付费'].includes(x));
+}
+function opportunityCard(o){
+  const title = cleanAppName(o.app_name);
+  const niche = esc(o.niche || '工具类应用');
+  const status = o.submitted_run_id || o.run_id ? '已进入生成' : '待确认';
+  const statusClass = o.submitted_run_id || o.run_id ? 'ok' : 'warn';
+  const pains = (o.pain_points||[]).slice(0,4).map(p=>`<span class="badge">${painText(p)}</span>`).join(' ') || '<span class="muted">暂无明确痛点</span>';
+  const apps = (o.source_apps||[]).slice(0,4).map(a=>`<span class="badge">${esc(a.title || a.appId || a.app_id)}</span>`).join(' ') || '<span class="muted">暂无来源 App</span>';
+  const reviews = (o.review_pain_summary||[]).slice(0,3).map(p=>`<div class="evidence-item">${painText(p.theme)}：${fmt(p.review_count)} 条评论提到，来自 ${esc(p.app_title || p.app_id)}</div>`).join('');
+  const features = featureSuggestions(o).slice(0,3).map(x=>`<li>${esc(x)}</li>`).join('') || '<li>围绕核心场景做一个本地可用的小工具</li>';
+  const action = o.submitted_run_id || o.run_id ? `<button data-open-run="${esc(o.submitted_run_id || o.run_id)}">查看生成进度</button>` : `<button class="primary" data-implement-candidate="${esc(o.candidate_id)}">选择这个需求</button>`;
+  const opportunity = fmt(o.scores?.opportunity || '-');
+  const buildFit = fmt(o.scores?.build_fit || '-');
+  const evidence = fmt(o.evidence_score || '-');
+  return `<div class="card opp-card">
+    <div class="row"><span class="badge ${statusClass}">${status}</span><span class="badge">${qualityText(o.data_quality)}</span></div>
+    <div><div class="opp-title">${esc(title)}</div><div class="opp-subtitle">细分方向：${niche}</div></div>
+    <div class="insight-grid"><div class="insight"><b>市场热度</b><span>${opportunity}/100</span></div><div class="insight"><b>开发适合度</b><span>${buildFit}/100</span></div><div class="insight"><b>证据强度</b><span>${evidence}/100</span></div><div class="insight"><b>竞品样本</b><span>${(o.source_apps||[]).length} 个</span></div></div>
+    ${scoreBar(o.scores?.build_fit || o.scores?.opportunity)}
+    <div><div class="section-label">目标用户</div><div class="opp-subtitle">${userText(o.target_users, o.niche)}</div></div>
+    <div><div class="section-label">用户抱怨最多的问题</div><div class="pill-list">${pains}</div></div>
+    <div><div class="section-label">建议先做的功能</div><ul class="plain-list">${features}</ul></div>
+    <div><div class="section-label">为什么值得试</div><div class="opp-subtitle">${esc(reasonText(o.decision_reason))}</div></div>
+    <div><div class="section-label">参考竞品</div><div class="pill-list">${apps}</div></div>
+    ${reviews ? `<div class="evidence-list">${reviews}</div>` : ''}
+    <div class="card-actions">${action}</div>
+  </div>`;
+}
+function renderSummary(data){
+  const s = data.summary || {}; const a = data.agent_status || {}; const d = data.latest_discovery || {};
+  $('aStatus').textContent = d.status ? statusText(d.status) : statusText(a.agent_a?.status); $('aStep').textContent = d.discovery_run_id || fmt(a.agent_a?.current_step);
+  $('bStatus').textContent = statusText(a.agent_b?.status); $('bStep').textContent = humanDetail(a.agent_b?.current_step);
+  $('cStatus').textContent = statusText(a.agent_c?.status); $('cStep').textContent = humanDetail(a.agent_c?.current_step);
+  $('dryRunStatus').textContent = s.publisher_dry_run ? '\u5f53\u524d\u4e3a\u6a21\u62df\u53d1\u5e03\u6a21\u5f0f' : '\u5f53\u524d\u4e3a\u771f\u5b9e\u53d1\u5e03\u6a21\u5f0f';
+  const checks = s.checks || {};
+  $('opsChecks').innerHTML = [['\u5de5\u4f5c\u533a', checks.workspace_ok], ['\u56de\u8c03\u76ee\u5f55', checks.callbacks_ok], ['\u6570\u636e\u5e93', checks.database_ok], ['\u5305\u540d\u6c60', `${s.pool?.used||0}/${s.pool?.total||0}`]].map(([k,v])=>`<div class="event"><b>${k}</b><div class="muted">${fmt(v)}</div></div>`).join('');
+  renderDiscovery(data);
+}
+function eventClass(stage){ return stage === 'failed' || String(stage||'').includes('failed') ? 'failed' : (['checking_environment','searching_query','fetching_reviews','scanning_competitors','scoring_candidates'].includes(stage) ? 'running' : ''); }
+function renderDiscovery(data){
+  const d = data.latest_discovery || null;
+  if(!d){
+    $('latestDiscovery').innerHTML = '<div class="empty">\u8fd8\u6ca1\u6709\u53d1\u73b0\u4efb\u52a1\u3002</div>';
+    $('discoveryEvents').innerHTML = '<div class="empty">\u542f\u52a8\u540e\u4f1a\u663e\u793a\u51c6\u5907\u91c7\u96c6\u3001\u641c\u7d22\u5e94\u7528\u3001\u5206\u6790\u7ade\u54c1\u3001\u8bfb\u53d6\u8bc4\u8bba\u548c\u5019\u9009\u8bc4\u5206\u3002</div>';
+    $('discoverySteps').innerHTML = '';
+    $('discoveryHint').textContent = '\u542f\u52a8\u540e\u4f1a\u6301\u7eed\u663e\u793a\u6bcf\u4e00\u6b65\u53d1\u751f\u4e86\u4ec0\u4e48\u3002';
+    return;
+  }
+  const progress = data.discovery_progress || {};
+  const metrics = progress.metrics || {};
+  const events = data.discovery_events || [];
+  const latestEvent = events.length ? events[events.length - 1] : null;
+  const discoveryModeText = modeText(d.mode);
+  $('latestDiscovery').innerHTML = `<div class="card"><div class="row"><span class="badge ${badgeClass(d.status)}">${statusText(d.status)}</span><span class="badge">${discoveryModeText}</span></div><div class="card-title">\u672c\u8f6e\u53d1\u73b0</div><div class="muted">\u5173\u952e\u8bcd\uff1a${(d.seed_queries||[]).map(esc).join(' / ')}</div><div class="metric-grid"><div class="mini-metric"><span class="muted">\u5df2\u641c\u7d22\u5173\u952e\u8bcd</span><b>${fmt(metrics.searched_query_count)}</b></div><div class="mini-metric"><span class="muted">\u7ade\u54c1\u6570\u91cf</span><b>${fmt(metrics.competitor_count)}</b></div><div class="mini-metric"><span class="muted">\u4f4e\u5206\u8bc4\u8bba</span><b>${fmt(metrics.low_score_review_count)}</b></div><div class="mini-metric"><span class="muted">\u5165\u6c60\u5019\u9009</span><b>${fmt(metrics.candidate_count)}</b></div></div><div class="muted">\u6700\u8fd1\u66f4\u65b0\uff1a${local(d.updated_at)}</div>${d.error_message?`<div class="badge bad" style="margin-top:8px">${esc(d.error_message)}</div>`:''}</div>`;
+  $('discoverySteps').innerHTML = (progress.steps||[]).map(step=>`<div class="step ${esc(step.status)}"><div class="step-name">${esc(step.label)}</div><span class="badge ${badgeClass(step.status)}">${statusText(step.status)}</span></div>`).join('');
+  $('discoveryHint').textContent = latestEvent ? latestEvent.message : '\u7b49\u5f85\u7b2c\u4e00\u6761\u91c7\u96c6\u4e8b\u4ef6\u3002';
+  $('discoveryEvents').innerHTML = events.length ? events.slice(-16).reverse().map(e=>{ const p=e.payload||{}; const detail = p.query ? `\u5173\u952e\u8bcd\uff1a${esc(p.query)}` : (p.app_title ? `\u7ade\u54c1\uff1a${esc(p.app_title)}` : ''); return `<div class="event ${eventClass(e.stage)}"><b>${esc(statusText(e.stage))}</b><div>${esc(e.message)}</div>${detail?`<div class="muted">${detail}</div>`:''}<div class="muted">${local(e.created_at)}</div></div>`; }).join('') : '<div class="empty">\u6682\u65e0\u8fc7\u7a0b\u4e8b\u4ef6\uff0c\u7a0d\u540e\u5237\u65b0\u3002</div>';
+}
+function renderOpportunities(items){ $('oppCount').textContent = `${items.length} 个候选`; $('opportunities').innerHTML = items.length ? items.map(opportunityCard).join('') : '<div class="empty">还没有候选 App，点击“搜索新机会”。</div>'; $('latestOpportunity').innerHTML = items[0] ? opportunityCard(items[0]) : '<div class="empty">还没有机会判断。</div>'; }
+function renderPipeline(items){ $('pipeCount').textContent = `${items.length} 个流程`; $('pipeline').innerHTML = items.length ? items.map(item=>{ const st=item.stages||{}; const step=(k)=>{ const q=st[k]?.quality_report||{}; const qline=k==='agent_b'&&q.quality_score!==undefined?`<div class="muted">质量分 ${esc(q.quality_score)} · ${q.release_ready?'可发布':'需打磨'} · ${(q.failure_classes||[]).slice(0,2).map(esc).join(' / ')}</div>`:''; return `<div class="step ${st[k]?.status||'waiting'}"><div class="step-name">${esc(st[k]?.label)}</div><span class="badge ${badgeClass(st[k]?.status)}">${statusText(st[k]?.status)}</span><div class="muted" style="margin-top:8px">${esc(humanDetail(st[k]?.detail))}</div>${qline}</div>`; }; return `<div class="pipe-card"><div class="row"><b>${esc(item.title)}</b><span class="badge">${esc(item.release_id||'未发布')}</span><span class="muted">${local(item.updated_at)}</span></div><div class="steps">${step('agent_a')}${step('agent_b')}${step('agent_c')}</div><div class="row" style="margin-top:10px"><button data-open-run="${esc(item.run_id)}">查看过程</button>${item.release_id ? `<button data-progress-release="${esc(item.release_id)}">发布详情</button>` : ''}</div></div>`; }).join('') : '<div class="empty">暂无流程。</div>'; }
+function renderAdvanced(data){
+  $('runs').innerHTML = (data.runs||[]).map(r=>`<div class="card"><div class="row"><b>${esc(r.opportunity_id)}</b><span class="badge ${badgeClass(r.status)}">${statusText(r.status)}</span></div><div class="muted">${esc(r.phase_detail)} · ${local(r.updated_at)}</div><div class="row"><button data-open-run="${esc(r.run_id)}">查看过程</button>${r.can_requeue?`<button data-requeue-run="${esc(r.run_id)}">重新生成</button>`:''}</div></div>`).join('') || '<div class="empty">暂无生成任务</div>';
+  $('releases').innerHTML = (data.releases||[]).map(r=>`<div class="card"><div class="row"><b>${esc(r.app_name||r.release_id)}</b><span class="badge ${badgeClass(r.status)}">${statusText(r.status)}</span></div><div class="muted">${esc(r.package_name)} · ${local(r.updated_at)}</div><div class="row">${r.can_requeue?`<button data-requeue-release="${esc(r.release_id)}">重新发布</button>`:''}</div></div>`).join('') || '<div class="empty">暂无发布任务</div>';
+  $('audit').innerHTML = (data.audit||[]).slice(-30).reverse().map(e=>`<div class="event"><b>${esc(e.event_type)}</b><div class="muted">${esc(e.actor)} · ${local(e.created_at)}</div></div>`).join('') || '<div class="empty">暂无操作记录</div>';
+}
+async function openRun(runId){ state.selectedRunId = runId; const d = await request(`/dashboard/api/runs/${encodeURIComponent(runId)}`); $('timeline').innerHTML = (d.events||[]).map(e=>`<div class="event"><b>${esc(e.phase)}</b><div>${esc(e.detail)}</div><div class="muted">${local(e.created_at)}</div></div>`).join('') || '<div class="empty">暂无查看过程</div>'; document.querySelector('[data-tab="advanced"]').click(); }
+async function load(){ try{ const data = await request('/dashboard/api/overview'); state.data=data; renderSummary(data); renderOpportunities(data.opportunities||[]); renderPipeline(data.pipeline||[]); renderAdvanced(data); $('updatedAt').textContent = '最近同步 ' + new Date().toLocaleString(); }catch(e){ $('updatedAt').textContent = '加载失败：' + e.message; } }
+document.addEventListener('click', async e=>{ const t=e.target; const tab=t.closest('[data-tab]'); if(tab){ document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active')); tab.classList.add('active'); document.querySelectorAll('.view').forEach(x=>x.classList.remove('active')); $(`view-${tab.dataset.tab}`).classList.add('active'); return; } const run=t.closest('[data-open-run]'); if(run) return openRun(run.dataset.openRun); const impl=t.closest('[data-implement-candidate]'); if(impl){ impl.disabled=true; try{ await request(`/dashboard/api/opportunities/${encodeURIComponent(impl.dataset.implementCandidate)}/implement`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operator:'dashboard-operator'})}); await load(); document.querySelector('[data-tab="progress"]').click(); } finally { impl.disabled=false; } return; } const rq=t.closest('[data-requeue-run]'); if(rq){ await request(`/dashboard/api/runs/${encodeURIComponent(rq.dataset.requeueRun)}/requeue`,{method:'POST'}); return load(); } const rr=t.closest('[data-requeue-release]'); if(rr){ await request(`/dashboard/api/releases/${encodeURIComponent(rr.dataset.requeueRelease)}/requeue`,{method:'POST'}); return load(); } });
+$('refreshBtn').onclick = load;
+$('startBtn').onclick = async ()=>{
+  $('startBtn').disabled = true;
+  $('updatedAt').textContent = '正在搜索应用商店...';
+  try{
+    const seed_queries = $('seedQueries').value.split(/\n|,/).map(s=>s.trim()).filter(Boolean);
+    const mode = $('discoveryMode').value;
+    const started = await request('/dashboard/api/discovery-runs',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({seed_queries,mode,operator:'dashboard-operator'})
     });
-
-    // ---- 错误面板切换 ----
-    function toggleError(releaseId) {
-      const safeId = releaseId.replace(/[^a-zA-Z0-9-]/g, "");
-      const panel = document.getElementById("errPanel-" + safeId);
-      if (panel) {
-        panel.classList.toggle("open");
-        const btn = document.querySelector(`[data-toggle-error="${releaseId}"]`);
-        if (btn) {
-          const badgeEl = btn.querySelector(".badge");
-          if (badgeEl) badgeEl.textContent = panel.classList.contains("open") ? "收起" : "展开";
-        }
-      }
-    }
-
-    document.addEventListener("click", async (event) => {
-      const target = event.target;
-      if (!(target instanceof HTMLElement)) return;
-      const runId = target.getAttribute("data-open-run");
-      if (runId) {
-        state.selectedRunId = runId;
-        const detail = await request(`/dashboard/api/runs/${encodeURIComponent(runId)}`);
-        renderTimeline(detail.events || [], runId);
-        renderRunAudit(detail.audit || []);
-      }
-      const releaseId = target.getAttribute("data-open-release");
-      if (releaseId) {
-        state.selectedReleaseId = releaseId;
-        const detail = await request(`/dashboard/api/releases/${encodeURIComponent(releaseId)}`);
-        renderReleaseDetail(detail, releaseId);
-      }
-      const approveReleaseId = target.getAttribute("data-approve-release");
-      if (approveReleaseId) {
-        target.setAttribute("disabled", "disabled");
-        try { await approveRelease(approveReleaseId); } finally { target.removeAttribute("disabled"); }
-      }
-      const rejectReleaseId = target.getAttribute("data-reject-release");
-      if (rejectReleaseId) {
-        target.setAttribute("disabled", "disabled");
-        try { await rejectRelease(rejectReleaseId); } finally { target.removeAttribute("disabled"); }
-      }
-      const submitReleaseId = target.getAttribute("data-submit-release");
-      if (submitReleaseId) {
-        target.setAttribute("disabled", "disabled");
-        try { await submitRelease(submitReleaseId); } finally { target.removeAttribute("disabled"); }
-      }
-      const rqRun = target.getAttribute("data-requeue-run");
-      if (rqRun) {
-        target.setAttribute("disabled", "disabled");
-        try { await requeueRun(rqRun); } finally { target.removeAttribute("disabled"); }
-      }
-      const rqRelease = target.getAttribute("data-requeue-release");
-      if (rqRelease) {
-        target.setAttribute("disabled", "disabled");
-        try { await requeueRelease(rqRelease); } finally { target.removeAttribute("disabled"); }
-      }
-      const progressRelease = target.getAttribute("data-progress-release");
-      if (progressRelease) {
-        await showProgress(progressRelease);
-      }
-      const toggleErr = target.getAttribute("data-toggle-error");
-      if (toggleErr) {
-        toggleError(toggleErr);
-      }
-    });
-
-    el("refresh").addEventListener("click", loadDashboard);
-    el("autorefresh").addEventListener("change", () => {
-      if (state.timer) clearInterval(state.timer);
-      if (el("autorefresh").checked) {
-        state.timer = setInterval(loadDashboard, 4000);
-      }
-    });
-
-    state.timer = setInterval(loadDashboard, 4000);
-    loadDashboard();
-  </script>
+    await load();
+    document.querySelector('[data-tab="discover"]').click();
+    $('updatedAt').textContent = `已开始搜索机会：${started.discovery_run_id || ''}`;
+  }catch(e){
+    $('updatedAt').textContent = '开始失败：' + e.message;
+  } finally {
+    $('startBtn').disabled = false;
+  }
+};
+setInterval(()=>{ if($('autorefresh').checked) load(); }, 5000);
+load();
+</script>
 </body>
 </html>

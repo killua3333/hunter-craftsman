@@ -14,6 +14,7 @@ class AgentBStatus(StrEnum):
     IN_PROGRESS = "in_progress"
     IMPLEMENTATION_FAILED = "implementation_failed"
     IMPLEMENTATION_COMPLETE = "implementation_complete"
+    NEEDS_POLISH = "needs_polish"
     READY_FOR_RELEASE = "ready_for_release"
     SUBMITTED = "submitted"
     PLATFORM_UNAVAILABLE = "platform_unavailable"
@@ -40,6 +41,11 @@ class CraftsmanFeedback(BaseModel):
     artifacts: dict[str, Any] | None = None
     release_handoff: dict[str, Any] | None = None
     verification: str | None = None
+    quality_report: dict[str, Any] | None = None
+    quality_score: int | None = None
+    release_ready: bool | None = None
+    polish_required: bool | None = None
+    quality_failure_classes: list[str] = Field(default_factory=list)
 
     def to_agent_a_dict(self) -> dict[str, Any]:
         data = self.model_dump(mode="json", exclude_none=True)

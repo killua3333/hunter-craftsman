@@ -21,6 +21,7 @@ from craftsman.publisher.handoff import (
 from craftsman.publisher.models import PublisherPhase, PublisherStatus
 from craftsman.publisher.play_client import build_android_publisher_service, service_account_info
 from craftsman.publisher.play_store import upload_to_play
+from craftsman.publisher.preflight import run_release_preflight
 from craftsman.schema_validate import validate_release_handoff
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,15 @@ def run_android_release(
     if platform_target(handoff) != "android":
         return _failure(release_id, phases, ["platform target is not android"], handoff)
 
+    quality_blocker = _quality_blocker(handoff)
+    if quality_blocker:
+        return _failure(
+            release_id,
+            phases,
+            [quality_blocker["operator_action"]],
+            handoff,
+        )
+
     schema_errors = validate_release_handoff(handoff)
     if schema_errors:
         return _failure(release_id, phases, [f"schema: {e}" for e in schema_errors[:5]], handoff)
@@ -55,6 +65,18 @@ def run_android_release(
     policy = check_release_compliance_metadata(handoff)
     if not policy["passed"]:
         return _failure(release_id, phases, [f"policy: {i}" for i in policy["issues"]], handoff)
+
+    preflight = run_release_preflight(handoff, dry_run=effective_dry_run)
+    if not preflight["ok"]:
+        return _failure(
+            release_id,
+            phases,
+            [preflight["message"]],
+            handoff,
+            failure_class=preflight.get("failure_class"),
+            operator_action=preflight.get("operator_action"),
+            preflight=preflight,
+        )
 
     project_dir = resolve_project_dir(handoff)
     workspace = resolve_workspace_dir(handoff)
@@ -101,7 +123,9 @@ def run_android_release(
         )
         phases[-1]["detail"] = version_detail
 
-    _phase(PublisherPhase.UPLOAD, f"upload to track {settings.android_release_track}")
+    release_track = "internal"
+    _phase(PublisherPhase.BUILD, "build release AAB for internal testing")
+    _phase(PublisherPhase.UPLOAD, f"upload to track {release_track}")
     upload, aab_path = _upload_with_healing(
         project_dir=project_dir,
         package_name=package,
@@ -109,18 +133,30 @@ def run_android_release(
         icon_path=icon_path,
         screenshot_paths=screenshot_paths,
         effective_dry_run=effective_dry_run,
-        release_track=settings.android_release_track,
+        release_track=release_track,
         phases=phases,
         release_id=release_id,
         handoff=handoff,
         max_retries=3,
     )
     if not upload.ok:
-        return _failure(release_id, phases, [upload.message], handoff)
+        return _failure(
+            release_id,
+            phases,
+            [upload.message],
+            handoff,
+            upload={
+                "track": upload.track,
+                "message": upload.message,
+                "dry_run": upload.dry_run,
+                "store_response": upload.store_response,
+            },
+            release_bundle={"aab_path": aab_path} if aab_path else None,
+        )
 
     # ---- 自动推送到 production（触发 Google 人工审核） ----
     production_result: dict[str, Any] = {}
-    if settings.auto_promote_to_production and not effective_dry_run and upload.track != "production":
+    if False and settings.auto_promote_to_production and not effective_dry_run and upload.track != "production":
         _phase(PublisherPhase.UPLOAD, "promote to production track (Google review)")
         promote = _upload_to_track_only(
             aab_path=Path(aab_path),
@@ -158,7 +194,7 @@ def run_android_release(
         },
     )
 
-    status = PublisherStatus.DRY_RUN_COMPLETE if upload.dry_run else PublisherStatus.SUBMITTED
+    status = PublisherStatus.DRY_RUN_COMPLETE if upload.dry_run else PublisherStatus.INTERNAL_SUBMITTED
     _phase(PublisherPhase.COMPLETE, status.value)
 
     bundle = dict(handoff.get("release_bundle") or {})
@@ -168,6 +204,10 @@ def run_android_release(
         "release_id": release_id,
         "agent_c_status": status.value,
         "platform_target": "android",
+        "phase": PublisherPhase.COMPLETE.value,
+        "track": release_track,
+        "failure_class": None,
+        "operator_action": "内部测试轨道已提交，可在 Play Console 查看。" if not upload.dry_run else "dry-run 已完成；配置服务账号后可真实上传 internal track。",
         "phases": phases,
         "release_bundle": bundle,
         "upload": {
@@ -186,6 +226,51 @@ def run_android_release(
     }
 
 
+
+def classify_play_failure(message: str) -> dict[str, str]:
+    text = (message or "").lower()
+    if "quality" in text or "质量" in text or "质量分" in text:
+        return {"failure_class": "quality_gate_blocked", "operator_action": "App 质量分未达到 75，需继续修复或人工确认后再发布。"}
+    if "not found" in text or "package" in text and "created" in text:
+        return {"failure_class": "package_not_precreated", "operator_action": "请先在 Play Console 预创建这个包名，并确认包名池配置正确。"}
+    if "permission" in text or "unauthorized" in text or "forbidden" in text or "401" in text or "403" in text:
+        return {"failure_class": "service_account_permission", "operator_action": "请检查 Google Play service account 权限和 play-sa.json 配置。"}
+    if "versioncode" in text or "already been used" in text:
+        return {"failure_class": "version_code_conflict", "operator_action": "请重试发布，系统会尝试提升 versionCode。"}
+    if "sign" in text or "keystore" in text:
+        return {"failure_class": "signing_config", "operator_action": "请检查 release.jks、密码和签名配置。"}
+    if "metadata" in text or "listing" in text or "privacy" in text:
+        return {"failure_class": "metadata_incomplete", "operator_action": "请补齐商店描述、截图、图标和隐私政策 URL。"}
+    if "track" in text or "internal" in text:
+        return {"failure_class": "internal_track_unavailable", "operator_action": "请在 Play Console 检查内部测试轨道是否可用。"}
+    if "timeout" in text or "tempor" in text or "rate" in text:
+        return {"failure_class": "play_api_transient", "operator_action": "Google Play API 临时失败，请稍后重试。"}
+    return {"failure_class": "play_api_error", "operator_action": "请查看发布详情中的 Google Play 错误信息。"}
+
+
+def _quality_blocker(handoff: dict[str, Any]) -> dict[str, Any] | None:
+    report = handoff.get("quality_report") if isinstance(handoff.get("quality_report"), dict) else {}
+    score = handoff.get("quality_score")
+    if score is None:
+        score = report.get("quality_score")
+    release_ready = handoff.get("release_ready")
+    if release_ready is None:
+        release_ready = report.get("release_ready")
+    if score is None:
+        return None
+    try:
+        score_int = int(score)
+    except (TypeError, ValueError):
+        score_int = 0
+    if bool(release_ready) and score_int >= 75:
+        return None
+    return {
+        "quality_score": score_int,
+        "release_ready": bool(release_ready),
+        "failure_classes": report.get("failure_classes") or [],
+        "operator_action": "App quality score is below 75; improve Agent B output before submitting to Google Play internal track.",
+    }
+
 def _failure(
     release_id: str,
     phases: list[dict[str, str]],
@@ -193,18 +278,31 @@ def _failure(
     handoff: dict[str, Any],
     *,
     log: str = "",
+    failure_class: str | None = None,
+    operator_action: str | None = None,
+    preflight: dict[str, Any] | None = None,
+    upload: dict[str, Any] | None = None,
+    release_bundle: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    phases.append({"phase": PublisherPhase.FAILED.value, "detail": "; ".join(reasons[:3])})
+    message = "; ".join(reasons[:3])
+    classification = classify_play_failure(message or log)
+    phases.append({"phase": PublisherPhase.FAILED.value, "detail": message})
     return {
         "release_id": release_id,
         "agent_c_status": PublisherStatus.FAILED.value,
         "platform_target": platform_target(handoff),
+        "phase": PublisherPhase.FAILED.value,
+        "track": "internal",
+        "failure_class": failure_class or classification["failure_class"],
+        "operator_action": operator_action or classification["operator_action"],
         "phases": phases,
         "reasons": reasons,
         "build_log": log,
         "release_handoff": handoff,
+        "preflight": preflight,
+        "upload": upload,
+        "release_bundle": release_bundle,
     }
-
 
 def _upload_with_healing(
     *,
@@ -261,19 +359,31 @@ def _upload_with_healing(
             metadata_dir=metadata_dir,
             icon_path=icon_path,
             screenshot_paths=screenshot_paths,
+            sync_store_assets=attempt == 0,
         )
 
         if upload.ok:
             return upload, build.aab_path
 
         msg = upload.message.lower()
+        failed_stage = str((upload.store_response or {}).get("failed_stage") or "").lower()
+        if (
+            failed_stage == "commit"
+            and attempt == 0
+            and (upload.store_response or {}).get("images", {}).get("uploaded")
+        ):
+            phases.append({
+                "phase": PublisherPhase.UPLOAD.value,
+                "detail": "commit failed after store asset sync; retrying internal AAB without listing/images",
+            })
+            _bump_gradle_property(project_dir, "versionCode", _read_gradle_int(project_dir, "versionCode") + 1)
+            continue
 
         # --- Self-healing rules ---
 
         # Target SDK too low
-        m = re.search(r"target sdk.*?(?:too low|minimum).*?(\d+)", msg)
-        if m:
-            target = int(m.group(1))
+        if "target sdk" in msg and "too low" in msg:
+            target = max(_highest_installed_android_platform(project_dir), 36)
             logger.info("healing: bumping targetSdk to %d", target)
             _bump_gradle_property(project_dir, "targetSdk", target)
             _bump_gradle_property(project_dir, "compileSdk", target)
@@ -311,6 +421,27 @@ def _read_gradle_int(project_dir: Path, key: str) -> int:
         return 1
     m = re.search(rf"{key}\s*=\s*(\d+)", gf.read_text(encoding="utf-8"))
     return int(m.group(1)) if m else 1
+
+
+def _highest_installed_android_platform(project_dir: Path) -> int:
+    import os
+    import re
+
+    candidates: list[Path] = []
+    android_home = os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT")
+    if android_home:
+        candidates.append(Path(android_home) / "platforms")
+    candidates.append(Path.home() / "AppData" / "Local" / "Android" / "Sdk" / "platforms")
+    candidates.append(project_dir.parent / "android-sdk" / "platforms")
+    versions: list[int] = []
+    for root in candidates:
+        if not root.is_dir():
+            continue
+        for child in root.iterdir():
+            m = re.match(r"android-(\d+)", child.name)
+            if m:
+                versions.append(int(m.group(1)))
+    return max(versions or [36])
 
 
 def _bump_gradle_property(project_dir: Path, key: str, value: int) -> None:

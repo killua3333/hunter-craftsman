@@ -1,4 +1,4 @@
-from pathlib import Path
+﻿from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(env_file=ROOT / ".env", env_file_encoding="utf-8", extra="ignore")
 
     host: str = "127.0.0.1"
     port: int = 8791
@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     skip_gradle_build: bool = False
 
     android_build_backend: str = "auto"
+    android_home: str | None = None
+    android_sdk_root: str | None = None
     docker_android_image: str = "hunter-craftsman/android-builder"
     docker_gradle_timeout_seconds: float = 1800.0
     android_smoke_test: str = "auto"
@@ -94,6 +96,12 @@ class Settings(BaseSettings):
     publisher_submit_timeout_seconds: float = 1800.0
     webhook_url: str | None = None  # POSTed on publish completion
     auto_promote_to_production: bool = False  # 发布 internal 成功后自动推到 production（触发 Google 审核）
+
+    # Agent D (Accountant) — GCS financial reports
+    play_developer_bucket_id: str | None = None  # GCS bucket: pubsite_prod_rev_NNNNNNNNNNNNNNN
+
+    # Package pool for multi-app publishing
+    package_pool: str | None = None  # comma-separated: com.AEM.template001,com.AEM.template002,...
 
     job_worker_count: int = 1
     llm_request_timeout_seconds: float = 120.0

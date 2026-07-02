@@ -212,6 +212,60 @@ def test_release_submit_blocked_by_policy_failure(monkeypatch):
     assert submit.json()["detail"]["error"]["code"] == "release_policy_check_failed"
 
 
+def test_release_submit_blocks_low_quality_handoff(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "database_path", tmp_path / "runs.db")
+    monkeypatch.setattr(settings, "release_require_human_approval", False)
+    monkeypatch.setattr(settings, "release_require_policy_checks", True)
+    release_id = "rel-low-quality"
+    handoff = {
+        "schema_version": "1.0",
+        "run_id": "run-low-quality",
+        "release_id": release_id,
+        "opportunity_id": "opp-low-quality",
+        "revision": 1,
+        "platform": {"target": "android"},
+        "app": {"name": "Low Quality", "bundle_id": "com.example.lowquality"},
+        "requirement_digest": "sha256:test",
+        "release_bundle": {
+            "project_path": "object://local/runs/run-low-quality/project",
+            "metadata_path": "object://local/runs/run-low-quality/project/play/metadata",
+        },
+        "build_provenance": {
+            "backend": "android_gradle",
+            "backend_target": "android",
+            "craftsman_version": "0.1.0",
+            "codegen_model": "test-model",
+        },
+        "compliance_metadata": {
+            "subtitle": "Test",
+            "description": "Test app description",
+            "keywords": ["test"],
+            "privacy_url": "https://privacy.lowquality.test/policy",
+        },
+        "quality_score": 62,
+        "release_ready": False,
+        "quality_report": {
+            "quality_score": 62,
+            "release_ready": False,
+            "failure_classes": ["weak_core_flow"],
+        },
+    }
+
+    with TestClient(create_app()) as client:
+        prepared = client.post("/v1/releases/prepare", json=handoff)
+        assert prepared.status_code == 200
+        assert prepared.json()["accepted"] is True
+
+        submit = client.post(f"/v1/releases/{release_id}/submit")
+        assert submit.status_code == 200
+        body = submit.json()
+        assert body["status"] == "needs_manual_action"
+        assert body["quality_blocker"]["quality_score"] == 62
+
+        state = client.get(f"/v1/releases/{release_id}").json()["state"]
+        assert state["status"] == "needs_manual_action"
+
+
 def test_release_handoff_validation_endpoint():
     req = json.loads(SAMPLE.read_text(encoding="utf-8"))
     with TestClient(create_app()) as client:
@@ -276,7 +330,7 @@ def test_dashboard_overview_and_requeue_endpoints():
     with TestClient(create_app()) as client:
         page = client.get("/dashboard")
         assert page.status_code == 200
-        assert "Hunter Craftsman 控制台" in page.text
+        assert "Hunter-Craftsman 工作台" in page.text
 
         run = client.post(
             f"/v1/opportunities/{req['opportunity_id']}/implement",
@@ -294,25 +348,10 @@ def test_dashboard_overview_and_requeue_endpoints():
         overview = client.get("/dashboard/api/overview")
         assert overview.status_code == 200
         body = overview.json()
-        assert body["summary"]["service"] == "craftsman"
-        assert "repaired_release_jobs" in body["summary"]
-        assert "ready" in body["summary"]
-        assert "checks" in body["summary"]
-        assert any(item["run_id"] == run_id for item in body["runs"])
-        assert any(item["release_id"] == release_id for item in body["releases"])
-
-        detail = client.get(f"/dashboard/api/runs/{run_id}")
-        assert detail.status_code == 200
-        assert detail.json()["run"]["run_id"] == run_id
-        assert isinstance(detail.json()["audit"], list)
-
-        release_detail = client.get(f"/dashboard/api/releases/{release_id}")
-        assert release_detail.status_code == 200
-        assert release_detail.json()["release"]["release_id"] == release_id
-        assert "policy" in release_detail.json()
-        assert "approval" in release_detail.json()
-        assert isinstance(release_detail.json()["audit"], list)
-
+        assert body["opportunities"] == []
+        pipeline = next(item for item in body["pipeline"] if item["technical"]["run_status"] == "implementation_complete")
+        assert pipeline["run_id"]
+        assert pipeline["stages"]["agent_b"]["status"] == "done"
 
 def test_dashboard_requeue_run_endpoint(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "database_path", tmp_path / "runs.db")

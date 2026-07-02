@@ -90,6 +90,15 @@ def resolve_metadata_dir(handoff: dict[str, Any]) -> Path | None:
 
 
 def application_id(handoff: dict[str, Any]) -> str | None:
+    app = handoff.get("app") if isinstance(handoff.get("app"), dict) else {}
+    for value in (
+        app.get("application_id"),
+        app.get("bundle_id"),
+        handoff.get("application_id"),
+        handoff.get("bundle_id"),
+    ):
+        if value:
+            return str(value)
     project = resolve_project_dir(handoff)
     if project is None:
         return None
@@ -98,7 +107,7 @@ def application_id(handoff: dict[str, Any]) -> str | None:
         import json
 
         data = json.loads(manifest.read_text(encoding="utf-8"))
-        return data.get("bundle_id")
+        return data.get("application_id") or data.get("bundle_id")
     return None
 
 
@@ -110,9 +119,15 @@ def resolve_icon_path(handoff: dict[str, Any]) -> Path | None:
         return local
     workspace = resolve_workspace_dir(handoff)
     if workspace is not None:
-        candidate = workspace / "artifacts" / "icon.png"
-        if candidate.is_file():
-            return candidate
+        artifacts = workspace / "artifacts"
+        for name in ("AppIcon.png", "icon.png", "ic_launcher_512x512.png"):
+            candidate = artifacts / name
+            if candidate.is_file():
+                return candidate
+        launchers = sorted(artifacts.glob("ic_launcher_*x*.png"), reverse=True) if artifacts.is_dir() else []
+        for candidate in launchers:
+            if candidate.is_file():
+                return candidate
     return None
 
 

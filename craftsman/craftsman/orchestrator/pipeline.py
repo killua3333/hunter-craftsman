@@ -13,11 +13,12 @@ from craftsman.callback import deliver_feedback
 from craftsman.config import settings
 from craftsman.feedback import build_feedback
 from craftsman.gate import run_gate
-from craftsman.generator.scaffold import scaffold_project
+from craftsman.generator.scaffold import repair_android_codegen_for_quality, scaffold_project
 from craftsman.llm import reset_usage_events, usage_summary
 from craftsman.models import AgentBStatus, CraftsmanFeedback, RequirementPayload
 from craftsman.orchestrator.alerts import evaluate_run_alerts
 from craftsman.orchestrator.failure_taxonomy import classify_build_failure, classify_runtime_exception
+from craftsman.orchestrator.quality import evaluate_app_quality, write_implementation_plan
 from craftsman.orchestrator.reflexion import apply_fixes, apply_gradle_fixes, save_build_log
 from craftsman.orchestrator.verify_gates import run_verify_hard_gates
 from craftsman.runtime import select_execution_backend
@@ -95,6 +96,45 @@ def _platform_target(req: dict[str, Any]) -> str:
     return "android"
 
 
+def _quality_repair_needed(report: dict[str, Any]) -> bool:
+    failures = set(report.get("failure_classes") or [])
+    return bool(failures & {"empty_ui", "weak_core_flow", "no_persistence", "generic_template"})
+
+
+def _select_store_icon(icon_paths: list[str], fallback: Path) -> Path:
+    candidates = [Path(path) for path in icon_paths if path]
+    for candidate in candidates:
+        if candidate.name == "ic_launcher_512x512.png" and candidate.is_file():
+            return candidate
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return fallback
+
+
+def _assign_package_from_pool(store: RunStore, run_id: str, req: dict[str, Any]) -> dict[str, Any]:
+    pool_setting = (settings.package_pool or "").strip()
+    if not pool_setting or _platform_target(req) != "android":
+        return req
+    pool_names = [item.strip() for item in pool_setting.split(",") if item.strip()]
+    if not pool_names:
+        return req
+    store.populate_pool(pool_names)
+    existing = None
+    for item in store.list_pool():
+        if item.get("allocated_to") == run_id:
+            existing = str(item.get("package_name") or "")
+            break
+    package_name = existing or store.next_available_package(run_id)
+    if not package_name:
+        return req
+    app = req.setdefault("app", {})
+    if isinstance(app, dict):
+        app["bundle_id"] = package_name
+        app["application_id"] = package_name
+    return req
+
+
 def _build_release_handoff(
     *,
     run_id: str,
@@ -106,8 +146,11 @@ def _build_release_handoff(
     backend_target: str,
     platform_note: str,
     verification: str = "demo",
+    quality_report: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     platform_target = _platform_target(req)
+    app_payload = req.get("app") if isinstance(req.get("app"), dict) else {}
+    application_id = str(app_payload.get("application_id") or app_payload.get("bundle_id") or "").strip()
     release_bundle: dict[str, Any] = {
         "project_path": str(artifacts.get("project")),
         "icon": artifacts.get("icon"),
@@ -122,6 +165,13 @@ def _build_release_handoff(
         "opportunity_id": req["opportunity_id"],
         "revision": req["revision"],
         "platform": {"target": platform_target},
+        "app": {
+            "name": app_payload.get("name"),
+            "bundle_id": application_id or app_payload.get("bundle_id"),
+            "application_id": application_id or app_payload.get("application_id"),
+        },
+        "bundle_id": application_id or app_payload.get("bundle_id"),
+        "application_id": application_id or app_payload.get("application_id"),
         "requirement_digest": _requirement_digest(req),
         "release_bundle": release_bundle,
         "build_provenance": {
@@ -140,6 +190,9 @@ def _build_release_handoff(
         },
         "agent_b_status": AgentBStatus.IMPLEMENTATION_COMPLETE.value,
         "workspace": str(artifacts.get("workspace")),
+        "quality_report": quality_report or {},
+        "quality_score": (quality_report or {}).get("quality_score"),
+        "release_ready": (quality_report or {}).get("release_ready"),
     }
 
 
@@ -235,6 +288,8 @@ def run_implementation(
     from craftsman.requirement_normalize import normalize_requirement, shrink_requirement_scope
 
     req = normalize_requirement(json.loads(row["requirement_json"]))
+    req = _assign_package_from_pool(store, run_id, req)
+    store.update_run(run_id, requirement_json=json.dumps(req, ensure_ascii=False))
     platform_target = _platform_target(req)
     opportunity_id = req["opportunity_id"]
     revision = req["revision"]
@@ -304,6 +359,7 @@ def run_implementation(
         enter_phase("plan", "scaffold project and derive scheme")
         if time.monotonic() > deadline:
             raise TimeoutError(f"实现超时（>{settings.max_implementation_seconds}s）")
+        implementation_plan = write_implementation_plan(workspace, req)
         project_dir = scaffold_project(workspace, req)
         enter_phase("codegen", "project scaffold/codegen complete")
         preview_path = str(web_demo_tool.ensure_windows_demo(workspace, req))
@@ -594,6 +650,7 @@ def run_implementation(
             features=feature_titles,
             palette=palette,
         )
+        icon_path = _select_store_icon(icon_paths, icon_path)
 
         # B4: 截图中增强 benefit_text
         benefit_text = store_meta.get("benefit", "")
@@ -626,6 +683,54 @@ def run_implementation(
             icon_path=icon_path,
             screenshots=shots,
         )
+        metadata_root = (
+            project_dir / "fastlane" / "metadata"
+            if backend.mode == "macos_xcode"
+            else (project_dir / "play" / "metadata")
+        )
+        quality_report = evaluate_app_quality(
+            backend_mode=backend.mode,
+            compile_exit_code=exit_code,
+            project_dir=project_dir,
+            workspace=workspace,
+            requirement=req,
+            icon_path=icon_path,
+            screenshots=shots,
+            metadata_root=metadata_root,
+            verification=verification,
+        )
+        if (
+            backend.mode in _ANDROID_BACKENDS
+            and _quality_repair_needed(quality_report)
+            and repair_android_codegen_for_quality(project_dir, req, quality_report)
+        ):
+            enter_phase("quality_repair", "repair Android UI from quality report")
+            if can_build:
+                result = backend.compile(project_dir, scheme)
+                exit_code = result.exit_code
+                log = result.log
+                save_build_log(workspace, log, backend=backend.mode)
+            gate_result = run_verify_hard_gates(
+                backend_mode=backend.mode,
+                compile_exit_code=exit_code,
+                project_dir=project_dir,
+                workspace=workspace,
+                preview_html=preview_path,
+                demo_html=demo_html_path,
+                icon_path=icon_path,
+                screenshots=shots,
+            )
+            quality_report = evaluate_app_quality(
+                backend_mode=backend.mode,
+                compile_exit_code=exit_code,
+                project_dir=project_dir,
+                workspace=workspace,
+                requirement=req,
+                icon_path=icon_path,
+                screenshots=shots,
+                metadata_root=metadata_root,
+                verification="verified" if can_build and exit_code == 0 else verification,
+            )
         if not gate_result["ok"]:
             fb = build_feedback(
                 opportunity_id=opportunity_id,
@@ -640,13 +745,43 @@ def run_implementation(
                     "workspace": _artifact_base_uri(run_id, workspace),
                     "local_paths": {"workspace": str(workspace)},
                     "verify_hard_gates": gate_result,
+                    "implementation_plan": implementation_plan,
+                    "quality_report": quality_report,
                 },
+                quality_report=quality_report,
             )
             deliver_feedback(fb)
             store.update_run(run_id, status="failed", feedback=fb.to_agent_a_dict())
             return _maybe_scope_retry(store, run_id, fb, req, scope_retry_depth)
 
-        status = AgentBStatus.IMPLEMENTATION_COMPLETE
+        if quality_report["quality_score"] < 60:
+            fb = build_feedback(
+                opportunity_id=opportunity_id,
+                revision=revision,
+                app_name=app_name,
+                accepted=True,
+                status=AgentBStatus.IMPLEMENTATION_FAILED,
+                run_id=run_id,
+                reasons=["quality_gate_failed", *quality_report["failure_classes"]],
+                suggested_rules=quality_report["repair_suggestions"],
+                artifacts={
+                    "workspace": _artifact_base_uri(run_id, workspace),
+                    "local_paths": {"workspace": str(workspace)},
+                    "verify_hard_gates": gate_result,
+                    "implementation_plan": implementation_plan,
+                    "quality_report": quality_report,
+                },
+                quality_report=quality_report,
+            )
+            deliver_feedback(fb)
+            store.update_run(run_id, status="failed", feedback=fb.to_agent_a_dict())
+            return _maybe_scope_retry(store, run_id, fb, req, scope_retry_depth)
+
+        status = (
+            AgentBStatus.IMPLEMENTATION_COMPLETE
+            if quality_report.get("release_ready")
+            else AgentBStatus.NEEDS_POLISH
+        )
 
         reasons: list[str] = []
         if verification == "demo":
@@ -664,11 +799,6 @@ def run_implementation(
         demo_html_uri = _artifact_uri(demo_html_path, run_id=run_id, workspace=workspace)
         icon_uri = _artifact_uri(icon_path, run_id=run_id, workspace=workspace)
         screenshots_uri = [_artifact_uri(Path(s), run_id=run_id, workspace=workspace) for s in shots]
-        metadata_root = (
-            project_dir / "fastlane" / "metadata"
-            if backend.mode == "macos_xcode"
-            else (project_dir / "play" / "metadata")
-        )
         metadata_uri = _artifact_uri(metadata_root, run_id=run_id, workspace=workspace)
         artifacts_payload = {
             "workspace": workspace_uri,
@@ -679,6 +809,8 @@ def run_implementation(
             "preview_html": preview_uri,
             "demo_html": demo_html_uri,
             "phase_events": phase_events,
+            "implementation_plan": implementation_plan,
+            "quality_report": quality_report,
             "storage": {
                 "mode": settings.artifact_uri_mode,
                 "base_uri": workspace_uri,
@@ -691,6 +823,7 @@ def run_implementation(
                 "metadata_path": str(metadata_root),
                 "preview_html": preview_path,
                 "demo_html": str(demo_html_path),
+                "implementation_plan": str(workspace / "implementation_plan.json"),
             },
         }
         enter_phase("complete", "implementation complete and handoff generated")
@@ -703,6 +836,8 @@ def run_implementation(
             "failure_class": None,
             "llm_usage": usage_summary(),
             "alerts": alerts,
+            "quality_score": quality_report.get("quality_score"),
+            "release_ready": quality_report.get("release_ready"),
         }
         artifacts_payload["metrics"] = metrics_payload
         artifacts_payload["verification"] = verification
@@ -716,6 +851,7 @@ def run_implementation(
             backend_target=str(getattr(backend, "target", "unknown")),
             platform_note=backend.platform_note(),
             verification=verification,
+            quality_report=quality_report,
         )
         artifacts_payload["release_handoff"] = release_handoff
 
@@ -731,6 +867,7 @@ def run_implementation(
             artifacts=artifacts_payload,
             release_handoff=release_handoff,
             verification=verification,
+            quality_report=quality_report,
         )
         deliver_feedback(fb)
         store.update_run(

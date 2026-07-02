@@ -5,17 +5,19 @@ from pathlib import Path
 from typing import Any
 
 from craftsman.config import settings
-from craftsman.secrets import resolve_secret_value
+from craftsman.secrets import resolve_secret_path, resolve_secret_value
 
 PLAY_SCOPE = "https://www.googleapis.com/auth/androidpublisher"
+# Phase 2: GCS scope for reading Play financial reports
+GCS_READONLY_SCOPE = "https://www.googleapis.com/auth/devstorage.read_only"
 
 
 def service_account_info() -> dict[str, Any] | None:
     raw = resolve_secret_value("GOOGLE_PLAY_SERVICE_ACCOUNT_JSON", None)
     if not raw:
-        path = resolve_secret_value("GOOGLE_PLAY_SERVICE_ACCOUNT_FILE", settings.google_play_service_account_file)
-        if path and Path(path).is_file():
-            raw = Path(path).read_text(encoding="utf-8")
+        path = resolve_secret_path("GOOGLE_PLAY_SERVICE_ACCOUNT_FILE", settings.google_play_service_account_file)
+        if path and path.is_file():
+            raw = path.read_text(encoding="utf-8")
     if not raw:
         return None
     try:
@@ -69,12 +71,14 @@ def map_play_api_error(exc: Exception) -> str:
     """Turn Google API errors into operator-friendly messages."""
     message = str(exc)
     lower = message.lower()
+    if "version code" in lower and "already been used" in lower:
+        return "versionCode conflict: bump version and retry"
+    if "changes are sent for review automatically" in lower or "changesnotsentforreview" in lower:
+        return "Play API commit denied: grant service account permission to send changes for review / release apps"
     if "403" in message or "forbidden" in lower:
         return "Play API permission denied: grant service account Release manager in Play Console"
     if "404" in message or "not found" in lower:
         return "Play app not found: create the app in Console with matching package name first"
-    if "version code" in lower and "already been used" in lower:
-        return "versionCode conflict: bump version and retry"
     if "applicationnotfound" in lower.replace(" ", ""):
         return "package name not registered in Play Console"
     return message[:500]

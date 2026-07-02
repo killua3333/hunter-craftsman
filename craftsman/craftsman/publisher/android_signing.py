@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 
 from craftsman.config import settings
-from craftsman.secrets import resolve_secret_value
+from craftsman.secrets import resolve_secret_path, resolve_secret_value
 
 
 def write_keystore_properties(project_dir: Path) -> tuple[bool, str]:
@@ -12,17 +12,17 @@ def write_keystore_properties(project_dir: Path) -> tuple[bool, str]:
     Copy keystore into project dir and write keystore.properties.
     Returns (configured, message).
     """
-    store_file = resolve_secret_value("ANDROID_KEYSTORE_PATH", settings.android_keystore_path)
+    store_path = resolve_secret_path("ANDROID_KEYSTORE_PATH", settings.android_keystore_path)
     store_password = resolve_secret_value("ANDROID_KEYSTORE_PASSWORD", settings.android_keystore_password)
     key_alias = resolve_secret_value("ANDROID_KEY_ALIAS", settings.android_key_alias)
     key_password = resolve_secret_value("ANDROID_KEY_PASSWORD", settings.android_key_password)
 
-    if not all([store_file, store_password, key_alias, key_password]):
+    if not all([store_path, store_password, key_alias, key_password]):
         return False, "signing secrets not configured; using debug/unsigned build path"
 
-    keystore_path = Path(store_file)
+    keystore_path = Path(store_path)
     if not keystore_path.is_file():
-        return False, f"keystore file not found: {store_file}"
+        return False, f"keystore file not found: {store_path}"
 
     # Copy keystore into project so Docker can access it
     dest = project_dir / "app" / "release.keystore"
@@ -58,4 +58,5 @@ def cleanup_keystore_properties(project_dir: Path) -> None:
 
 
 def signing_configured() -> bool:
-    return bool(resolve_secret_value("ANDROID_KEYSTORE_PATH", settings.android_keystore_path))
+    path = resolve_secret_path("ANDROID_KEYSTORE_PATH", settings.android_keystore_path)
+    return bool(path and path.is_file())

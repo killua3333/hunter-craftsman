@@ -23,6 +23,15 @@ class EvidenceItem(BaseModel):
     snippet: str = Field(description="摘录或假设说明")
 
 
+class RejectedCandidate(BaseModel):
+    """Candidate opportunity considered by Agent A but not selected."""
+
+    name: str = Field(default="")
+    niche: str = Field(default="")
+    reason: str = Field(default="")
+    opportunity_score: int | None = Field(default=None, ge=0, le=100)
+    build_fit_score: int | None = Field(default=None, ge=0, le=100)
+
 class BlueprintApp(BaseModel):
     name: str
     bundle_id: str = Field(pattern=r"^[a-zA-Z0-9.-]+$")
@@ -137,11 +146,36 @@ class AppOpportunityBlueprint(BaseModel):
         default=None,
         description="产品简介（可用 Markdown）：含 product_brief.target_users, pain_points, differentiation, feature_priority",
     )
+    niche: str | None = Field(default=None, description="细分领域，例如离线计时器、简洁清单、单位换算")
+    target_users: str | None = Field(default=None, description="目标用户一句话画像")
+    pain_points: list[str] = Field(default_factory=list, description="核心痛点，建议 1-3 条")
+    competitor_gap: str | None = Field(default=None, description="竞品缺口或机会窗口")
+    opportunity_score: int | None = Field(default=None, ge=0, le=100, description="0-100 市场机会评分")
+    build_fit_score: int | None = Field(default=None, ge=0, le=100, description="0-100 当前 Agent B 快速实现适配度")
+    evidence_score: int | None = Field(default=None, ge=0, le=100, description="0-100 证据强度评分")
+    source_apps: list[dict[str, Any]] = Field(default_factory=list, description="Google Play 竞品来源 app 列表")
+    review_pain_summary: list[dict[str, Any]] = Field(default_factory=list, description="差评痛点聚合")
+    discovery_run_id: str | None = Field(default=None, description="可监控 discovery run ID")
+    decision_reason: str | None = Field(default=None, description="为什么选择这个需求")
+    rejected_candidates: list[RejectedCandidate] = Field(default_factory=list, description="本轮未选择候选方向")
+    monetization: str | None = Field(
+        default=None,
+        description="变现模式：free（免费发布）| paid_once（一次性付费购买）",
+    )
+    price_tier: str | None = Field(
+        default=None,
+        description="付费价格：0.99 | 1.99 | 2.99。仅 monetization=paid_once 时有效",
+    )
 
     @field_validator("keywords")
     @classmethod
     def _normalize_keywords(cls, v: list[str]) -> list[str]:
         return [k.strip() for k in v if k and k.strip()]
+
+    @field_validator("pain_points")
+    @classmethod
+    def _normalize_pain_points(cls, v: list[str]) -> list[str]:
+        return [str(item).strip() for item in v if str(item).strip()][:5]
 
     @model_validator(mode="after")
     def _validate_guardrail_output(self) -> AppOpportunityBlueprint:
@@ -176,6 +210,8 @@ class AppOpportunityBlueprint(BaseModel):
             assert req is not None
             if req.app.name.strip() != self.app_name.strip():
                 raise ValueError("requirement.app.name 必须与 app_name 一致")
+            if self.data_quality == "assumption" and self.opportunity_score is not None and self.opportunity_score > 65:
+                raise ValueError("data_quality=assumption 时 opportunity_score 不得高于 65")
         elif not (self.rejection_reason or "").strip():
             raise ValueError("accepted=false 时必须提供 rejection_reason")
         return self
@@ -298,5 +334,3 @@ def extract_blueprint_from_messages(
             last_error = format_parse_error(exc)
             continue
     return None, last_error
-
-

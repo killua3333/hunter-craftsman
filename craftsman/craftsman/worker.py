@@ -17,6 +17,35 @@ from craftsman.store.db import RunStore
 
 logger = logging.getLogger(__name__)
 
+def _bundle_id_from_handoff(handoff: dict[str, Any]) -> str | None:
+    app = handoff.get("app") if isinstance(handoff.get("app"), dict) else {}
+    release_bundle = handoff.get("release_bundle") if isinstance(handoff.get("release_bundle"), dict) else {}
+    for value in (
+        app.get("bundle_id"),
+        app.get("application_id"),
+        release_bundle.get("application_id"),
+        handoff.get("bundle_id"),
+        handoff.get("application_id"),
+    ):
+        if value:
+            return str(value)
+    return None
+
+
+def _should_release_package_for_agent_c(final_status: str, failure_class: str | None) -> bool:
+    if final_status in {"internal_submitted", "published", "dry_run_complete"}:
+        return False
+    return failure_class in {
+        "package_not_precreated",
+        "service_account_permission",
+        "metadata_incomplete",
+        "signing_config",
+    }
+
+
+def _should_disable_package_for_agent_c(failure_class: str | None) -> bool:
+    return failure_class in {"package_not_precreated"}
+
 
 class BackgroundWorker:
     def __init__(self, store: RunStore | None = None) -> None:
@@ -130,8 +159,8 @@ class BackgroundWorker:
             approval = self.store.get_release_approval(release_id)
             agent_result = run_android_release(handoff, release_id=release_id)
             agent_status = str(agent_result.get("agent_c_status") or "failed")
-            if agent_status == PublisherStatus.SUBMITTED.value:
-                final_status = "published"
+            if agent_status in {PublisherStatus.SUBMITTED.value, PublisherStatus.INTERNAL_SUBMITTED.value}:
+                final_status = "internal_submitted" if agent_status == PublisherStatus.INTERNAL_SUBMITTED.value else "published"
             elif agent_status == PublisherStatus.DRY_RUN_COMPLETE.value:
                 final_status = "dry_run_complete"
             else:
@@ -167,6 +196,23 @@ class BackgroundWorker:
                 payload={"agent_c_status": agent_status, "platform_target": details.get("platform_target")},
             )
             self._fire_webhook(release_id, final_status, agent_result)
+            failure_class = agent_result.get("failure_class")
+            if _should_release_package_for_agent_c(final_status, str(failure_class) if failure_class else None):
+                try:
+                    bundle_id = _bundle_id_from_handoff(handoff)
+                    if bundle_id:
+                        if _should_disable_package_for_agent_c(str(failure_class) if failure_class else None):
+                            self.store.disable_package(bundle_id, str(failure_class))
+                        else:
+                            self.store.release_package(bundle_id)
+                        logger.info(
+                            "freed package %s back to pool (release %s, failure_class=%s)",
+                            bundle_id,
+                            release_id,
+                            failure_class,
+                        )
+                except Exception:
+                    logger.exception("error freeing package for release %s", release_id)
         except Exception as exc:
             taxonomy = classify_runtime_exception(exc)
             self.store.fail_release_job(
@@ -178,6 +224,25 @@ class BackgroundWorker:
             )
             state = self.store.get_release_state(release_id) or {}
             details: dict[str, Any] = state.get("details") if isinstance(state.get("details"), dict) else {}
+            failure_class = str(taxonomy.get("category") or "runtime_exception")
+            if _should_release_package_for_agent_c("failed", failure_class):
+                try:
+                    handoff = details.get("release_handoff")
+                    if isinstance(handoff, dict):
+                        bundle_id = _bundle_id_from_handoff(handoff)
+                        if bundle_id:
+                            if _should_disable_package_for_agent_c(failure_class):
+                                self.store.disable_package(bundle_id, failure_class)
+                            else:
+                                self.store.release_package(bundle_id)
+                            logger.info(
+                                "freed package %s back to pool (release %s, failure_class=%s)",
+                                bundle_id,
+                                release_id,
+                                failure_class,
+                            )
+                except Exception:
+                    logger.exception("error freeing package for release %s", release_id)
             self.store.upsert_release_state(
                 release_id,
                 status="failed",

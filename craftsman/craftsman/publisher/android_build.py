@@ -27,7 +27,20 @@ def ensure_gradle_wrapper(project_dir: Path) -> bool:
     return result.exit_code == 0 and gradlew.is_file()
 
 
-def _run_local_bundle(project_dir: Path) -> ReleaseBuildResult:
+def _find_debug_apk(project_dir: Path) -> Path | None:
+    """Look for assembled debug APK (unsigned, suitable for adb install)."""
+    candidates = [
+        project_dir / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk",
+        project_dir / "app" / "build" / "outputs" / "apk" / "debug" / "app-universal-debug.apk",
+    ]
+    for p in candidates:
+        if p.is_file():
+            return p
+    return None
+
+
+def _run_local_build(project_dir: Path) -> ReleaseBuildResult:
+    """Run bundleRelease + assembleDebug locally (both AAB and APK)."""
     if not ensure_gradle_wrapper(project_dir):
         return ReleaseBuildResult(
             ok=False,
@@ -35,56 +48,80 @@ def _run_local_bundle(project_dir: Path) -> ReleaseBuildResult:
             log="install Gradle or add gradlew to android template",
         )
     gradlew = _gradlew(project_dir)
-    result = run_cmd([str(gradlew), "bundleRelease"], cwd=str(project_dir), timeout=1800.0)
+    result = run_cmd([str(gradlew), "bundleRelease", "assembleDebug"], cwd=str(project_dir), timeout=1800.0)
     log = (result.stdout or "") + "\n" + (result.stderr or "")
     if result.timed_out:
-        log += "\n[gradle bundleRelease timed out]"
-    built = project_dir / "app" / "build" / "outputs" / "bundle" / "release" / "app-release.aab"
-    if result.exit_code == 0 and built.is_file():
-        return ReleaseBuildResult(ok=True, aab_path=str(built), log=log)
+        log += "\n[gradle build timed out]"
+
+    aab = project_dir / "app" / "build" / "outputs" / "bundle" / "release" / "app-release.aab"
+    apk = _find_debug_apk(project_dir)
+
+    is_ok = result.exit_code == 0 and aab.is_file()
+    reasons = []
+    if result.exit_code != 0:
+        reasons.append("bundleRelease/assembleDebug failed")
+    if not aab.is_file():
+        reasons.append("release aab not found")
     return ReleaseBuildResult(
-        ok=False,
+        ok=is_ok,
+        aab_path=str(aab) if aab.is_file() else None,
+        apk_path=str(apk) if apk else None,
         log=log,
-        reasons=["bundleRelease failed" if result.exit_code != 0 else "release aab not found"],
+        reasons=reasons,
     )
 
 
 def build_release_aab(project_dir: Path, *, dry_run: bool = False) -> ReleaseBuildResult:
     """
-    Build signed release AAB via Gradle bundleRelease.
+    Build signed release AAB via Gradle bundleRelease + assembleDebug.
+    Produces both AAB (for Play Store) and debug APK (for local adb install).
     In dry_run mode, skip Gradle and return a synthetic bundle path for pipeline testing.
     Uses Docker builder when ANDROID_BUILD_BACKEND=auto|docker and Docker is available.
     """
     artifacts_dir = project_dir.parent / "artifacts"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     output_aab = artifacts_dir / "app-release.aab"
+    output_apk = artifacts_dir / "app-debug.apk"
 
     if dry_run:
         if not output_aab.is_file():
             import zipfile
-
             with zipfile.ZipFile(output_aab, "w") as zf:
                 zf.writestr("META-INF/dry-run.txt", "agent-c dry run bundle")
         return ReleaseBuildResult(ok=True, aab_path=str(output_aab), log="dry-run bundle", dry_run=True)
 
     if should_use_docker_backend():
-        docker_result = run_gradle_in_container(project_dir, "bundleRelease")
-        built = project_dir / "app" / "build" / "outputs" / "bundle" / "release" / "app-release.aab"
-        if docker_result.ok and built.is_file():
-            shutil.copy2(built, output_aab)
-            return ReleaseBuildResult(ok=True, aab_path=str(output_aab), log=docker_result.log)
+        docker_result = run_gradle_in_container(project_dir, "bundleRelease assembleDebug")
+        built_aab = project_dir / "app" / "build" / "outputs" / "bundle" / "release" / "app-release.aab"
+        built_apk = _find_debug_apk(project_dir)
+
+        if docker_result.ok and built_aab.is_file():
+            shutil.copy2(built_aab, output_aab)
+            if built_apk:
+                shutil.copy2(built_apk, output_apk)
+            return ReleaseBuildResult(
+                ok=True,
+                aab_path=str(output_aab),
+                apk_path=str(output_apk) if built_apk else None,
+                log=docker_result.log,
+            )
         return ReleaseBuildResult(
             ok=False,
             log=docker_result.log,
             reasons=docker_result.reasons or ["docker bundleRelease failed"],
         )
 
-    local = _run_local_bundle(project_dir)
+    local = _run_local_build(project_dir)
     if local.ok and local.aab_path:
-        built = Path(local.aab_path)
-        if built.is_file():
-            shutil.copy2(built, output_aab)
-            return ReleaseBuildResult(ok=True, aab_path=str(output_aab), log=local.log)
+        shutil.copy2(Path(local.aab_path), output_aab)
+        if local.apk_path:
+            shutil.copy2(Path(local.apk_path), output_apk)
+        return ReleaseBuildResult(
+            ok=True,
+            aab_path=str(output_aab),
+            apk_path=str(output_apk) if local.apk_path else None,
+            log=local.log,
+        )
     return local
 
 

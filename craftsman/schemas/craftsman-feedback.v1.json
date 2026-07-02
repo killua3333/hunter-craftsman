@@ -44,6 +44,7 @@
         "in_progress",
         "implementation_failed",
         "implementation_complete",
+        "needs_polish",
         "ready_for_release",
         "submitted",
         "platform_unavailable"
@@ -53,6 +54,12 @@
     "suggested_rules": { "type": "array", "items": { "type": "string" } },
     "created_at": { "type": "string", "format": "date-time" },
     "artifacts": { "type": "object" },
-    "release_handoff": { "type": "object" }
+    "release_handoff": { "type": "object" },
+    "verification": { "type": "string" },
+    "quality_report": { "type": "object" },
+    "quality_score": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "release_ready": { "type": "boolean" },
+    "polish_required": { "type": "boolean" },
+    "quality_failure_classes": { "type": "array", "items": { "type": "string" } }
   }
 }

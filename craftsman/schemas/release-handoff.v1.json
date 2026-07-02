@@ -67,6 +67,9 @@
     "agent_b_status": {
       "type": "string",
       "enum": ["implementation_complete"]
-    }
+    },
+    "quality_report": { "type": "object" },
+    "quality_score": { "type": ["integer", "null"], "minimum": 0, "maximum": 100 },
+    "release_ready": { "type": ["boolean", "null"] }
   }
 }

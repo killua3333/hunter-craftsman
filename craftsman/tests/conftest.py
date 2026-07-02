@@ -1,4 +1,4 @@
-"""测试环境不调用真实 DeepSeek API。"""
+﻿"""测试环境不调用真实 DeepSeek API。"""
 
 from __future__ import annotations
 
@@ -26,3 +26,10 @@ def _no_real_llm(monkeypatch, request):
     monkeypatch.setattr("craftsman.gate.analyze_requirement_llm", noop_analyze)
     monkeypatch.setattr("craftsman.generator.scaffold.generate_code_llm", noop_generate)
     monkeypatch.setattr("craftsman.orchestrator.reflexion.fix_code_llm", noop_fix)
+
+
+@pytest.fixture(autouse=True)
+def _reset_api_rate_limiter():
+    from craftsman.api import app as api_app
+
+    api_app._rate_limiter._buckets.clear()

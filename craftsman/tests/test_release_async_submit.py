@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from craftsman.api.app import create_app
 from craftsman.config import settings
 from craftsman.store.db import RunStore
-from craftsman.worker import BackgroundWorker
+from craftsman.worker import BackgroundWorker, _should_release_package_for_agent_c
 
 SAMPLE = Path(__file__).parent.parent / "examples" / "requirement.sample.json"
 
@@ -71,3 +71,12 @@ def test_release_failure_keeps_release_handoff_for_requeue(monkeypatch):
     assert release["status"] == "failed"
     assert release["details"]["release_handoff"]["release_id"] == release_id
     assert release["details"]["message"] == "simulated release failure"
+
+
+def test_agent_c_package_release_policy():
+    assert _should_release_package_for_agent_c("failed", "package_not_precreated") is True
+    assert _should_release_package_for_agent_c("failed", "service_account_permission") is True
+    assert _should_release_package_for_agent_c("failed", "version_code_conflict") is False
+    assert _should_release_package_for_agent_c("failed", "play_api_transient") is False
+    assert _should_release_package_for_agent_c("internal_submitted", None) is False
+    assert _should_release_package_for_agent_c("dry_run_complete", None) is False

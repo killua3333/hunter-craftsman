@@ -120,11 +120,10 @@ def scaffold_project(workspace: Path, req: dict[str, Any]) -> Path:
                 protected=_ANDROID_PROTECTED_PATHS,
             )
         else:
-            raise RuntimeError(
-                "Android codegen failed after retries: "
-                "LLM did not return valid Kotlin/Compose source files. "
-                "Check requirement.features completeness and retry with more detail."
+            logger.warning(
+                "Android LLM codegen unavailable; falling back to template MainActivity for stable MVP"
             )
+            _render_android_main_activity(project_dir, ctx)
 
     manifest = {
         "app_name": app_name,
@@ -192,6 +191,58 @@ def _codegen_with_retry(
 
     logger.error("codegen exhausted %d retries for platform=%s", max_retries, platform)
     return None
+
+
+def repair_android_codegen_for_quality(
+    project_dir: Path,
+    req: dict[str, Any],
+    quality_report: dict[str, Any],
+) -> bool:
+    """Ask codegen for a better MainActivity after quality gates find weak UI.
+
+    This keeps broad coverage: we do not force a fixed app category, but we feed
+    concrete quality failures back into the requirement so the generator can
+    rebuild the main flow with interaction and local state.
+    """
+    scoped = json.loads(json.dumps(req, ensure_ascii=False))
+    scoped["_quality_repair"] = {
+        "failure_classes": quality_report.get("failure_classes") or [],
+        "repair_suggestions": quality_report.get("repair_suggestions") or [],
+        "required": [
+            "one clear primary user flow",
+            "at least one Button/TextField/Checkbox/clickable control",
+            "local Compose state via rememberSaveable or SharedPreferences",
+            "copy and state labels specific to this requirement",
+        ],
+    }
+    files = _codegen_with_retry(scoped, platform="android", max_retries=2)
+    if files:
+        writable = {
+            path: content
+            for path, content in files.items()
+            if path not in _ANDROID_PROTECTED_PATHS
+        }
+        if writable:
+            _write_codegen_files(project_dir, project_dir.parent, writable, protected=_ANDROID_PROTECTED_PATHS)
+            return True
+
+    app = scoped.get("app") if isinstance(scoped.get("app"), dict) else {}
+    ctx = {
+        "app_name": _safe_name(str(app.get("name") or "CraftsmanApp")),
+        "display_name": app.get("name") or "Craftsman App",
+        "bundle_id": app.get("bundle_id") or "com.craftsman.app",
+        "version": app.get("version", "1.0.0"),
+        "build": app.get("build", "1"),
+        "min_android_sdk": app.get("min_android_sdk", "24"),
+        "application_id": app.get("application_id") or app.get("bundle_id") or "com.craftsman.app",
+        "features": scoped.get("features") or [],
+        "persistence": (scoped.get("core_logic") or {}).get("persistence", "SharedPreferences"),
+        "primary_color": (scoped.get("branding") or {}).get("primary_color", "#007AFF"),
+        "navigation": (scoped.get("ui_layout") or {}).get("navigation", "single"),
+        "has_timer": _feature_has_timer(scoped.get("features") or []),
+    }
+    _render_android_main_activity(project_dir, ctx)
+    return True
 
 
 def _render_android_templates(

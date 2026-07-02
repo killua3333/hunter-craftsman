@@ -131,3 +131,74 @@ def test_upload_to_play_maps_api_error(monkeypatch, tmp_path):
 
     assert result.ok is False
     assert "permission" in result.message.lower()
+
+
+def test_map_play_api_error_prioritizes_version_code_conflict():
+    from craftsman.publisher.play_client import map_play_api_error
+
+    message = map_play_api_error(Exception("403 Version code 4 has already been used."))
+    assert "versionCode conflict" in message
+
+
+def test_upload_to_play_records_commit_failure_stage(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "publisher_dry_run", False)
+    aab = tmp_path / "app-release.aab"
+    aab.write_bytes(b"fake-aab")
+
+    service = MagicMock()
+    service.edits.return_value.insert.return_value.execute.return_value = {"id": "edit-commit"}
+    service.edits.return_value.bundles.return_value.upload.return_value.execute.return_value = {
+        "versionCode": 7
+    }
+    service.edits.return_value.tracks.return_value.update.return_value.execute.return_value = {"track": "internal"}
+    service.edits.return_value.commit.return_value.execute.side_effect = Exception(
+        "403 changes are sent for review automatically"
+    )
+
+    with patch("craftsman.publisher.play_store.service_account_info", return_value={"type": "service_account"}):
+        with patch("craftsman.publisher.play_store.build_android_publisher_service", return_value=service):
+            with patch("craftsman.publisher.play_store.sync_listing_to_edit", return_value={"skipped": True}):
+                with patch("craftsman.publisher.play_store.sync_images_to_edit", return_value={"uploaded": []}):
+                    with patch("googleapiclient.http.MediaFileUpload", MagicMock()):
+                        result = upload_to_play(
+                            aab_path=aab,
+                            package_name="com.test.app",
+                            track="internal",
+                            dry_run=False,
+                        )
+
+    assert result.ok is False
+    assert result.store_response["failed_stage"] == "commit"
+    assert "commit denied" in result.message.lower()
+
+
+def test_upload_to_play_can_skip_store_assets(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "publisher_dry_run", False)
+    aab = tmp_path / "app-release.aab"
+    aab.write_bytes(b"fake-aab")
+
+    service = MagicMock()
+    service.edits.return_value.insert.return_value.execute.return_value = {"id": "edit-no-assets"}
+    service.edits.return_value.bundles.return_value.upload.return_value.execute.return_value = {
+        "versionCode": 8
+    }
+    service.edits.return_value.tracks.return_value.update.return_value.execute.return_value = {"track": "internal"}
+    service.edits.return_value.commit.return_value.execute.return_value = {"id": "edit-no-assets"}
+
+    with patch("craftsman.publisher.play_store.service_account_info", return_value={"type": "service_account"}):
+        with patch("craftsman.publisher.play_store.build_android_publisher_service", return_value=service):
+            with patch("craftsman.publisher.play_store.sync_listing_to_edit") as listing:
+                with patch("craftsman.publisher.play_store.sync_images_to_edit") as images:
+                    with patch("googleapiclient.http.MediaFileUpload", MagicMock()):
+                        result = upload_to_play(
+                            aab_path=aab,
+                            package_name="com.test.app",
+                            track="internal",
+                            dry_run=False,
+                            sync_store_assets=False,
+                        )
+
+    assert result.ok is True
+    assert result.store_response["store_assets_skipped"] is True
+    listing.assert_not_called()
+    images.assert_not_called()

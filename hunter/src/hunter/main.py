@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -427,6 +428,7 @@ def cmd_autopilot(
         print(f"[autopilot] {phase}: {detail}", flush=True)
 
     try:
+        earnings_signal = os.environ.get("AUTOPILOT_EARNINGS_SIGNAL", "").strip()
         outcome = run_autopilot_pipeline(
             base_url=base_url,
             opportunity_id=opportunity_id,
@@ -437,6 +439,7 @@ def cmd_autopilot(
             max_rounds=max_rounds,
             publish=publish,
             auto_approve_release=auto_approve_release,
+            earnings_signal=earnings_signal,
         )
     except (ValueError, RuntimeError) as exc:
         print(f"失败: {exc}", file=sys.stderr)

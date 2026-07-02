@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import platform
 from pathlib import Path
@@ -12,6 +12,7 @@ from craftsman.tools import xcodebuild as xcode_tool
 from craftsman.tools.shell import run_cmd
 from craftsman.runtime.interfaces import BuildResult, ExecutionBackend
 from craftsman.runtime.pool import choose_backend_target
+from craftsman.config import settings
 
 
 class DemoExecutionBackend:
@@ -87,7 +88,33 @@ class AndroidGradleExecutionBackend:
                 reasons=["missing gradlew wrapper"],
             )
         cmd = [str(gradlew), "assembleDebug"]
-        result = run_cmd(cmd, cwd=str(project_dir), timeout=1200.0)
+        # Inject proxy and Android SDK settings for Gradle.
+        import os as _os
+        env = dict(_os.environ)
+        https_proxy = env.get("HTTPS_PROXY") or env.get("https_proxy") or ""
+        if https_proxy:
+            env["JAVA_TOOL_OPTIONS"] = "-Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=10808 -Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort=10808"
+
+        # Ensure Gradle sees the Android SDK even when it only comes from .env.
+        android_home = (
+            env.get("ANDROID_HOME")
+            or env.get("ANDROID_SDK_ROOT")
+            or settings.android_home
+            or settings.android_sdk_root
+            or ""
+        )
+        local_props = project_dir / "local.properties"
+        if not android_home and local_props.is_file():
+            for line in local_props.read_text(encoding="utf-8").splitlines():
+                if line.strip().startswith("sdk.dir"):
+                    android_home = line.split("=", 1)[-1].strip()
+                    break
+        if android_home:
+            env["ANDROID_HOME"] = android_home
+            env["ANDROID_SDK_ROOT"] = android_home
+            sdk_line = f"sdk.dir={android_home.replace(chr(92), '/')}\n"
+            local_props.write_text(sdk_line, encoding="utf-8")
+        result = run_cmd(cmd, cwd=str(project_dir), timeout=1200.0, env=env)
         log = (result.stdout or "") + "\n" + (result.stderr or "")
         if result.timed_out:
             log += "\n[gradle timed out]"

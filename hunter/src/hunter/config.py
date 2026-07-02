@@ -64,6 +64,7 @@ def get_chat_model() -> BaseChatModel:
     kwargs: dict[str, Any] = {
         "model": model_name,
         "temperature": temperature,
+        "max_tokens": int(model_cfg.get("max_tokens", 16384)),
     }
     if api_key:
         kwargs["api_key"] = api_key
