@@ -44,14 +44,16 @@ def _handoff(root: Path, *, run_id: str = "run-preflight") -> dict:
     }
 
 
-def test_release_preflight_dry_run_checks_local_handoff(tmp_path, monkeypatch):
+def test_release_preflight_requires_live_config(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "workspace_root", tmp_path)
     handoff = _handoff(tmp_path)
 
-    result = run_release_preflight(handoff, dry_run=True)
+    monkeypatch.setattr(settings, "google_play_service_account_file", None)
+    monkeypatch.delenv("GOOGLE_PLAY_SERVICE_ACCOUNT_FILE", raising=False)
+    monkeypatch.delenv("GOOGLE_PLAY_SERVICE_ACCOUNT_JSON", raising=False)
+    result = run_release_preflight(handoff)
 
-    assert result["ok"] is True
-    assert result["dry_run"] is True
+    assert result["ok"] is False
     assert result["package_name"] == "com.example.preflight"
 
 
@@ -62,7 +64,7 @@ def test_release_preflight_live_requires_service_account(tmp_path, monkeypatch):
     monkeypatch.delenv("GOOGLE_PLAY_SERVICE_ACCOUNT_FILE", raising=False)
     handoff = _handoff(tmp_path)
 
-    result = run_release_preflight(handoff, dry_run=False)
+    result = run_release_preflight(handoff)
 
     assert result["ok"] is False
     assert result["failure_class"] in {"signing_config", "service_account_permission"}
@@ -80,8 +82,21 @@ def test_release_preflight_classifies_play_package_not_created(tmp_path, monkeyp
     service = MagicMock()
     service.edits.return_value.insert.return_value.execute.side_effect = Exception("404 not found")
 
-    result = run_release_preflight(handoff, dry_run=False, service=service)
+    result = run_release_preflight(handoff, service=service)
 
     assert result["ok"] is False
     assert result["failure_class"] == "package_not_precreated"
     assert "Play Console" in result["operator_action"]
+
+
+def test_release_preflight_blocks_package_not_from_pool(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "workspace_root", tmp_path)
+    handoff = _handoff(tmp_path)
+
+    result = run_release_preflight(
+        handoff,
+        allowed_packages={"com.pool.allowed"},
+    )
+
+    assert result["ok"] is False
+    assert result["failure_class"] == "package_not_from_pool"

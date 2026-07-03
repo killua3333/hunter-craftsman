@@ -18,6 +18,7 @@ from craftsman.dashboard import dashboard_html
 from craftsman.models import AgentBStatus
 from craftsman.orchestrator.policy_checks import check_release_compliance_metadata
 from craftsman.orchestrator.pipeline import analyze_requirement, run_implementation
+from craftsman.publisher.preflight import verify_play_package_access
 from craftsman.schema_validate import validate_feedback, validate_release_handoff
 from craftsman.store.db import RunStore
 from craftsman.worker import BackgroundWorker
@@ -180,7 +181,7 @@ def _build_pipeline_items(
                 },
                 "agent_c": {
                     "label": "鍐呴儴娴嬭瘯涓婃灦",
-                    "status": _stage_status(release_status, done={"published", "dry_run_complete", "internal_submitted"}, failed={"failed", "needs_manual_action"}),
+                    "status": _stage_status(release_status, done={"published", "internal_submitted"}, failed={"failed", "needs_manual_action"}),
                     "detail": agent_c.get("operator_action") or release_details.get("message") or agent_c.get("agent_c_status") or release_status or "绛夊緟鍙戝竷浜ゆ帴",
                     "track": agent_c.get("track") or release_details.get("track") or settings.android_release_track,
                     "can_requeue": bool(release_job.get("status") in {"dead_letter", "done"}),
@@ -300,6 +301,34 @@ def _discovery_progress_payload(run: dict[str, Any] | None, events: list[dict[st
     return {"steps": steps, "metrics": metrics, "current_stage": current_stage}
 
 
+def _package_pool_names_from_settings() -> list[str]:
+    return [p.strip() for p in (settings.package_pool or "").split(",") if p.strip()]
+
+
+def _package_pool_payload(store: RunStore) -> dict[str, Any]:
+    configured = _package_pool_names_from_settings()
+    if configured:
+        store.populate_pool(configured)
+    items = store.list_pool()
+    summary = store.package_pool_summary()
+    return {
+        "configured": bool(configured),
+        "configured_count": len(configured),
+        "summary": summary,
+        "items": items,
+        "operator_action": _package_pool_operator_action(summary, bool(configured)),
+    }
+
+
+def _package_pool_operator_action(summary: dict[str, Any], configured: bool) -> str:
+    if not configured:
+        return "请先在 .env 的 PACKAGE_POOL 中填写已在 Play Console 预创建的包名。"
+    if int(summary.get("invalid") or 0) > 0:
+        return "有包名未通过验证，请在 Play Console 创建 App 或检查 service account 权限。"
+    if int(summary.get("available") or 0) <= 0:
+        return "可用包名已用完，请在 Play Console 预创建新 App 后同步包名池。"
+    return "包名池可用。系统会自动选择可用包名进入内部测试发布。"
+
 def _build_agent_status(
     runs: list[dict[str, Any]],
     releases: list[dict[str, Any]],
@@ -357,6 +386,8 @@ class DiscoveryStartBody(BaseModel):
 
 class OpportunityImplementBody(BaseModel):
     operator: str = Field(default="dashboard-operator")
+class PackageDisableBody(BaseModel):
+    reason: str = Field(default="operator_disabled")
 
 def _supported_contract_versions() -> list[str]:
     versions = [v.strip() for v in settings.contract_supported_versions.split(",") if v.strip()]
@@ -711,13 +742,25 @@ def _opportunity_from_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _submit_candidate_to_b(store: RunStore, candidate_id: str, *, actor: str = "dashboard") -> dict[str, Any]:
+def _submit_candidate_to_b(
+    store: RunStore,
+    candidate_id: str,
+    *,
+    actor: str = "dashboard",
+    auto_release: bool = False,
+) -> dict[str, Any]:
     candidate = store.get_discovery_candidate(candidate_id)
     if not candidate:
         raise HTTPException(404, detail=_error_detail(code="candidate_not_found", message="opportunity candidate not found"))
     if candidate.get("submitted_run_id"):
         return {"accepted": True, "candidate_id": candidate_id, "run_id": candidate.get("submitted_run_id"), "status": "already_submitted"}
     requirement = candidate.get("requirement") if isinstance(candidate.get("requirement"), dict) and candidate.get("requirement") else _requirement_from_candidate(candidate)
+    if auto_release:
+        automation = requirement.setdefault("automation", {})
+        if isinstance(automation, dict):
+            automation["auto_release"] = True
+            automation["approved_by"] = actor
+            automation["release_track"] = "internal"
     gate = analyze_requirement(requirement)
     if not gate.blueprint.accepted:
         raise HTTPException(
@@ -880,10 +923,17 @@ def _run_real_play_discovery(store: RunStore, discovery_run_id: str, body: Disco
             return
 
         auto_results = []
-        if body.mode == "auto":
+        if body.mode in {"auto", "auto_publish"}:
             for candidate in saved:
                 if _passes_auto_discovery_threshold(candidate):
-                    auto_results.append(_submit_candidate_to_b(store, candidate["candidate_id"], actor="discovery_auto"))
+                    auto_results.append(
+                        _submit_candidate_to_b(
+                            store,
+                            candidate["candidate_id"],
+                            actor="discovery_auto_publish" if body.mode == "auto_publish" else "discovery_auto",
+                            auto_release=body.mode == "auto_publish",
+                        )
+                    )
                     break
         final_status = "auto_submitted" if auto_results else "waiting_for_selection"
         summary = {
@@ -1009,7 +1059,6 @@ def create_app() -> FastAPI:
             "service": "craftsman",
             "gate_mode": settings.gate_mode,
             "skip_gradle_build": settings.skip_gradle_build,
-            "publisher_dry_run": settings.publisher_dry_run,
             "runs": run_stats,
             "contract": {
                 "default_version": settings.contract_default_version,
@@ -1155,6 +1204,9 @@ def create_app() -> FastAPI:
         opportunities = [_opportunity_from_candidate(candidate) for candidate in discovery_candidates]
         pipeline = _build_pipeline_items(runs, releases, run_jobs, release_jobs)
         agent_status = _build_agent_status(runs, releases, run_jobs, release_jobs)
+        package_pool = _package_pool_payload(_store)
+        agent_status['agent_c']['package_pool_health'] = package_pool['summary']
+        agent_status['agent_c']['operator_action'] = package_pool['operator_action']
         discovery_runs = _store.list_discovery_runs(limit=20)
         latest_discovery = discovery_runs[0] if discovery_runs else None
         discovery_events = (
@@ -1168,8 +1220,7 @@ def create_app() -> FastAPI:
             "summary": {
                 "service": "craftsman",
                 "gate_mode": settings.gate_mode,
-                "publisher_dry_run": settings.publisher_dry_run,
-                "job_worker_count": settings.job_worker_count,
+                    "job_worker_count": settings.job_worker_count,
                 "job_lease_seconds": settings.job_lease_seconds,
                 "runs_total": len(runs),
                 "releases_total": len(releases),
@@ -1277,10 +1328,10 @@ def create_app() -> FastAPI:
         from hunter.discovery.play_monitor import DEFAULT_SEED_QUERIES
 
         mode = body.mode.strip().lower()
-        if mode not in {"manual", "auto"}:
+        if mode not in {"manual", "auto", "auto_publish"}:
             raise HTTPException(
                 400,
-                detail=_error_detail(code="invalid_discovery_mode", message="mode must be manual or auto"),
+                detail=_error_detail(code="invalid_discovery_mode", message="mode must be manual, auto, or auto_publish"),
             )
         seed_queries = [q.strip() for q in body.seed_queries if q.strip()] or DEFAULT_SEED_QUERIES
         discovery_run_id = "disc-" + _uuid.uuid4().hex[:10]
@@ -1325,7 +1376,8 @@ def create_app() -> FastAPI:
         """Compatibility alias: start real Play discovery only; no fallback/demo run."""
         if settings.resolved_api_token():
             _require_api_token(x_api_token)
-        return _start_discovery(body)
+        auto_body = body.model_copy(update={"mode": "auto_publish"})
+        return _start_discovery(auto_body)
 
     @app.get("/dashboard/api/discovery-runs/{discovery_run_id}")
     def dashboard_discovery_detail(
@@ -1562,32 +1614,92 @@ def create_app() -> FastAPI:
 
     # 鈹€鈹€ Package Pool Management 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
+    @app.get("/dashboard/api/package-pool")
+    def dashboard_package_pool(
+        x_api_token: str | None = Header(default=None, alias="X-API-Token"),
+    ) -> dict[str, Any]:
+        if settings.resolved_api_token():
+            _require_api_token(x_api_token)
+        assert _store is not None
+        return {"ok": True, "package_pool": _package_pool_payload(_store)}
+
+    @app.post("/dashboard/api/package-pool/sync")
+    def dashboard_package_pool_sync(
+        x_api_token: str | None = Header(default=None, alias="X-API-Token"),
+    ) -> dict[str, Any]:
+        if settings.resolved_api_token():
+            _require_api_token(x_api_token)
+        assert _store is not None
+        names = _package_pool_names_from_settings()
+        added = _store.populate_pool(names) if names else 0
+        return {"ok": True, "added": added, "package_pool": _package_pool_payload(_store)}
+
+    @app.post("/dashboard/api/package-pool/verify")
+    def dashboard_package_pool_verify(
+        x_api_token: str | None = Header(default=None, alias="X-API-Token"),
+    ) -> dict[str, Any]:
+        if settings.resolved_api_token():
+            _require_api_token(x_api_token)
+        assert _store is not None
+        _store.populate_pool(_package_pool_names_from_settings())
+        results: list[dict[str, Any]] = []
+        for item in _store.list_pool():
+            package_name = str(item.get("package_name") or "")
+            if not package_name or item.get("status") == "submitted_internal":
+                continue
+            result = verify_play_package_access(package_name)
+            if result.get("ok"):
+                _store.mark_package_verified(package_name)
+            else:
+                failure_class = str(result.get("failure_class") or "play_api_error")
+                invalid = failure_class in {"package_not_precreated", "service_account_permission"}
+                _store.mark_package_check_failed(package_name, str(result.get("message") or failure_class), invalid=invalid)
+            results.append({"package_name": package_name, **result})
+        return {"ok": True, "results": results, "package_pool": _package_pool_payload(_store)}
+
+    @app.post("/dashboard/api/package-pool/{package_name}/release")
+    def dashboard_package_pool_release(
+        package_name: str,
+        x_api_token: str | None = Header(default=None, alias="X-API-Token"),
+    ) -> dict[str, Any]:
+        if settings.resolved_api_token():
+            _require_api_token(x_api_token)
+        assert _store is not None
+        ok = _store.release_package(package_name)
+        return {"ok": ok, "package_pool": _package_pool_payload(_store)}
+
+    @app.post("/dashboard/api/package-pool/{package_name}/disable")
+    def dashboard_package_pool_disable(
+        package_name: str,
+        body: PackageDisableBody = Body(default_factory=PackageDisableBody),
+        x_api_token: str | None = Header(default=None, alias="X-API-Token"),
+    ) -> dict[str, Any]:
+        if settings.resolved_api_token():
+            _require_api_token(x_api_token)
+        assert _store is not None
+        ok = _store.disable_package(package_name, body.reason)
+        return {"ok": ok, "package_pool": _package_pool_payload(_store)}
+
     @app.post("/dashboard/api/pool/reset")
     def dashboard_pool_reset(
         x_api_token: str | None = Header(default=None, alias="X-API-Token"),
     ) -> dict[str, Any]:
-        """Reset all package allocations so every package becomes available again."""
         if settings.resolved_api_token():
             _require_api_token(x_api_token)
         assert _store is not None
         freed = _store.reset_pool()
-        used, total = _store.pool_usage_count()
-        return {"ok": True, "freed": freed, "pool": {"used": used, "total": total}}
+        return {"ok": True, "freed": freed, "package_pool": _package_pool_payload(_store)}
 
     @app.post("/dashboard/api/pool/repopulate")
     def dashboard_pool_repopulate(
         x_api_token: str | None = Header(default=None, alias="X-API-Token"),
     ) -> dict[str, Any]:
-        """Re-populate pool from .env PACKAGE_POOL setting (adds new ones, keeps existing)."""
         if settings.resolved_api_token():
             _require_api_token(x_api_token)
         assert _store is not None
-        pool_setting = (settings.package_pool or "").strip()
-        pool_names = [p.strip() for p in pool_setting.split(",") if p.strip()] if pool_setting else []
-        added = _store.populate_pool(pool_names) if pool_names else 0
-        used, total = _store.pool_usage_count()
-        return {"ok": True, "added": added, "pool": {"used": used, "total": total}}
-
+        names = _package_pool_names_from_settings()
+        added = _store.populate_pool(names) if names else 0
+        return {"ok": True, "added": added, "package_pool": _package_pool_payload(_store)}
     @app.post("/v1/opportunities/{opportunity_id}/analyze")
     def analyze(
         opportunity_id: str,

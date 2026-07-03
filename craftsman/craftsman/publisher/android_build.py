@@ -71,24 +71,16 @@ def _run_local_build(project_dir: Path) -> ReleaseBuildResult:
     )
 
 
-def build_release_aab(project_dir: Path, *, dry_run: bool = False) -> ReleaseBuildResult:
+def build_release_aab(project_dir: Path) -> ReleaseBuildResult:
     """
     Build signed release AAB via Gradle bundleRelease + assembleDebug.
     Produces both AAB (for Play Store) and debug APK (for local adb install).
-    In dry_run mode, skip Gradle and return a synthetic bundle path for pipeline testing.
     Uses Docker builder when ANDROID_BUILD_BACKEND=auto|docker and Docker is available.
     """
     artifacts_dir = project_dir.parent / "artifacts"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     output_aab = artifacts_dir / "app-release.aab"
     output_apk = artifacts_dir / "app-debug.apk"
-
-    if dry_run:
-        if not output_aab.is_file():
-            import zipfile
-            with zipfile.ZipFile(output_aab, "w") as zf:
-                zf.writestr("META-INF/dry-run.txt", "agent-c dry run bundle")
-        return ReleaseBuildResult(ok=True, aab_path=str(output_aab), log="dry-run bundle", dry_run=True)
 
     if should_use_docker_backend():
         docker_result = run_gradle_in_container(project_dir, "bundleRelease assembleDebug")

@@ -32,7 +32,6 @@
 | **上架操作清单** | 逐步说明还需在 Google Play Console 人工完成的步骤 |
 | **Android 安装包（AAB）** | 在配置密钥后，可提交至 Play **internal（内部测试）** 轨道 |
 
-默认情况下，**不会直接对公众发布**——系统先以「演练模式（dry-run）」验证整条链路，避免误操作。
 
 ---
 
@@ -103,7 +102,6 @@ flowchart LR
 | 默认超时 | 全自动模式预算 ≥ **30 分钟**，适配 Docker 冷启动与多轮修复 |
 | 发布方式 | 提交后立即返回，后台完成打包上传，**不阻塞**其他查询 |
 | 失败重试 | 编译失败自动修错；机会不合适时自动换方向（最多 3 次） |
-| 演练模式 | 默认 **dry-run**，确认无误后再切换真上架 |
 
 ---
 
@@ -141,7 +139,6 @@ flowchart LR
 
 1. **演示全自动：** 执行 `hunter autopilot`，观察是否产出应用名称、截图、演示页。
 2. **检查交付文件夹：** `craftsman/workspace/` 下应有完整工程与 `artifacts/` 素材。
-3. **演练上架：** 执行 `hunter autopilot --publish`，确认返回「dry-run 完成」及 Play 操作清单。
 4. **（可选）真上架：** 按 [Play 清单](play-console-setup-checklist.md) 配置密钥后，在 internal 轨道看到新版本。
 
 ---

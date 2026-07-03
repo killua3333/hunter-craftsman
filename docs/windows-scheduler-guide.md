@@ -116,6 +116,6 @@ Agent C 发布结果：{ "agent_c_status": "submitted", ... }
 ## 前提条件
 
 - **必须已配置**：`hunter/.env` 含 `DEEPSEEK_API_KEY`、`TAVILY_API_KEY`；`craftsman/.env` 含 `DEEPSEEK_API_KEY`
-- **Live 上架**：额外需要 `play-sa.json`、`release.jks`、`PUBLISHER_DRY_RUN=false`
+- **Live 上架**：额外需要 `play-sa.json`、`release.jks`、`ANDROID_RELEASE_TRACK=false`
 - **Docker 编译**：确认 Docker Desktop 运行中（否则走 demo 模式）
 - 详情见 [play-console-setup-checklist.md](play-console-setup-checklist.md)

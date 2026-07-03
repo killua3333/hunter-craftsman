@@ -34,7 +34,7 @@ def test_repair_release_job_state_reconciles_terminal_jobs(tmp_path):
     store.record_release_policy_check(release_id, passed=True, issues=[])
     store.upsert_release_state(
         release_id,
-        status="dry_run_complete",
+        status="internal_submitted",
         details={"release_handoff": {"release_id": release_id}},
         updated_by="agent_c",
     )

@@ -7,9 +7,11 @@ see docs/play-console-setup-checklist.md section 验收标准.
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 from craftsman.config import settings
 from craftsman.publisher.android_version import bump_version_for_release, read_version_from_gradle
+from craftsman.publisher import orchestrator
 from craftsman.publisher.orchestrator import run_android_release
 from craftsman.publisher.play_client import service_account_info
 
@@ -68,9 +70,8 @@ def _sample_handoff(workspace_root: Path, *, run_id: str = "e2e-run") -> dict:
 
 
 def verify_live_publish_readiness() -> dict[str, bool]:
-    """Check whether local env is ready for live publish (non-destructive)."""
+    """Check whether local env is ready for real Google Play internal publish (non-destructive)."""
     return {
-        "publisher_dry_run_disabled": not settings.publisher_dry_run,
         "play_service_account": service_account_info() is not None,
         "gradle_wrapper_in_template": (
             Path(__file__).resolve().parents[1] / "templates" / "android-app" / "gradlew.bat"
@@ -78,14 +79,31 @@ def verify_live_publish_readiness() -> dict[str, bool]:
     }
 
 
-def test_e2e_dry_run_pipeline(tmp_path, monkeypatch):
+def test_e2e_internal_publish_pipeline_uses_real_upload(tmp_path, monkeypatch):
     root = tmp_path / "workspace"
     monkeypatch.setattr(settings, "workspace_root", root)
-    monkeypatch.setattr(settings, "publisher_dry_run", True)
+    monkeypatch.setattr(settings, "package_pool", "com.e2e.testapp")
     handoff = _sample_handoff(root)
-    result = run_android_release(handoff, release_id="rel-e2e", dry_run=True)
-    assert result["agent_c_status"] == "dry_run_complete"
-    assert result["upload"]["dry_run"] is True
+    handoff["quality_score"] = 82
+    handoff["release_ready"] = True
+
+    monkeypatch.setattr(orchestrator, "service_account_info", lambda: {"client_email": "bot@example.com"})
+    monkeypatch.setattr(orchestrator, "build_android_publisher_service", lambda: object())
+    monkeypatch.setattr(orchestrator, "write_keystore_properties", lambda project_dir: (True, "signing configured"))
+    monkeypatch.setattr(orchestrator, "cleanup_keystore_properties", lambda project_dir: None)
+    monkeypatch.setattr(orchestrator, "run_release_preflight", lambda *args, **kwargs: {"ok": True, "message": "ok"})
+    monkeypatch.setattr(
+        orchestrator,
+        "_upload_with_healing",
+        lambda **kwargs: (
+            SimpleNamespace(ok=True, track="internal", message="uploaded", store_response={"edit_id": "edit-1"}),
+            str(root / "e2e-run" / "project" / "app" / "build" / "outputs" / "bundle" / "release" / "app-release.aab"),
+        ),
+    )
+
+    result = run_android_release(handoff, release_id="rel-e2e")
+    assert result["agent_c_status"] == "internal_submitted"
+    assert result["upload"]["track"] == "internal"
 
 
 def test_version_bump_integration(tmp_path):

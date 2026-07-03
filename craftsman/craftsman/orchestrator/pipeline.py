@@ -127,7 +127,8 @@ def _assign_package_from_pool(store: RunStore, run_id: str, req: dict[str, Any])
             break
     package_name = existing or store.next_available_package(run_id)
     if not package_name:
-        return req
+        store.append_event(run_id, "package_pool_empty", "包名池没有可用包名，请先在发布配置中同步并验证包名。")
+        raise RuntimeError("包名池没有可用包名，请先在发布配置中同步并验证包名。")
     app = req.setdefault("app", {})
     if isinstance(app, dict):
         app["bundle_id"] = package_name
@@ -699,12 +700,17 @@ def run_implementation(
             metadata_root=metadata_root,
             verification=verification,
         )
-        if (
+        quality_repair_rounds = 0
+        while (
             backend.mode in _ANDROID_BACKENDS
+            and quality_repair_rounds < 3
             and _quality_repair_needed(quality_report)
-            and repair_android_codegen_for_quality(project_dir, req, quality_report)
         ):
-            enter_phase("quality_repair", "repair Android UI from quality report")
+            quality_repair_rounds += 1
+            quality_report["quality_repair_round"] = quality_repair_rounds
+            if not repair_android_codegen_for_quality(project_dir, req, quality_report):
+                break
+            enter_phase("quality_repair", f"repair Android MVP quality round {quality_repair_rounds}/3")
             if can_build:
                 result = backend.compile(project_dir, scheme)
                 exit_code = result.exit_code
@@ -731,6 +737,9 @@ def run_implementation(
                 metadata_root=metadata_root,
                 verification="verified" if can_build and exit_code == 0 else verification,
             )
+            quality_report["quality_repair_rounds"] = quality_repair_rounds
+            if quality_report.get("release_ready"):
+                break
         if not gate_result["ok"]:
             fb = build_feedback(
                 opportunity_id=opportunity_id,

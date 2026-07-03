@@ -991,7 +991,7 @@ class RunStore:
         state is terminal. This can happen after older versions or interrupted
         runs and should never leave the operator console in a contradictory state.
         """
-        terminal_statuses = {"published", "dry_run_complete", "failed", "platform_unavailable"}
+        terminal_statuses = {"published", "internal_submitted", "failed", "platform_unavailable"}
         now = _utc_now_iso()
         with self._conn() as conn:
             rows = conn.execute(
@@ -1396,6 +1396,12 @@ class RunStore:
                 allocated_to TEXT,
                 allocated_at TEXT,
                 disabled_reason TEXT,
+                status TEXT NOT NULL DEFAULT 'available',
+                verified_at TEXT,
+                last_checked_at TEXT,
+                last_error TEXT,
+                play_accessible INTEGER NOT NULL DEFAULT 0,
+                final_release_id TEXT,
                 created_at TEXT NOT NULL
             )
             """
@@ -1404,8 +1410,30 @@ class RunStore:
             row["name"]
             for row in conn.execute("PRAGMA table_info(package_pool)").fetchall()
         }
-        if "disabled_reason" not in pool_columns:
-            conn.execute("ALTER TABLE package_pool ADD COLUMN disabled_reason TEXT")
+        migrations = {
+            "disabled_reason": "ALTER TABLE package_pool ADD COLUMN disabled_reason TEXT",
+            "status": "ALTER TABLE package_pool ADD COLUMN status TEXT NOT NULL DEFAULT 'available'",
+            "verified_at": "ALTER TABLE package_pool ADD COLUMN verified_at TEXT",
+            "last_checked_at": "ALTER TABLE package_pool ADD COLUMN last_checked_at TEXT",
+            "last_error": "ALTER TABLE package_pool ADD COLUMN last_error TEXT",
+            "play_accessible": "ALTER TABLE package_pool ADD COLUMN play_accessible INTEGER NOT NULL DEFAULT 0",
+            "final_release_id": "ALTER TABLE package_pool ADD COLUMN final_release_id TEXT",
+        }
+        for column, sql in migrations.items():
+            if column not in pool_columns:
+                conn.execute(sql)
+        conn.execute(
+            """
+            UPDATE package_pool
+            SET status = CASE
+                WHEN final_release_id IS NOT NULL AND final_release_id != '' THEN 'submitted_internal'
+                WHEN disabled_reason IS NOT NULL AND disabled_reason != '' THEN 'invalid'
+                WHEN allocated_to IS NOT NULL AND allocated_to != '' THEN 'allocated'
+                WHEN status IS NULL OR status = '' THEN 'available'
+                ELSE status
+            END
+            """
+        )
 
     def populate_pool(self, package_names: list[str]) -> int:
         """Insert package names into pool if not already present. Returns count."""
@@ -1415,33 +1443,42 @@ class RunStore:
         with self._conn() as conn:
             self._ensure_pool_table(conn)
             for name in package_names:
-                if name not in existing:
+                normalized = str(name or "").strip()
+                if normalized and normalized not in existing:
                     conn.execute(
-                        "INSERT OR IGNORE INTO package_pool (package_name, created_at) VALUES (?, ?)",
-                        (name, now),
+                        "INSERT OR IGNORE INTO package_pool (package_name, status, created_at) VALUES (?, 'available', ?)",
+                        (normalized, now),
                     )
+                    existing.add(normalized)
                     added += 1
         return added
 
     def next_available_package(self, run_id: str) -> str | None:
-        """Pick the first unallocated package, mark it as used by this run."""
+        """Pick the first usable package and mark it as allocated to this run."""
         now = _utc_now_iso()
         with self._conn() as conn:
             self._ensure_pool_table(conn)
+            existing = conn.execute(
+                "SELECT package_name FROM package_pool WHERE allocated_to = ? ORDER BY id ASC LIMIT 1",
+                (run_id,),
+            ).fetchone()
+            if existing is not None:
+                return str(existing["package_name"])
             row = conn.execute(
                 """
                 SELECT id, package_name
                 FROM package_pool
                 WHERE allocated_to IS NULL
                   AND (disabled_reason IS NULL OR disabled_reason = '')
-                ORDER BY id ASC
+                  AND status IN ('available', 'verified', 'released')
+                ORDER BY CASE status WHEN 'verified' THEN 0 WHEN 'available' THEN 1 ELSE 2 END, id ASC
                 LIMIT 1
                 """
             ).fetchone()
             if row is None:
                 return None
             conn.execute(
-                "UPDATE package_pool SET allocated_to = ?, allocated_at = ? WHERE id = ?",
+                "UPDATE package_pool SET allocated_to = ?, allocated_at = ?, status = 'allocated', last_error = NULL WHERE id = ?",
                 (run_id, now, row["id"]),
             )
             return row["package_name"]
@@ -1454,34 +1491,34 @@ class RunStore:
             ).fetchall()]
 
     def release_package(self, package_name: str) -> bool:
-        """Free a package back to the pool so it can be re-used."""
+        """Free a package back to the pool unless it has reached internal track."""
         with self._conn() as conn:
             self._ensure_pool_table(conn)
             updated = conn.execute(
-                "UPDATE package_pool SET allocated_to = NULL, allocated_at = NULL WHERE package_name = ?",
+                """
+                UPDATE package_pool
+                SET allocated_to = NULL, allocated_at = NULL, status = 'released', last_error = NULL
+                WHERE package_name = ? AND status != 'submitted_internal'
+                """,
                 (package_name,),
             ).rowcount
             return updated == 1
 
     def disable_package(self, package_name: str, reason: str) -> bool:
         """Mark a package as unusable until an operator fixes Play Console state."""
-        with self._conn() as conn:
-            self._ensure_pool_table(conn)
-            updated = conn.execute(
-                """
-                UPDATE package_pool
-                SET allocated_to = NULL, allocated_at = NULL, disabled_reason = ?
-                WHERE package_name = ?
-                """,
-                (reason, package_name),
-            ).rowcount
-            return updated == 1
+        return self.mark_package_check_failed(package_name, reason, invalid=True)
 
     def enable_package(self, package_name: str) -> bool:
         with self._conn() as conn:
             self._ensure_pool_table(conn)
             updated = conn.execute(
-                "UPDATE package_pool SET disabled_reason = NULL WHERE package_name = ?",
+                """
+                UPDATE package_pool
+                SET disabled_reason = NULL,
+                    status = CASE WHEN play_accessible = 1 THEN 'verified' ELSE 'available' END,
+                    last_error = NULL
+                WHERE package_name = ? AND status != 'submitted_internal'
+                """,
                 (package_name,),
             ).rowcount
             return updated == 1
@@ -1491,17 +1528,25 @@ class RunStore:
         with self._conn() as conn:
             self._ensure_pool_table(conn)
             updated = conn.execute(
-                "UPDATE package_pool SET allocated_to = NULL, allocated_at = NULL WHERE allocated_to = ?",
+                """
+                UPDATE package_pool
+                SET allocated_to = NULL, allocated_at = NULL, status = 'released', last_error = NULL
+                WHERE allocated_to = ? AND status != 'submitted_internal'
+                """,
                 (run_id,),
             ).rowcount
             return updated
 
     def reset_pool(self) -> int:
-        """Free ALL allocated packages. Returns count freed."""
+        """Free all non-final package allocations. Returns count freed."""
         with self._conn() as conn:
             self._ensure_pool_table(conn)
             updated = conn.execute(
-                "UPDATE package_pool SET allocated_to = NULL, allocated_at = NULL WHERE allocated_to IS NOT NULL"
+                """
+                UPDATE package_pool
+                SET allocated_to = NULL, allocated_at = NULL, status = 'released'
+                WHERE allocated_to IS NOT NULL AND status != 'submitted_internal'
+                """
             ).rowcount
             return updated
 
@@ -1510,5 +1555,88 @@ class RunStore:
         with self._conn() as conn:
             self._ensure_pool_table(conn)
             total = conn.execute("SELECT COUNT(*) AS c FROM package_pool").fetchone()["c"]
-            used = conn.execute("SELECT COUNT(*) AS c FROM package_pool WHERE allocated_to IS NOT NULL").fetchone()["c"]
-            return used, total
+            used = conn.execute("SELECT COUNT(*) AS c FROM package_pool WHERE allocated_to IS NOT NULL OR status = 'submitted_internal'").fetchone()["c"]
+            return int(used), int(total)
+
+    def package_pool_summary(self) -> dict[str, Any]:
+        with self._conn() as conn:
+            self._ensure_pool_table(conn)
+            rows = conn.execute("SELECT status, COUNT(*) AS c FROM package_pool GROUP BY status").fetchall()
+            by_status = {str(row["status"] or "available"): int(row["c"]) for row in rows}
+            total = sum(by_status.values())
+            used = conn.execute("SELECT COUNT(*) AS c FROM package_pool WHERE allocated_to IS NOT NULL OR status = 'submitted_internal'").fetchone()["c"]
+            available = by_status.get("available", 0) + by_status.get("verified", 0) + by_status.get("released", 0)
+            return {
+                "total": total,
+                "used": int(used),
+                "available": available,
+                "allocated": by_status.get("allocated", 0),
+                "verified": by_status.get("verified", 0),
+                "invalid": by_status.get("invalid", 0),
+                "released": by_status.get("released", 0),
+                "submitted_internal": by_status.get("submitted_internal", 0),
+                "by_status": by_status,
+            }
+
+    def mark_package_verified(self, package_name: str) -> bool:
+        now = _utc_now_iso()
+        with self._conn() as conn:
+            self._ensure_pool_table(conn)
+            updated = conn.execute(
+                """
+                UPDATE package_pool
+                SET status = CASE WHEN allocated_to IS NULL THEN 'verified' ELSE 'allocated' END,
+                    verified_at = ?,
+                    last_checked_at = ?,
+                    last_error = NULL,
+                    disabled_reason = NULL,
+                    play_accessible = 1
+                WHERE package_name = ? AND status != 'submitted_internal'
+                """,
+                (now, now, package_name),
+            ).rowcount
+            return updated == 1
+
+    def mark_package_check_failed(self, package_name: str, reason: str, *, invalid: bool = True) -> bool:
+        now = _utc_now_iso()
+        with self._conn() as conn:
+            self._ensure_pool_table(conn)
+            updated = conn.execute(
+                """
+                UPDATE package_pool
+                SET status = CASE WHEN ? = 1 THEN 'invalid' ELSE status END,
+                    disabled_reason = CASE WHEN ? = 1 THEN ? ELSE disabled_reason END,
+                    last_checked_at = ?,
+                    last_error = ?,
+                    play_accessible = 0,
+                    allocated_to = CASE WHEN ? = 1 THEN NULL ELSE allocated_to END,
+                    allocated_at = CASE WHEN ? = 1 THEN NULL ELSE allocated_at END
+                WHERE package_name = ? AND status != 'submitted_internal'
+                """,
+                (1 if invalid else 0, 1 if invalid else 0, reason, now, reason, 1 if invalid else 0, 1 if invalid else 0, package_name),
+            ).rowcount
+            return updated == 1
+
+    def mark_package_submitted_internal(self, package_name: str, release_id: str) -> bool:
+        now = _utc_now_iso()
+        with self._conn() as conn:
+            self._ensure_pool_table(conn)
+            updated = conn.execute(
+                """
+                UPDATE package_pool
+                SET status = 'submitted_internal',
+                    final_release_id = ?,
+                    last_checked_at = ?,
+                    last_error = NULL,
+                    play_accessible = 1
+                WHERE package_name = ?
+                """,
+                (release_id, now, package_name),
+            ).rowcount
+            return updated == 1
+
+    def package_is_from_pool(self, package_name: str) -> bool:
+        with self._conn() as conn:
+            self._ensure_pool_table(conn)
+            row = conn.execute("SELECT 1 FROM package_pool WHERE package_name = ?", (package_name,)).fetchone()
+            return row is not None

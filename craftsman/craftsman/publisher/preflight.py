@@ -24,10 +24,10 @@ from craftsman.secrets import resolve_secret_path, resolve_secret_value
 def run_release_preflight(
     handoff: dict[str, Any],
     *,
-    dry_run: bool,
     service: Any | None = None,
+    allowed_packages: set[str] | None = None,
 ) -> dict[str, Any]:
-    """Validate local artifacts and live Google Play permissions before upload."""
+    """Validate local artifacts, package-pool status, and live Play permissions."""
     checks: list[dict[str, Any]] = []
     package_name = application_id(handoff) or settings.google_play_package_name
     project_dir = resolve_project_dir(handoff)
@@ -37,6 +37,16 @@ def run_release_preflight(
     screenshots = resolve_screenshot_paths(handoff)
 
     _check(checks, "package_name", bool(package_name), "包名已解析", "缺少 Android applicationId / package name")
+    if allowed_packages is not None:
+        _check(
+            checks,
+            "package_pool",
+            bool(package_name and package_name in allowed_packages),
+            "包名来自已配置包名池",
+            "包名不在 PACKAGE_POOL 中，不能自动发布",
+            failure_class="package_not_from_pool",
+            operator_action="请先在发布配置中同步并验证包名池，Agent B 只能使用池中包名。",
+        )
     _check(checks, "project_dir", bool(project_dir and project_dir.is_dir()), "工程目录存在", "无法解析工程目录")
     _check(checks, "workspace", bool(workspace and workspace.is_dir()), "workspace 存在", "无法解析 workspace")
     _check(checks, "metadata", bool(metadata_dir and metadata_dir.is_dir()), "商店 metadata 存在", "缺少 Play metadata 目录")
@@ -51,9 +61,6 @@ def run_release_preflight(
             "Gradle app 脚本存在",
             "缺少 app/build.gradle.kts",
         )
-
-    if dry_run:
-        return _finish(checks, package_name=package_name, dry_run=True)
 
     signing = _live_signing_status()
     _check(
@@ -86,7 +93,22 @@ def run_release_preflight(
             )["checks"]
         )
 
-    return _finish(checks, package_name=package_name, dry_run=False)
+    return _finish(checks, package_name=package_name)
+
+
+def verify_play_package_access(
+    package_name: str,
+    *,
+    track: str | None = None,
+    service: Any | None = None,
+) -> dict[str, Any]:
+    checks = _check_play_edit_access(
+        package_name=package_name,
+        track=track or settings.android_release_track or "internal",
+        service=service,
+    )["checks"]
+    result = _finish(checks, package_name=package_name)
+    return result
 
 
 def _live_signing_status() -> dict[str, Any]:
@@ -198,14 +220,13 @@ def _check(
     )
 
 
-def _finish(checks: list[dict[str, Any]], *, package_name: str | None, dry_run: bool) -> dict[str, Any]:
+def _finish(checks: list[dict[str, Any]], *, package_name: str | None) -> dict[str, Any]:
     failed = [item for item in checks if not item.get("ok")]
     first = failed[0] if failed else {}
     failure_class = first.get("failure_class") or _failure_class_for_check(str(first.get("name") or ""))
     operator_action = first.get("operator_action") or _operator_action_for_check(str(first.get("name") or ""))
     return {
         "ok": not failed,
-        "dry_run": dry_run,
         "package_name": package_name,
         "track": settings.android_release_track or "internal",
         "checks": checks,
@@ -218,6 +239,8 @@ def _finish(checks: list[dict[str, Any]], *, package_name: str | None, dry_run: 
 def _failure_class_for_check(name: str) -> str:
     if name == "package_name":
         return "package_name_missing"
+    if name == "package_pool":
+        return "package_not_from_pool"
     if name in {"project_dir", "workspace", "gradle_file"}:
         return "release_handoff_incomplete"
     if name in {"metadata", "icon", "screenshots"}:
@@ -232,8 +255,10 @@ def _failure_class_for_check(name: str) -> str:
 def _operator_action_for_check(name: str) -> str:
     if name == "package_name":
         return "请确认 Agent B 写入了 app.application_id / bundle_id。"
+    if name == "package_pool":
+        return "请在发布配置中同步并验证包名池。"
     if name in {"project_dir", "workspace", "gradle_file"}:
-        return "请重新运行 Agent B，确保工程和 release_handoff 完整。"
+        return "请重新运行应用生成，确保工程和 release_handoff 完整。"
     if name in {"metadata", "icon", "screenshots"}:
         return "请补齐商店 metadata、图标和截图后再发布。"
     if name == "signing":

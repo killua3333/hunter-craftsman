@@ -31,14 +31,12 @@ def run_android_release(
     handoff: dict[str, Any],
     *,
     release_id: str,
-    dry_run: bool | None = None,
 ) -> dict[str, Any]:
     """
     Agent C orchestrator: validate → sign → version bump → build → upload.
 
     Returns a publisher result dict suitable for API responses and audit logs.
     """
-    effective_dry_run = settings.publisher_dry_run if dry_run is None else dry_run
     phases: list[dict[str, str]] = []
 
     def _phase(name: PublisherPhase, detail: str) -> None:
@@ -56,6 +54,8 @@ def run_android_release(
             phases,
             [quality_blocker["operator_action"]],
             handoff,
+            failure_class=quality_blocker.get("failure_class"),
+            operator_action=quality_blocker.get("operator_action"),
         )
 
     schema_errors = validate_release_handoff(handoff)
@@ -66,7 +66,8 @@ def run_android_release(
     if not policy["passed"]:
         return _failure(release_id, phases, [f"policy: {i}" for i in policy["issues"]], handoff)
 
-    preflight = run_release_preflight(handoff, dry_run=effective_dry_run)
+    pool_packages = {p.strip() for p in (settings.package_pool or "").split(",") if p.strip()} if settings.package_pool else None
+    preflight = run_release_preflight(handoff, allowed_packages=pool_packages)
     if not preflight["ok"]:
         return _failure(
             release_id,
@@ -104,24 +105,36 @@ def run_android_release(
     _phase(PublisherPhase.SIGN, "configure android signing")
     signing_ok, signing_msg = write_keystore_properties(project_dir)
 
-    play_service = None
-    if not effective_dry_run and service_account_info() is not None:
-        try:
-            play_service = build_android_publisher_service()
-        except RuntimeError as exc:
-            return _failure(release_id, phases, [str(exc)], handoff)
-
-    version_detail = "version bump skipped (dry-run)"
-    if not effective_dry_run:
-        _phase(PublisherPhase.BUILD, "bump versionCode for Play")
-        _, _, version_detail = bump_version_for_release(
-            project_dir,
-            package_name=package,
-            track=settings.android_release_track,
-            dry_run=False,
-            service=play_service,
+    if service_account_info() is None:
+        return _failure(
+            release_id,
+            phases,
+            ["missing Google Play service account; real upload requires GOOGLE_PLAY_SERVICE_ACCOUNT_FILE or GOOGLE_PLAY_SERVICE_ACCOUNT_JSON"],
+            handoff,
+            failure_class="service_account_permission",
+            operator_action="\u8bf7\u914d\u7f6e Google Play service account\uff0c\u5e76\u786e\u8ba4\u5b83\u6709\u8fd9\u4e2a App \u7684 internal testing \u53d1\u5e03\u6743\u9650\u3002",
         )
-        phases[-1]["detail"] = version_detail
+    try:
+        play_service = build_android_publisher_service()
+    except RuntimeError as exc:
+        return _failure(
+            release_id,
+            phases,
+            [str(exc)],
+            handoff,
+            failure_class="service_account_permission",
+            operator_action="\u8bf7\u68c0\u67e5 Google Play service account \u6587\u4ef6\u548c\u6743\u9650\u914d\u7f6e\u3002",
+        )
+
+    _phase(PublisherPhase.BUILD, "bump versionCode for Play")
+    _, _, version_detail = bump_version_for_release(
+        project_dir,
+        package_name=package,
+        track=settings.android_release_track,
+        dry_run=False,
+        service=play_service,
+    )
+    phases[-1]["detail"] = version_detail
 
     release_track = "internal"
     _phase(PublisherPhase.BUILD, "build release AAB for internal testing")
@@ -132,7 +145,6 @@ def run_android_release(
         metadata_dir=metadata_dir,
         icon_path=icon_path,
         screenshot_paths=screenshot_paths,
-        effective_dry_run=effective_dry_run,
         release_track=release_track,
         phases=phases,
         release_id=release_id,
@@ -148,15 +160,14 @@ def run_android_release(
             upload={
                 "track": upload.track,
                 "message": upload.message,
-                "dry_run": upload.dry_run,
-                "store_response": upload.store_response,
+                    "store_response": upload.store_response,
             },
             release_bundle={"aab_path": aab_path} if aab_path else None,
         )
 
     # ---- 自动推送到 production（触发 Google 人工审核） ----
     production_result: dict[str, Any] = {}
-    if False and settings.auto_promote_to_production and not effective_dry_run and upload.track != "production":
+    if False and settings.auto_promote_to_production and upload.track != "production":
         _phase(PublisherPhase.UPLOAD, "promote to production track (Google review)")
         promote = _upload_to_track_only(
             aab_path=Path(aab_path),
@@ -188,13 +199,12 @@ def run_android_release(
             "release_id": release_id,
             "aab_path": aab_path,
             "signing": signing_msg,
-            "dry_run": upload.dry_run,
             "version": version_detail,
             "package_name": package,
         },
     )
 
-    status = PublisherStatus.DRY_RUN_COMPLETE if upload.dry_run else PublisherStatus.INTERNAL_SUBMITTED
+    status = PublisherStatus.INTERNAL_SUBMITTED
     _phase(PublisherPhase.COMPLETE, status.value)
 
     bundle = dict(handoff.get("release_bundle") or {})
@@ -207,18 +217,16 @@ def run_android_release(
         "phase": PublisherPhase.COMPLETE.value,
         "track": release_track,
         "failure_class": None,
-        "operator_action": "内部测试轨道已提交，可在 Play Console 查看。" if not upload.dry_run else "dry-run 已完成；配置服务账号后可真实上传 internal track。",
+        "operator_action": "\u5185\u90e8\u6d4b\u8bd5\u8f68\u9053\u5df2\u63d0\u4ea4\uff0c\u53ef\u5728 Play Console \u67e5\u770b\u3002",
         "phases": phases,
         "release_bundle": bundle,
         "upload": {
             "track": upload.track,
             "message": upload.message,
-            "dry_run": upload.dry_run,
             "store_response": upload.store_response,
         },
         "signing": {"configured": signing_ok, "message": signing_msg},
         "version": version_detail,
-        "dry_run": upload.dry_run,
         "production": production_result or None,
         "release_handoff": {**handoff, "release_bundle": bundle},
         "play_console_setup_path": setup_sheet.get("path"),
@@ -229,9 +237,11 @@ def run_android_release(
 
 def classify_play_failure(message: str) -> dict[str, str]:
     text = (message or "").lower()
-    if "quality" in text or "质量" in text or "质量分" in text:
-        return {"failure_class": "quality_gate_blocked", "operator_action": "App 质量分未达到 75，需继续修复或人工确认后再发布。"}
-    if "not found" in text or "package" in text and "created" in text:
+    if "quality" in text or "质量" in text:
+        return {"failure_class": "quality_gate_blocked", "operator_action": "App 质量分未达到 75，需继续修复后再发布。"}
+    if "not from pool" in text or "package_pool" in text or "package_pool" in text:
+        return {"failure_class": "package_not_from_pool", "operator_action": "请先在发布配置中同步并验证包名池。"}
+    if "not found" in text or ("package" in text and "created" in text) or "not registered" in text:
         return {"failure_class": "package_not_precreated", "operator_action": "请先在 Play Console 预创建这个包名，并确认包名池配置正确。"}
     if "permission" in text or "unauthorized" in text or "forbidden" in text or "401" in text or "403" in text:
         return {"failure_class": "service_account_permission", "operator_action": "请检查 Google Play service account 权限和 play-sa.json 配置。"}
@@ -268,8 +278,10 @@ def _quality_blocker(handoff: dict[str, Any]) -> dict[str, Any] | None:
         "quality_score": score_int,
         "release_ready": bool(release_ready),
         "failure_classes": report.get("failure_classes") or [],
-        "operator_action": "App quality score is below 75; improve Agent B output before submitting to Google Play internal track.",
+        "failure_class": "quality_gate_blocked",
+        "operator_action": "App 质量分未达到 75，需继续修复后再发布。",
     }
+
 
 def _failure(
     release_id: str,
@@ -303,7 +315,6 @@ def _failure(
         "upload": upload,
         "release_bundle": release_bundle,
     }
-
 def _upload_with_healing(
     *,
     project_dir: Path,
@@ -311,7 +322,6 @@ def _upload_with_healing(
     metadata_dir: Path | None,
     icon_path: Path | None,
     screenshot_paths: list[Path] | None,
-    effective_dry_run: bool,
     release_track: str,
     phases: list[dict[str, str]],
     release_id: str,
@@ -336,7 +346,7 @@ def _upload_with_healing(
         from craftsman.publisher.android_signing import write_keystore_properties, cleanup_keystore_properties
 
         signing_ok, _ = write_keystore_properties(project_dir)
-        build = build_release_aab(project_dir, dry_run=effective_dry_run)
+        build = build_release_aab(project_dir)
         if signing_ok:
             cleanup_keystore_properties(project_dir)
 
@@ -355,7 +365,6 @@ def _upload_with_healing(
         upload = upload_to_play(
             aab_path=Path(build.aab_path),
             package_name=package_name,
-            dry_run=effective_dry_run,
             metadata_dir=metadata_dir,
             icon_path=icon_path,
             screenshot_paths=screenshot_paths,

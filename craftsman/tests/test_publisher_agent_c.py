@@ -88,31 +88,29 @@ def test_handoff_resolves_launcher_icon_fallback(tmp_path, monkeypatch):
     assert resolved.name == "ic_launcher_512x512.png"
 
 
-def test_build_release_aab_dry_run(tmp_path, monkeypatch):
+def test_build_release_aab_requires_real_build(tmp_path, monkeypatch):
     root = tmp_path / "workspace"
     monkeypatch.setattr(settings, "workspace_root", root)
     handoff = _sample_handoff(root)
     project = resolve_project_dir(handoff)
     assert project is not None
-    result = build_release_aab(project, dry_run=True)
-    assert result.ok is True
-    assert result.aab_path
-    assert Path(result.aab_path).is_file()
+    result = build_release_aab(project)
+    assert result.ok is False
+    assert result.aab_path is None
 
 
-def test_run_android_release_dry_run(tmp_path, monkeypatch):
+def test_run_android_release_requires_live_configuration(tmp_path, monkeypatch):
     root = tmp_path / "workspace"
     monkeypatch.setattr(settings, "workspace_root", root)
-    monkeypatch.setattr(settings, "publisher_dry_run", True)
+    monkeypatch.setattr(settings, "package_pool", "")
+    monkeypatch.setattr(settings, "google_play_service_account_file", None)
+    monkeypatch.delenv("GOOGLE_PLAY_SERVICE_ACCOUNT_FILE", raising=False)
+    monkeypatch.delenv("GOOGLE_PLAY_SERVICE_ACCOUNT_JSON", raising=False)
     handoff = _sample_handoff(root)
-    result = run_android_release(handoff, release_id="rel-test", dry_run=True)
-    assert result["agent_c_status"] == "dry_run_complete"
+    result = run_android_release(handoff, release_id="rel-test")
+    assert result["agent_c_status"] == "failed"
     assert result["platform_target"] == "android"
-    assert result["release_bundle"]["aab_path"]
-    assert result["upload"]["dry_run"] is True
-    assert result.get("setup_sheet")
-    assert "com.test.publisher" in result["setup_sheet"]
-    assert (root / "run-test" / "play_console_setup.txt").is_file()
+    assert result["failure_class"] in {"signing_config", "service_account_permission"}
 
 
 def test_run_android_release_rejects_ios(tmp_path, monkeypatch):
@@ -137,8 +135,8 @@ def test_run_android_release_blocks_low_quality_handoff(tmp_path, monkeypatch):
         "failure_classes": ["weak_core_flow"],
     }
 
-    result = run_android_release(handoff, release_id="rel-low-quality", dry_run=True)
+    result = run_android_release(handoff, release_id="rel-low-quality")
 
     assert result["agent_c_status"] == "failed"
     assert result["failure_class"] == "quality_gate_blocked"
-    assert "quality" in " ".join(result.get("reasons") or []).lower()
+    assert "质量" in " ".join(result.get("reasons") or [])

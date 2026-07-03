@@ -1,4 +1,4 @@
-# Google Play internal track 配置清单
+﻿# Google Play internal track 配置清单
 
 本文说明真实上传到 Google Play 内部测试轨道前必须完成的配置。
 
@@ -110,22 +110,12 @@ ANDROID_SDK_ROOT=C:\Users\Administrator\AppData\Local\Android\Sdk
 ANDROID_BUILD_BACKEND=auto
 ```
 
-## 6. 发布开关
-
-演练模式：
-
-```env
-PUBLISHER_DRY_RUN=true
-ANDROID_RELEASE_TRACK=internal
-```
-
-真实上传：
+## 6. 发布轨道
+当前产品流程只支持真实上传到 Google Play internal track：
 
 ```env
-PUBLISHER_DRY_RUN=false
 ANDROID_RELEASE_TRACK=internal
 ```
-
 ## 7. 常见失败
 
 | failure_class | 含义 | 处理 |
@@ -144,7 +134,85 @@ ANDROID_RELEASE_TRACK=internal
 
 1. Dashboard 能准备 release。
 2. 发布前检查能识别包名、签名、metadata、service account。
-3. dry-run 返回 `dry_run_complete`。
 4. 真实上传进入 `uploading_internal`。
 5. 成功后状态为 `internal_submitted`。
 6. 失败时能给出明确 failure_class 和人工处理建议。
+## Dashboard 包名池验收
+
+配置好 `.env PACKAGE_POOL` 后，在 Dashboard 执行：
+
+1. 打开“发布配置”。
+2. 点击“同步配置”。
+3. 点击“验证包名”。
+4. 确认可用包名数量大于 0。
+5. 确认无效包名都有明确原因。
+
+状态解释：
+
+| 状态 | 含义 | 下一步 |
+| --- | --- | --- |
+| `available` | 已在池中，尚未分配 | 可用于后续生成 |
+| `verified` | Play API 已确认可访问 | 优先使用 |
+| `allocated` | 已分配给某个任务 | 等待生成或发布完成 |
+| `released` | 失败后释放回池 | 可重新使用 |
+| `invalid` | 包名不存在或无权限 | 处理 Play Console 后重新验证 |
+| `submitted_internal` | 已成功提交 internal | 永久占用 |
+
+如果真实上传失败：
+
+- `package_not_precreated`：不要重试代码，先在 Play Console 创建 App。
+- `service_account_permission`：不要更换代码，先给 service account 授权。
+- `version_code_conflict`：保留包名，提高 versionCode 后重试。
+- `play_api_transient`：保留包名，稍后重试。
+
+## 9. 2026-07-03 验证记录与解释
+
+已验证成功案例：
+
+```text
+Play Console App：AEM Template 002
+包名：com.AEM.template002
+系统生成 App：Checklist App MVP
+发布轨道：internal testing
+Play Console 显示：已面向内部测试人员发布
+versionName：1.0.1
+versionCode：3
+```
+
+### 创建 App 时的包名
+
+当前 Play Console 创建应用页面可以直接填写“软件包名称”。这里填写的就是系统包名池里的包名，例如：
+
+```text
+com.AEM.template003
+```
+
+如果创建页显示“软件包名称可用”，说明这个包名可用于创建新的 Play Console App。创建后还必须给 service account 该 App 的权限，否则系统验证会失败。
+
+### 包名状态说明
+
+| 状态 | 解释 | 是否可用于新 App |
+| --- | --- | --- |
+| `verified` / `available` | Play Console 已创建且权限正常，尚未使用 | 可以 |
+| `allocated` | 已被某个生成任务占用 | 暂时不可以 |
+| `submitted_internal` | 已成功提交 internal testing | 不可以，永久占用 |
+| `invalid` | 未创建或权限不足 | 不可以，先处理 Play Console |
+
+### 同步配置与验证包名
+
+- 同步配置：读取 `.env PACKAGE_POOL`，把包名名单导入系统。
+- 验证包名：调用 Google Play API，确认包名对应的 App 是否存在、service account 是否有权限。
+
+如果包名池显示 `available = 0`，不能继续自动发布新的 App。需要先在 Play Console 创建并授权下一个包名。
+
+### 商店素材和 AAB 的关系
+
+AAB 上传成功后，internal testing 版本可以发布。商店素材同步是另一层能力：名称、描述、截图、图标可能因为 Play Console 状态或素材规则失败。
+
+当前系统策略是：如果素材同步失败，会重试只上传 AAB 到 internal track，以优先保证测试版本可见。此时 Play Console 能看到新版本，但 App 名称/描述/截图可能仍是预创建 App 的旧内容。
+
+验收时需要区分：
+
+1. internal testing 发布成功：看 Play Console 轨道和版本。
+2. 生成 App 内容是否可用：看本地截图、APK 或通过测试链接安装。
+3. 商店素材是否同步：看 Play Console store listing 是否更新。

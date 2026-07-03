@@ -20,7 +20,6 @@ class PublisherStatus(StrEnum):
     UPLOADING = "uploading"
     SUBMITTED = "submitted"
     INTERNAL_SUBMITTED = "internal_submitted"
-    DRY_RUN_COMPLETE = "dry_run_complete"
     FAILED = "failed"
 
 

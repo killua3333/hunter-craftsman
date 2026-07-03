@@ -13,7 +13,7 @@
 
 ```powershell
 hunter autopilot              # 全自动发现 + 实现
-hunter autopilot --publish    # 上述 + Agent C 发布（默认 dry-run）
+hunter autopilot --publish    # 上述 + Agent C 发布（默认 real-upload）
 ```
 
 ---
@@ -129,7 +129,7 @@ craftsman/
 ├── callbacks/                    反馈 JSON 双写目录（gitignore）
 ├── examples/requirement.sample.json
 ├── tests/                        99 passed
-└── .env.example                  GATE_MODE、SKIP_GRADLE_BUILD、PUBLISHER_DRY_RUN
+└── .env.example                  GATE_MODE、SKIP_GRADLE_BUILD、ANDROID_RELEASE_TRACK
 ```
 
 **实现流水线阶段：**
@@ -209,7 +209,7 @@ GATE_AUTO_ACCEPT=true
 ANDROID_BUILD_BACKEND=auto       # Docker 可用时真编译
 SKIP_GRADLE_BUILD=false          # 配合 Docker auto；无 Docker 时可 true
 PRIVACY_DEPLOY_DRY_RUN=true      # live 时 false + CF token
-PUBLISHER_DRY_RUN=true           # live 上架时 false
+ANDROID_RELEASE_TRACK=true           # live 上架时 false
 ANDROID_RELEASE_TRACK=internal
 DEEPSEEK_API_KEY=...
 ```
@@ -285,7 +285,7 @@ start http://127.0.0.1:8791
 
 代表性 E2E 测试：
 
-- `hunter/tests/test_autopilot_publish_e2e.py` — autopilot + publish dry-run（mock）
+- `hunter/tests/test_autopilot_publish_e2e.py` — autopilot + publish real-upload（mock）
 - `craftsman/tests/test_e2e_publish.py` — Agent C 发布链
 - `craftsman/tests/test_docker_android_runner.py` — Docker Gradle runner mock
 - `craftsman/tests/test_privacy_policy_deploy.py` — CF Pages mock
@@ -297,7 +297,7 @@ start http://127.0.0.1:8791
 
 **已具备：**
 
-- 零需求输入 → 自动发现 1 个机会 → Soft Gate → B 实现 → C dry-run/live（密钥就绪）
+- 零需求输入 → 自动发现 1 个机会 → Soft Gate → B 实现 → C real-upload/live（密钥就绪）
 - internal track 同包名 versionCode 自动递增
 - 审查宽松：schema 合法即推进，缺项 auto-normalize
 

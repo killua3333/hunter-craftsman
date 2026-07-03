@@ -1,4 +1,4 @@
-# Hunter-Craftsman 日常操作手册
+﻿# Hunter-Craftsman 日常操作手册
 
 本文面向日常使用和维护人员，尽量不用内部术语。
 
@@ -77,7 +77,7 @@ http://127.0.0.1:8791/dashboard
 5. 点击进入生成。
 6. 到“生成进度”页等待构建和质量检查。
 7. 质量达标后再进入发布。
-8. 如果是真实上架，确认 `PUBLISHER_DRY_RUN=false` 并检查包名池。
+8. Confirm package pool, signing, service account, and Android build environment before submitting to Google Play internal track.
 
 ## 4. Google Play internal track 发布
 
@@ -93,13 +93,10 @@ http://127.0.0.1:8791/dashboard
 如果只是演练链路，保持：
 
 ```env
-PUBLISHER_DRY_RUN=true
-```
-
+当前产品发布只做 Google Play internal 真实上传。配置不完整时，系统必须阻止发布并显示修复建议。
 真实上传时改为：
 
 ```env
-PUBLISHER_DRY_RUN=false
 ```
 
 ## 5. 常见问题
@@ -154,3 +151,115 @@ Google Play API 不能创建新的 App。需要人工在 Play Console 先创建 
 - 不要把失败任务伪装成成功候选。
 - 不要把 demo、fallback、assumption 数据放进客户默认视图。
 - 每次大改后至少跑 discovery、quality、release preflight 三类测试。
+
+## 当前版本补充：质量门槛与包名池
+
+### 生成质量判断
+
+“生成进度”页现在应重点看三个结果：
+
+- 质量分 `>= 75`：建议发布。
+- 质量分 `60-74`：可以预览，建议打磨。
+- 质量分 `< 60`：需要修复，不应进入发布。
+
+如果页面显示“需要修复”，优先查看扣分原因和下一步建议。常见原因包括主流程弱、UI 空白、无交互、无本地状态、素材缺失、文案过于模板化。
+
+### 包名池操作
+
+“发布配置”页是上架前必须看的页面：
+
+1. 先在 `.env` 配置 `PACKAGE_POOL`。
+2. 点击“同步配置”。
+3. 点击“验证包名”。
+4. 确认可用包名数量大于 0。
+5. 无效包名需要在 Play Console 处理后重新验证，或在页面标记无效。
+
+包名池为空或全部无效时，不要尝试真实上传。系统会阻止发布，并提示先处理包名池。
+
+### 给客户的说明口径
+
+可以这样解释：
+
+> Google Play 不允许 API 自动创建全新 App。我们采用更稳定的方式：先在 Play Console 批量创建包名，系统负责自动检查、分配、构建和提交内部测试。
+
+不要说“系统会自动创建 Google Play App”。
+
+## 7. 2026-07-03 实操补充
+
+### 已验证的真实流程
+
+本机已经跑通过一次真实 internal track 发布：
+
+```text
+需求：checklist app
+App：Checklist App MVP
+包名：com.AEM.template002
+状态：Google Play internal testing 已发布
+versionName：1.0.1
+versionCode：3
+```
+
+这说明主链路可用：真实发现、生成、质量检查、AAB 构建、Google Play internal track 上传均已完成。
+
+### 同步配置和验证包名的区别
+
+“同步配置”只读取 `.env` 的 `PACKAGE_POOL`，把包名名单写入系统数据库，不访问 Google Play。
+
+“验证包名”会调用 Google Play API，检查这些包名是否已经在 Play Console 创建，以及 service account 是否有权限。
+
+给客户讲法：
+
+```text
+同步配置 = 把候选包名导入系统
+验证包名 = 检查这些包名是否真的能发布
+```
+
+后续更好的产品形态是合并为一个“检查发布配置”按钮，内部自动执行同步和验证。
+
+### 包名池用完怎么办
+
+当前包名池用完后，用户需要在 Play Console 创建新的 App 包名，例如：
+
+```text
+AEM Template 003 -> com.AEM.template003
+AEM Template 004 -> com.AEM.template004
+```
+
+然后：
+
+1. 给 service account 授权这些 App。
+2. 确认 `.env PACKAGE_POOL` 已包含这些包名。
+3. 在 Dashboard 点击“同步配置”。
+4. 点击“验证包名”。
+5. 可用包名数量大于 0 后再跑“一键自动生成并上架”。
+
+注意：Google Play API 不能稳定自动创建全新的 Play Console App，因此预创建 App 仍是人工步骤。
+
+### 在哪里看 App 长什么样
+
+Play Console 主要证明发布状态，不是 App 预览器。要看生成 App 的真实内容，优先看：
+
+```text
+craftsman/workspace/<run_id>/artifacts/screenshots/
+craftsman/workspace/<run_id>/artifacts/app-debug.apk
+```
+
+也可以用内部测试账号在 Google Play 安装后查看。
+
+本轮 Checklist App 的截图路径：
+
+```text
+craftsman/workspace/4aa416a6-181e-4b10-95c4-c584f03cf485/artifacts/screenshots/
+```
+
+### Play Console 里能看到什么
+
+Play Console 的 internal testing 页面能看到版本是否发布，例如“已面向内部测试人员发布”。它不直接展示 App 交互界面。
+
+如果系统日志出现：
+
+```text
+commit failed after store asset sync; retrying internal AAB without listing/images
+```
+
+表示商店素材同步失败，但系统降级为只上传 AAB。此时 Play Console 能看到测试版本，但名称、描述、截图可能仍是预创建 App 的旧内容。

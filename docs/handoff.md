@@ -1,4 +1,4 @@
-# Hunter-Craftsman 项目交接说明
+﻿# Hunter-Craftsman 项目交接说明
 
 本文是交接入口。目标是让接手方能快速知道：项目能做什么、怎么启动、怎么跑一轮、哪些地方还不能承诺给客户。
 
@@ -45,13 +45,11 @@ copy .env.example .env
 
 ```env
 DEEPSEEK_API_KEY=...
-PUBLISHER_DRY_RUN=true
 ANDROID_RELEASE_TRACK=internal
 ANDROID_HOME=C:\Users\Administrator\AppData\Local\Android\Sdk
 ANDROID_SDK_ROOT=C:\Users\Administrator\AppData\Local\Android\Sdk
 
 # 真实上传时需要
-PUBLISHER_DRY_RUN=false
 GOOGLE_PLAY_SERVICE_ACCOUNT_FILE=./secrets/play-sa.json
 ANDROID_KEYSTORE_PATH=./secrets/release.jks
 ANDROID_KEYSTORE_PASSWORD=...
@@ -181,7 +179,7 @@ python -m pytest tests\test_real_discovery_api.py tests\test_quality_report.py t
 1. 真实发现候选。
 2. 人工选择候选进入生成。
 3. 查看质量报告。
-4. dry-run 发布。
+4. 真实提交到 Google Play internal track；如果配置不完整，记录 failure_class 和操作建议。
 5. 如 Play Console 包名池已经准备好，再尝试真实 internal track 上传。
 
 ## 后续优先级
@@ -191,3 +189,120 @@ python -m pytest tests\test_real_discovery_api.py tests\test_quality_report.py t
 3. 对需求池做去重和归档，避免历史候选污染客户视图。
 4. 给 Dashboard 增加更细的阶段进度和错误解释。
 5. 将真实上架链路沉淀成自动化验收脚本。
+
+## 2026-07-02 B/C 质量与包名池更新
+
+本次更新已经完成两件事：
+
+1. Agent B 质量升级到 MVP 合约 v2。
+2. Agent C 包名池产品化到 Google Play internal track。
+
+### Agent B 当前行为
+
+- 生成前写 `implementation_plan.json`。
+- 质量报告使用 `AppBuildQualityReport v2`。
+- 质量分 `>= 75` 才允许自动进入发布。
+- `60-74` 标记为“可以预览，建议打磨”。
+- `< 60` 标记为需要修复。
+- 最多 3 轮质量修复，第三轮缩小到一个主功能。
+
+### Agent C 当前行为
+
+- 包名必须来自 `PACKAGE_POOL`。
+- Dashboard 提供同步、验证、释放、标记无效接口。
+- 包名池耗尽时，生成阶段会直接提示先处理包名池。
+- `package_not_precreated` 和 `service_account_permission` 会把包名标记为无效。
+- `internal_submitted` 后包名永久占用。
+
+### 最新验证
+
+已通过相关回归：
+
+```text
+54 passed
+py_compile passed
+node --check dashboard JS passed
+git diff --check passed
+```
+
+下一阶段建议优先继续做 Agent B 的真实 App 体验提升和 Agent A 的需求去重，而不是继续扩大发布范围。
+
+## 2026-07-03 真实端到端验证
+
+本轮已经在真实 Google Play Console 环境跑通一条完整链路：
+
+```text
+Google Play 真实需求发现 -> 候选入池 -> 自动选择 Checklist App -> Android MVP 生成 -> 质量分 100 -> 构建 AAB -> 上传 Google Play internal testing
+```
+
+验证结果：
+
+| 项目 | 结果 |
+| --- | --- |
+| discovery_run_id | `disc-680205358b` |
+| run_id | `4aa416a6-181e-4b10-95c4-c584f03cf485` |
+| release_id | `rel-4aa416a6-181e-4b10-95c4-c584f03cf485` |
+| App 方向 | checklist app |
+| 生成 App | Checklist App MVP |
+| 包名 | `com.AEM.template002` |
+| 质量分 | `100` |
+| Google Play track | `internal` |
+| Play Console 状态 | 已面向内部测试人员发布 |
+| versionName / versionCode | `1.0.1` / `3` |
+| Play edit id | `09795040429092485850` |
+
+需要特别说明：这次发布第一次尝试同步商店素材时失败，系统随后按稳定策略重试为“只上传 AAB 到 internal track”，最终成功。因此 Play Console 能看到内部测试版本，但不会显示生成 App 的真实截图/描述更新。App 的真实界面预览需要在 Dashboard、生成截图或安装 APK 中查看。
+
+本次生成产物位于：
+
+```text
+craftsman/workspace/4aa416a6-181e-4b10-95c4-c584f03cf485/artifacts/
+```
+
+关键文件：
+
+```text
+app-debug.apk
+app-release.aab
+screenshots/screenshot_1.png
+screenshots/screenshot_2.png
+screenshots/screenshot_3.png
+```
+
+生成的 Checklist MVP 具备：标题输入、备注输入、添加按钮、空状态、任务列表、完成复选框、完成项删除线、本地 SharedPreferences 保存。
+
+## 当前产品认知补充
+
+### Play Console 能看到什么
+
+Google Play Console 是发布后台，不是 App 预览器。它能看到：App 壳子、包名、版本、AAB、内部测试轨道、测试人员、商店素材。它不能像手机一样直接展示 App 的交互界面。
+
+因此面向客户解释时，应说明：
+
+- Play Console 证明“已经提交到 internal testing”。
+- App 长什么样，应在 Dashboard 的生成进度/截图预览、生成截图文件或测试手机下载后查看。
+- 如果商店素材同步失败但 AAB 上传成功，Console 里的名称可能仍是预创建 App 名称，例如 `AEM Template 002`，而不是生成 App 名称。
+
+### 包名池的真实边界
+
+一个新 App 必须占用一个新的包名。已经 `submitted_internal` 的包名视为永久占用，不应释放或复用。
+
+当前稳定模型仍是：
+
+1. 人在 Play Console 预创建 App 和包名。
+2. 将包名写入 `.env PACKAGE_POOL`。
+3. Dashboard 同步配置。
+4. Dashboard 验证包名。
+5. 系统自动分配可用包名并发布 internal track。
+
+Google Play Developer API 不能稳定自动创建 Play Console App，所以包名池耗尽后仍需要人工批量创建新 App。后续可以做“包名池准备向导”，但不应承诺 API 自动创建 App。
+
+### Dashboard 待优化点
+
+本轮使用中暴露出几个面向客户的关键体验问题：
+
+- 发布配置页需要持续显示完整包名池，而不是只显示汇总数字。
+- 已提交 internal 的包名不应展示“释放/标记无效”等容易误操作的主按钮。
+- 生成进度页应直接展示本次发布的 App 方向、核心功能、包名、版本和截图预览。
+- 自动刷新会造成页面闪烁，演示时建议关闭；产品上应减少整块重绘。
+- Google Play store listing 素材同步失败后，目前会降级为只上传 AAB；需要在 Dashboard 用人话明确提示“已发布测试版本，但商店素材未更新”。

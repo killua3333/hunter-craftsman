@@ -82,7 +82,6 @@ def test_sync_listing_to_edit_calls_api():
 
 
 def test_upload_to_play_live_success(monkeypatch, tmp_path):
-    monkeypatch.setattr(settings, "publisher_dry_run", False)
     aab = tmp_path / "app-release.aab"
     aab.write_bytes(b"fake-aab")
 
@@ -103,7 +102,6 @@ def test_upload_to_play_live_success(monkeypatch, tmp_path):
                             aab_path=aab,
                             package_name="com.test.app",
                             track="internal",
-                            dry_run=False,
                         )
 
     assert result.ok is True
@@ -113,7 +111,6 @@ def test_upload_to_play_live_success(monkeypatch, tmp_path):
 
 
 def test_upload_to_play_maps_api_error(monkeypatch, tmp_path):
-    monkeypatch.setattr(settings, "publisher_dry_run", False)
     aab = tmp_path / "app-release.aab"
     aab.write_bytes(b"fake-aab")
 
@@ -126,7 +123,6 @@ def test_upload_to_play_maps_api_error(monkeypatch, tmp_path):
                 result = upload_to_play(
                     aab_path=aab,
                     package_name="com.test.app",
-                    dry_run=False,
                 )
 
     assert result.ok is False
@@ -141,7 +137,6 @@ def test_map_play_api_error_prioritizes_version_code_conflict():
 
 
 def test_upload_to_play_records_commit_failure_stage(monkeypatch, tmp_path):
-    monkeypatch.setattr(settings, "publisher_dry_run", False)
     aab = tmp_path / "app-release.aab"
     aab.write_bytes(b"fake-aab")
 
@@ -164,7 +159,6 @@ def test_upload_to_play_records_commit_failure_stage(monkeypatch, tmp_path):
                             aab_path=aab,
                             package_name="com.test.app",
                             track="internal",
-                            dry_run=False,
                         )
 
     assert result.ok is False
@@ -173,7 +167,6 @@ def test_upload_to_play_records_commit_failure_stage(monkeypatch, tmp_path):
 
 
 def test_upload_to_play_can_skip_store_assets(monkeypatch, tmp_path):
-    monkeypatch.setattr(settings, "publisher_dry_run", False)
     aab = tmp_path / "app-release.aab"
     aab.write_bytes(b"fake-aab")
 
@@ -194,7 +187,6 @@ def test_upload_to_play_can_skip_store_assets(monkeypatch, tmp_path):
                             aab_path=aab,
                             package_name="com.test.app",
                             track="internal",
-                            dry_run=False,
                             sync_store_assets=False,
                         )
 

@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
@@ -6,14 +6,16 @@
   <title>应用机会工作台</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23246bfe'/%3E%3Cpath d='M9 17h14M16 10v14' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
   <style>
-    :root { --bg:#f6f7fb; --panel:#ffffff; --ink:#17202a; --muted:#667085; --line:#d9dee8; --accent:#246bfe; --ok:#16794c; --warn:#a15c00; --bad:#b42318; --soft:#eef4ff; }
-    * { box-sizing: border-box; }
-    body { margin:0; font-family: -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",Arial,sans-serif; background:var(--bg); color:var(--ink); }
-    button { font:inherit; cursor:pointer; border:1px solid var(--line); background:#fff; color:var(--ink); border-radius:6px; padding:8px 12px; }
+    :root { --bg:#f6f7fb; --panel:#fff; --ink:#17202a; --muted:#667085; --line:#d9dee8; --accent:#246bfe; --ok:#16794c; --warn:#a15c00; --bad:#b42318; --soft:#eef4ff; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",Arial,sans-serif; background:var(--bg); color:var(--ink); }
+    button, select, textarea { font:inherit; }
+    button { cursor:pointer; border:1px solid var(--line); background:#fff; color:var(--ink); border-radius:6px; padding:8px 12px; }
     button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
     button.danger { border-color:#f3b7b1; color:var(--bad); }
     button:disabled { opacity:.55; cursor:not-allowed; }
-    .shell { max-width: 1360px; margin:0 auto; padding:22px; }
+    textarea, select { border:1px solid var(--line); border-radius:6px; padding:8px; width:100%; }
+    .shell { max-width:1360px; margin:0 auto; padding:22px; }
     .topbar { display:flex; justify-content:space-between; gap:18px; align-items:flex-start; margin-bottom:18px; }
     .title { font-size:26px; font-weight:760; letter-spacing:0; }
     .subtitle { margin-top:6px; color:var(--muted); line-height:1.45; }
@@ -21,16 +23,15 @@
     .tabs { display:flex; gap:8px; border-bottom:1px solid var(--line); margin-bottom:18px; overflow:auto; }
     .tab { border:0; border-bottom:3px solid transparent; background:transparent; border-radius:0; padding:12px 10px; white-space:nowrap; color:var(--muted); }
     .tab.active { color:var(--accent); border-bottom-color:var(--accent); font-weight:700; }
-    .view { display:none; }
-    .view.active { display:block; }
-    .grid { display:grid; grid-template-columns: repeat(12, 1fr); gap:14px; }
+    .view { display:none; } .view.active { display:block; }
+    .grid { display:grid; grid-template-columns:repeat(12,1fr); gap:14px; }
     .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:16px; min-width:0; }
-    .span-3 { grid-column: span 3; } .span-4 { grid-column: span 4; } .span-5 { grid-column: span 5; } .span-6 { grid-column: span 6; } .span-7 { grid-column: span 7; } .span-8 { grid-column: span 8; } .span-12 { grid-column: span 12; }
+    .span-3 { grid-column:span 3; } .span-4 { grid-column:span 4; } .span-5 { grid-column:span 5; } .span-6 { grid-column:span 6; } .span-7 { grid-column:span 7; } .span-8 { grid-column:span 8; } .span-12 { grid-column:span 12; }
     .panel-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:12px; }
     .panel-title { font-weight:750; font-size:16px; }
     .muted { color:var(--muted); font-size:13px; }
     .metric { font-size:28px; font-weight:760; margin:6px 0 2px; }
-    .cards { display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap:14px; }
+    .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:14px; }
     .card { border:1px solid var(--line); border-radius:8px; padding:14px; background:#fff; }
     .card-title { font-weight:760; margin-bottom:6px; }
     .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
@@ -40,27 +41,19 @@
     .badge.bad { border-color:#fecdca; color:var(--bad); background:#fef3f2; }
     .score { height:8px; background:#edf1f7; border-radius:999px; overflow:hidden; margin-top:6px; }
     .score > i { display:block; height:100%; background:var(--accent); width:0; }
-    .list { display:grid; gap:10px; }
-    .pipeline { display:grid; gap:12px; }
-    .pipe-card { border:1px solid var(--line); border-radius:8px; padding:14px; background:#fff; }
-    .steps { display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; margin-top:12px; }
-    .discovery-steps { grid-template-columns: repeat(6, minmax(120px, 1fr)); overflow:auto; }
+    .list, .timeline, .pipeline { display:grid; gap:10px; }
+    .event { border-left:3px solid var(--line); padding:8px 10px; background:#fff; }
+    .event.failed { border-left-color:var(--bad); background:#fef3f2; } .event.running { border-left-color:var(--accent); background:#eef4ff; }
+    .steps { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:12px; }
     .step { border:1px solid var(--line); border-radius:8px; padding:12px; min-height:96px; }
-    .discovery-steps .step { min-width:120px; min-height:82px; }
     .step.done { background:#ecfdf3; border-color:#abefc6; } .step.running { background:var(--soft); border-color:#b2ccff; } .step.failed { background:#fef3f2; border-color:#fecdca; }
     .step-name { font-weight:700; margin-bottom:6px; }
-    .kv { display:grid; grid-template-columns: 120px 1fr; gap:6px; font-size:13px; margin:8px 0; }
+    .kv { display:grid; grid-template-columns:120px 1fr; gap:8px; font-size:13px; margin:8px 0; }
     .empty { color:var(--muted); padding:24px; text-align:center; border:1px dashed var(--line); border-radius:8px; }
-    pre { white-space:pre-wrap; word-break:break-word; background:#101828; color:#e4e7ec; padding:12px; border-radius:8px; max-height:360px; overflow:auto; }
-    .timeline { display:grid; gap:8px; }
-    .event { border-left:3px solid var(--line); padding:8px 10px; background:#fff; }
-    .event.failed { border-left-color:var(--bad); background:#fef3f2; }
-    .event.running { border-left-color:var(--accent); background:#eef4ff; }
     .metric-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:12px 0; }
     .mini-metric { border:1px solid var(--line); border-radius:8px; padding:10px; background:#fff; }
     .mini-metric b { display:block; font-size:20px; margin-top:4px; }
-    .footer { color:var(--muted); font-size:12px; margin-top:18px; }
-    .opp-card { display:flex; flex-direction:column; gap:12px; min-height:420px; }
+    .opp-card { display:flex; flex-direction:column; gap:12px; min-height:390px; }
     .opp-title { font-size:18px; font-weight:780; line-height:1.25; }
     .opp-subtitle { color:var(--muted); line-height:1.45; }
     .insight-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
@@ -69,11 +62,10 @@
     .insight span { font-weight:720; }
     .section-label { font-weight:720; font-size:13px; margin-bottom:6px; }
     .pill-list { display:flex; gap:6px; flex-wrap:wrap; }
-    .evidence-list { display:grid; gap:6px; }
-    .evidence-item { color:#475467; font-size:13px; line-height:1.35; }
-    .card-actions { margin-top:auto; display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
     .plain-list { margin:0; padding-left:18px; color:#344054; line-height:1.45; }
-    @media (max-width: 900px) { .span-3,.span-4,.span-5,.span-6,.span-7,.span-8,.span-12 { grid-column: span 12; } .topbar { flex-direction:column; } .steps { grid-template-columns:1fr; } .discovery-steps { grid-template-columns:1fr; } .metric-grid { grid-template-columns:repeat(2,1fr); } .kv { grid-template-columns:1fr; } }
+    pre { white-space:pre-wrap; word-break:break-word; background:#101828; color:#e4e7ec; padding:12px; border-radius:8px; max-height:360px; overflow:auto; }
+    .footer { color:var(--muted); font-size:12px; margin-top:18px; }
+    @media (max-width:900px) { .span-3,.span-4,.span-5,.span-6,.span-7,.span-8,.span-12 { grid-column:span 12; } .topbar { flex-direction:column; } .steps,.metric-grid { grid-template-columns:1fr; } .kv { grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
@@ -81,12 +73,12 @@
     <div class="topbar">
       <div>
         <div class="title">应用机会工作台</div>
-        <div class="subtitle">用真实应用商店数据发现可做的 App 机会，确认后自动生成应用并进入测试发布流程。</div>
+        <div class="subtitle">用真实应用商店数据发现可做的 App 机会，确认后生成应用，并进入 Google Play 内部测试发布流程。</div>
       </div>
       <div class="actions">
         <label class="muted"><input id="autorefresh" type="checkbox" checked /> 自动刷新</label>
         <button id="refreshBtn">刷新</button>
-        <button id="startBtn" class="primary">搜索新机会</button>
+        <button id="startBtn" class="primary">一键自动生成并上架</button>
       </div>
     </div>
 
@@ -94,23 +86,24 @@
       <button class="tab active" data-tab="discover">找机会</button>
       <button class="tab" data-tab="pool">可做的 App</button>
       <button class="tab" data-tab="progress">生成进度</button>
+      <button class="tab" data-tab="release-config">发布配置</button>
       <button class="tab" data-tab="advanced">技术日志</button>
     </div>
 
     <section class="view active" id="view-discover">
       <div class="grid">
-        <div class="panel span-3"><div class="muted">找机会</div><div class="metric" id="aStatus">-</div><div class="muted" id="aStep">等待数据</div></div>
+        <div class="panel span-3"><div class="muted">机会发现</div><div class="metric" id="aStatus">-</div><div class="muted" id="aStep">等待数据</div></div>
         <div class="panel span-3"><div class="muted">应用生成</div><div class="metric" id="bStatus">-</div><div class="muted" id="bStep">等待数据</div></div>
         <div class="panel span-3"><div class="muted">测试发布</div><div class="metric" id="cStatus">-</div><div class="muted" id="cStep">等待数据</div></div>
-        <div class="panel span-3"><div class="muted">发布状态</div><div class="metric" id="trackStatus">测试通道</div><div class="muted" id="dryRunStatus">-</div></div>
+        <div class="panel span-3"><div class="muted">可用包名</div><div class="metric" id="packageMetric">-</div><div class="muted" id="packageHint">等待配置</div></div>
         <div class="panel span-7">
-          <div class="panel-head"><div><div class="panel-title">搜索应用商店机会</div><div class="muted">输入你想关注的方向。系统会搜索 Google Play，读取竞品和低分评论，然后把可做的 App 机会列出来。</div></div></div>
-          <div class="kv"><b>关注方向</b><textarea id="seedQueries" rows="4" style="width:100%;resize:vertical;border:1px solid var(--line);border-radius:6px;padding:8px">simple timer
+          <div class="panel-head"><div><div class="panel-title">搜索应用商店机会</div><div class="muted">输入关注方向。系统会搜索 Google Play，读取竞品和低分评论，然后把可做的 App 机会列出来。</div></div></div>
+          <div class="kv"><b>关注方向</b><textarea id="seedQueries" rows="4">simple timer
 checklist app
 unit converter
 habit tracker
 expense tracker
-water reminder</textarea><b>模式</b><select id="discoveryMode" style="border:1px solid var(--line);border-radius:6px;padding:8px"><option value="manual">我确认后再生成</option><option value="auto">符合条件就自动生成</option></select></div>
+water reminder</textarea><b>模式</b><select id="discoveryMode"><option value="auto_publish">一键自动生成并上架</option><option value="auto">符合条件就自动生成</option><option value="manual">我确认后再生成</option></select></div>
           <div id="latestDiscovery"></div>
           <div class="timeline" id="discoverySteps"></div>
         </div>
@@ -121,11 +114,20 @@ water reminder</textarea><b>模式</b><select id="discoveryMode" style="border:1
     </section>
 
     <section class="view" id="view-pool">
-      <div class="panel"><div class="panel-head"><div><div class="panel-title">可做的 App</div><div class="muted">每张卡片都说明：适合谁、用户在抱怨什么、建议先做什么、证据来自哪些竞品。</div></div><span class="badge" id="oppCount">0 个候选</span></div><div class="cards" id="opportunities"></div></div>
+      <div class="panel"><div class="panel-head"><div><div class="panel-title">可做的 App</div><div class="muted">每张卡片说明目标用户、核心痛点、建议功能、证据强度和来源竞品。</div></div><span class="badge" id="oppCount">0 个候选</span></div><div class="cards" id="opportunities"></div></div>
     </section>
 
     <section class="view" id="view-progress">
       <div class="panel"><div class="panel-head"><div><div class="panel-title">生成进度</div><div class="muted">查看已确认机会的生成、质量检查和测试发布进度。</div></div><span class="badge" id="pipeCount">0 个流程</span></div><div class="pipeline" id="pipeline"></div></div>
+    </section>
+
+    <section class="view" id="view-release-config">
+      <div class="grid">
+        <div class="panel span-4"><div class="muted">可用包名</div><div class="metric" id="poolAvailable">-</div><div class="muted">可以继续生成并发布的包名数量</div></div>
+        <div class="panel span-4"><div class="muted">已占用</div><div class="metric" id="poolUsed">-</div><div class="muted">生成中或已提交内部测试</div></div>
+        <div class="panel span-4"><div class="muted">需要处理</div><div class="metric" id="poolInvalid">-</div><div class="muted">未创建或权限不足的包名</div></div>
+        <div class="panel span-12"><div class="panel-head"><div><div class="panel-title">包名池</div><div class="muted" id="poolActionText">请先在 Play Console 批量创建 App，系统会自动检查并使用这些包名。</div></div><div class="row"><button id="syncPoolBtn">同步配置</button><button id="verifyPoolBtn" class="primary">验证包名</button></div></div><div class="list" id="packagePoolList"></div></div>
+      </div>
     </section>
 
     <section class="view" id="view-advanced">
@@ -144,138 +146,55 @@ const state = { data:null, selectedRunId:null };
 const $ = id => document.getElementById(id);
 const fmt = v => v === undefined || v === null || v === "" ? "-" : String(v);
 const local = iso => iso ? new Date(iso).toLocaleString() : "-";
-const statusText = s => ({ready:"\u5c31\u7eea", idle:"\u7a7a\u95f2", queued:"\u6392\u961f\u4e2d", checking_environment:"\u51c6\u5907\u91c7\u96c6", searching_play:"\u641c\u7d22\u5e94\u7528", play_tools_loaded:"\u91c7\u96c6\u5de5\u5177\u5df2\u5c31\u7eea", searching_query:"\u641c\u7d22\u5173\u952e\u8bcd", query_search_complete:"\u641c\u7d22\u5b8c\u6210", query_search_failed:"\u641c\u7d22\u5931\u8d25", query_no_competitors:"\u6ca1\u6709\u7ade\u54c1", scanning_competitors:"\u5206\u6790\u7ade\u54c1", fetching_reviews:"\u8bfb\u53d6\u8bc4\u8bba", reviews_complete:"\u8bc4\u8bba\u8bfb\u53d6\u5b8c\u6210", reviews_skipped:"\u672a\u8bfb\u53d6\u8bc4\u8bba", review_fetch_failed:"\u8bc4\u8bba\u8bfb\u53d6\u5931\u8d25", candidate_scored:"\u5019\u9009\u5df2\u8bc4\u5206", candidate_saved:"\u5019\u9009\u5df2\u5165\u6c60", candidate_rejected:"\u5019\u9009\u672a\u5165\u6c60", scoring_candidates:"\u5019\u9009\u8bc4\u5206", waiting_for_selection:"\u7b49\u5f85\u9009\u62e9", auto_submitted:"\u5df2\u81ea\u52a8\u8fdb\u5165\u751f\u6210", in_progress:"\u8fdb\u884c\u4e2d", implementation_complete:"\u5df2\u751f\u6210", needs_polish:"\u9700\u8981\u6253\u78e8", failed:"\u5931\u8d25", prepared:"\u5df2\u51c6\u5907", approved:"\u5df2\u5ba1\u6279", submitting:"\u63d0\u4ea4\u4e2d", dry_run_complete:"\u6a21\u62df\u5b8c\u6210", internal_submitted:"\u5df2\u63d0\u4ea4\u6d4b\u8bd5", published:"\u5df2\u53d1\u5e03", rejected:"已驳回", done:"\u5b8c\u6210", running:"\u8fdb\u884c\u4e2d", waiting:"\u7b49\u5f85", ready_for_review:"\u5f85\u9009\u62e9", submitted_to_b:"\u5df2\u8fdb\u5165\u751f\u6210", unknown:"\u672a\u77e5"})[s] || fmt(s);
-const badgeClass = s => ["done","ready","implementation_complete","dry_run_complete","internal_submitted","published","waiting_for_selection","ready_for_review","submitted_to_b","auto_submitted"].includes(s) ? "ok" : (["failed","dead_letter","needs_manual_action","rejected"].includes(s) ? "bad" : "warn");
-function humanDetail(text){
-  const raw = fmt(text);
-  const dict = {
-    'implementation complete and handoff generated':'应用已生成，等待进入测试发布',
-    'start verification':'正在检查生成结果',
-    'scaffold project and derive scheme':'正在准备项目结构',
-    'project scaffold/codegen complete':'应用代码已生成，正在检查',
-    'Google Play internal track':'Google Play 内部测试通道',
-    'release handoff not found; call /v1/releases/prepare first':'等待生成发布材料',
-    'rejected':'已驳回，需要重新确认后再发布'
-  };
-  return dict[raw] || raw;
-}
-function modeText(mode){ return mode === 'auto' ? '符合条件就自动生成' : '我确认后再生成'; }
+const statusText = s => ({ready:"就绪", idle:"空闲", queued:"排队中", checking_environment:"准备采集", searching_play:"搜索应用", searching_query:"搜索关键词", query_search_complete:"搜索完成", query_search_failed:"搜索失败", scanning_competitors:"分析竞品", fetching_reviews:"读取评论", reviews_complete:"评论读取完成", review_fetch_failed:"评论读取失败", candidate_saved:"候选已入池", candidate_rejected:"候选未入池", scoring_candidates:"候选评分", waiting_for_selection:"等待选择", auto_submitted:"已自动生成", in_progress:"进行中", implementation_complete:"已生成", needs_polish:"需要打磨", failed:"失败", prepared:"已准备", approved:"已确认", submitting:"提交中", internal_submitted:"已提交测试", published:"已发布", done:"完成", running:"进行中", waiting:"等待", ready_for_review:"待选择", submitted_to_b:"已进入生成", available:"可用", allocated:"已分配", verified:"已验证", invalid:"需处理", released:"已释放", submitted_internal:"已提交测试"})[s] || fmt(s);
+const badgeClass = s => ["done","ready","implementation_complete","internal_submitted","published","waiting_for_selection","ready_for_review","submitted_to_b","auto_submitted","available","verified","released"].includes(s) ? "ok" : (["failed","dead_letter","needs_manual_action","invalid","rejected"].includes(s) ? "bad" : "warn");
 function esc(s){ return fmt(s).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
 async function request(path, options={}){ const r = await fetch(path, options); const p = await r.json().catch(()=>({})); if(!r.ok) throw new Error(p?.detail?.error?.message || p?.message || r.statusText); return p; }
 function scoreBar(value){ const n = Number(value); const w = Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 0; return `<div class="score"><i style="width:${w}%"></i></div>`; }
 function cleanAppName(name){ return fmt(name).replace(/\s*MVP\s*$/i,'').trim() || '候选应用'; }
-function qualityText(q){ return ({measured:'证据较充分', mixed:'证据一般', assumption:'仅供参考'})[q] || '证据待确认'; }
-function reasonText(reason){
-  const r = fmt(reason);
-  if(!r || r === '-') return '基于本轮应用商店搜索和评论痛点推荐。';
-  if(r.includes('Google Play') || r.includes('low-score')) return '来自应用商店竞品和低分评论的综合判断。';
-  return r;
-}
-function userText(text, niche){
-  const raw = fmt(text);
-  if(raw.startsWith('Users looking for a simpler')) return `想要更简单、更少打扰的 ${esc(niche || '工具类 App')} 用户`;
-  return esc(raw);
-}
-function painText(p){ return esc(({广告:'广告太多', 通知骚扰:'通知打扰', 功能缺失:'缺少关键功能', '订阅/付费':'付费压力', 无法编辑:'编辑不方便', 同步问题:'同步不稳定', 权限过多:'权限太多'}[p]) || p); }
-function featureSuggestions(o){
-  const niche = String(o.niche || o.app_name || '').toLowerCase();
-  if(niche.includes('checklist') || niche.includes('task') || niche.includes('todo')) return ['添加清单事项', '勾选完成状态', '查看今日待办'];
-  if(niche.includes('timer') || niche.includes('pomodoro')) return ['设置计时', '开始/暂停/重置', '保存常用时长'];
-  if(niche.includes('converter') || niche.includes('unit')) return ['输入数值', '选择单位', '查看换算结果'];
-  if(niche.includes('habit')) return ['创建习惯', '每日打卡', '查看连续记录'];
-  if(niche.includes('expense') || niche.includes('budget')) return ['记录支出', '分类汇总', '编辑历史记录'];
-  if(niche.includes('water')) return ['记录饮水', '设置每日目标', '查看完成进度'];
-  return (o.recommended_features || []).slice(0,3).map(fmt).filter(Boolean).filter(x=>!['广告','通知骚扰','功能缺失','订阅/付费'].includes(x));
-}
+function qualityText(q){ return ({measured:'证据较充分', mixed:'证据一般', assumption:'证据不足'})[q] || '证据待确认'; }
+function reasonText(reason){ const r = fmt(reason); if(!r || r === '-') return '基于本轮应用商店搜索和评论痛点推荐。'; if(r.includes('Google Play') || r.includes('low-score')) return '来自应用商店竞品和低分评论的综合判断。'; return r; }
+function humanDetail(text){ const raw = fmt(text); const dict = {'implementation complete and handoff generated':'应用已生成，等待进入测试发布','start verification':'正在检查生成结果','project scaffold/codegen complete':'应用代码已生成，正在检查','Google Play internal track':'Google Play 内部测试通道','release handoff not found; call /v1/releases/prepare first':'等待生成发布材料','repair Android MVP quality round 1/3':'正在修复界面和本地状态','repair Android MVP quality round 2/3':'正在打磨主流程和文案','repair Android MVP quality round 3/3':'正在收敛到一个核心功能'}; return dict[raw] || raw; }
+function featureSuggestions(o){ const list = (o.recommended_features || []).map(fmt).filter(Boolean).filter(x=>!['广告','通知骚扰','功能缺失','订阅/付费'].includes(x)); return list.slice(0,3); }
 function opportunityCard(o){
-  const title = cleanAppName(o.app_name);
-  const niche = esc(o.niche || '工具类应用');
-  const status = o.submitted_run_id || o.run_id ? '已进入生成' : '待确认';
-  const statusClass = o.submitted_run_id || o.run_id ? 'ok' : 'warn';
-  const pains = (o.pain_points||[]).slice(0,4).map(p=>`<span class="badge">${painText(p)}</span>`).join(' ') || '<span class="muted">暂无明确痛点</span>';
+  const title = cleanAppName(o.app_name); const status = o.submitted_run_id || o.run_id ? '已进入生成' : '待确认'; const statusClass = o.submitted_run_id || o.run_id ? 'ok' : 'warn';
+  const pains = (o.pain_points||[]).slice(0,4).map(p=>`<span class="badge">${esc(p)}</span>`).join(' ') || '<span class="muted">暂无明确痛点</span>';
   const apps = (o.source_apps||[]).slice(0,4).map(a=>`<span class="badge">${esc(a.title || a.appId || a.app_id)}</span>`).join(' ') || '<span class="muted">暂无来源 App</span>';
-  const reviews = (o.review_pain_summary||[]).slice(0,3).map(p=>`<div class="evidence-item">${painText(p.theme)}：${fmt(p.review_count)} 条评论提到，来自 ${esc(p.app_title || p.app_id)}</div>`).join('');
-  const features = featureSuggestions(o).slice(0,3).map(x=>`<li>${esc(x)}</li>`).join('') || '<li>围绕核心场景做一个本地可用的小工具</li>';
+  const features = featureSuggestions(o).map(x=>`<li>${esc(x)}</li>`).join('') || '<li>围绕核心场景做一个本地可用的小工具</li>';
   const action = o.submitted_run_id || o.run_id ? `<button data-open-run="${esc(o.submitted_run_id || o.run_id)}">查看生成进度</button>` : `<button class="primary" data-implement-candidate="${esc(o.candidate_id)}">选择这个需求</button>`;
-  const opportunity = fmt(o.scores?.opportunity || '-');
-  const buildFit = fmt(o.scores?.build_fit || '-');
-  const evidence = fmt(o.evidence_score || '-');
-  return `<div class="card opp-card">
-    <div class="row"><span class="badge ${statusClass}">${status}</span><span class="badge">${qualityText(o.data_quality)}</span></div>
-    <div><div class="opp-title">${esc(title)}</div><div class="opp-subtitle">细分方向：${niche}</div></div>
-    <div class="insight-grid"><div class="insight"><b>市场热度</b><span>${opportunity}/100</span></div><div class="insight"><b>开发适合度</b><span>${buildFit}/100</span></div><div class="insight"><b>证据强度</b><span>${evidence}/100</span></div><div class="insight"><b>竞品样本</b><span>${(o.source_apps||[]).length} 个</span></div></div>
-    ${scoreBar(o.scores?.build_fit || o.scores?.opportunity)}
-    <div><div class="section-label">目标用户</div><div class="opp-subtitle">${userText(o.target_users, o.niche)}</div></div>
-    <div><div class="section-label">用户抱怨最多的问题</div><div class="pill-list">${pains}</div></div>
-    <div><div class="section-label">建议先做的功能</div><ul class="plain-list">${features}</ul></div>
-    <div><div class="section-label">为什么值得试</div><div class="opp-subtitle">${esc(reasonText(o.decision_reason))}</div></div>
-    <div><div class="section-label">参考竞品</div><div class="pill-list">${apps}</div></div>
-    ${reviews ? `<div class="evidence-list">${reviews}</div>` : ''}
-    <div class="card-actions">${action}</div>
-  </div>`;
+  return `<div class="card opp-card"><div class="row"><span class="badge ${statusClass}">${status}</span><span class="badge">${qualityText(o.data_quality)}</span></div><div><div class="opp-title">${esc(title)}</div><div class="opp-subtitle">细分方向：${esc(o.niche || '工具类应用')}</div></div><div class="insight-grid"><div class="insight"><b>市场热度</b><span>${fmt(o.scores?.opportunity)}/100</span></div><div class="insight"><b>开发适合度</b><span>${fmt(o.scores?.build_fit)}/100</span></div><div class="insight"><b>证据强度</b><span>${fmt(o.evidence_score)}/100</span></div><div class="insight"><b>竞品样本</b><span>${(o.source_apps||[]).length} 个</span></div></div>${scoreBar(o.scores?.build_fit || o.scores?.opportunity)}<div><div class="section-label">目标用户</div><div class="opp-subtitle">${esc(o.target_users || '希望使用更简单工具的用户')}</div></div><div><div class="section-label">用户抱怨最多的问题</div><div class="pill-list">${pains}</div></div><div><div class="section-label">建议先做的功能</div><ul class="plain-list">${features}</ul></div><div><div class="section-label">为什么值得试</div><div class="opp-subtitle">${esc(reasonText(o.decision_reason))}</div></div><div><div class="section-label">参考竞品</div><div class="pill-list">${apps}</div></div><div class="row" style="margin-top:auto">${action}</div></div>`;
 }
 function renderSummary(data){
-  const s = data.summary || {}; const a = data.agent_status || {}; const d = data.latest_discovery || {};
+  const s=data.summary||{}, a=data.agent_status||{}, d=data.latest_discovery||{}, pool=s.package_pool||{};
   $('aStatus').textContent = d.status ? statusText(d.status) : statusText(a.agent_a?.status); $('aStep').textContent = d.discovery_run_id || fmt(a.agent_a?.current_step);
   $('bStatus').textContent = statusText(a.agent_b?.status); $('bStep').textContent = humanDetail(a.agent_b?.current_step);
   $('cStatus').textContent = statusText(a.agent_c?.status); $('cStep').textContent = humanDetail(a.agent_c?.current_step);
-  $('dryRunStatus').textContent = s.publisher_dry_run ? '\u5f53\u524d\u4e3a\u6a21\u62df\u53d1\u5e03\u6a21\u5f0f' : '\u5f53\u524d\u4e3a\u771f\u5b9e\u53d1\u5e03\u6a21\u5f0f';
-  const checks = s.checks || {};
-  $('opsChecks').innerHTML = [['\u5de5\u4f5c\u533a', checks.workspace_ok], ['\u56de\u8c03\u76ee\u5f55', checks.callbacks_ok], ['\u6570\u636e\u5e93', checks.database_ok], ['\u5305\u540d\u6c60', `${s.pool?.used||0}/${s.pool?.total||0}`]].map(([k,v])=>`<div class="event"><b>${k}</b><div class="muted">${fmt(v)}</div></div>`).join('');
-  renderDiscovery(data);
+  $('packageMetric').textContent = fmt(pool.available); $('packageHint').textContent = a.agent_c?.operator_action || '等待发布配置';
+  const checks=s.checks||{}; $('opsChecks').innerHTML = [['工作区',checks.workspace_ok],['回调目录',checks.callbacks_ok],['数据库',checks.database_ok],['????','????']].map(([k,v])=>`<div class="event"><b>${k}</b><div class="muted">${fmt(v)}</div></div>`).join('');
+  renderDiscovery(data); renderPackagePool(data.package_pool || {summary:pool,items:[],operator_action:a.agent_c?.operator_action});
 }
-function eventClass(stage){ return stage === 'failed' || String(stage||'').includes('failed') ? 'failed' : (['checking_environment','searching_query','fetching_reviews','scanning_competitors','scoring_candidates'].includes(stage) ? 'running' : ''); }
+function eventClass(stage){ return stage === 'failed' || String(stage||'').includes('failed') ? 'failed' : 'running'; }
 function renderDiscovery(data){
-  const d = data.latest_discovery || null;
-  if(!d){
-    $('latestDiscovery').innerHTML = '<div class="empty">\u8fd8\u6ca1\u6709\u53d1\u73b0\u4efb\u52a1\u3002</div>';
-    $('discoveryEvents').innerHTML = '<div class="empty">\u542f\u52a8\u540e\u4f1a\u663e\u793a\u51c6\u5907\u91c7\u96c6\u3001\u641c\u7d22\u5e94\u7528\u3001\u5206\u6790\u7ade\u54c1\u3001\u8bfb\u53d6\u8bc4\u8bba\u548c\u5019\u9009\u8bc4\u5206\u3002</div>';
-    $('discoverySteps').innerHTML = '';
-    $('discoveryHint').textContent = '\u542f\u52a8\u540e\u4f1a\u6301\u7eed\u663e\u793a\u6bcf\u4e00\u6b65\u53d1\u751f\u4e86\u4ec0\u4e48\u3002';
-    return;
-  }
-  const progress = data.discovery_progress || {};
-  const metrics = progress.metrics || {};
-  const events = data.discovery_events || [];
-  const latestEvent = events.length ? events[events.length - 1] : null;
-  const discoveryModeText = modeText(d.mode);
-  $('latestDiscovery').innerHTML = `<div class="card"><div class="row"><span class="badge ${badgeClass(d.status)}">${statusText(d.status)}</span><span class="badge">${discoveryModeText}</span></div><div class="card-title">\u672c\u8f6e\u53d1\u73b0</div><div class="muted">\u5173\u952e\u8bcd\uff1a${(d.seed_queries||[]).map(esc).join(' / ')}</div><div class="metric-grid"><div class="mini-metric"><span class="muted">\u5df2\u641c\u7d22\u5173\u952e\u8bcd</span><b>${fmt(metrics.searched_query_count)}</b></div><div class="mini-metric"><span class="muted">\u7ade\u54c1\u6570\u91cf</span><b>${fmt(metrics.competitor_count)}</b></div><div class="mini-metric"><span class="muted">\u4f4e\u5206\u8bc4\u8bba</span><b>${fmt(metrics.low_score_review_count)}</b></div><div class="mini-metric"><span class="muted">\u5165\u6c60\u5019\u9009</span><b>${fmt(metrics.candidate_count)}</b></div></div><div class="muted">\u6700\u8fd1\u66f4\u65b0\uff1a${local(d.updated_at)}</div>${d.error_message?`<div class="badge bad" style="margin-top:8px">${esc(d.error_message)}</div>`:''}</div>`;
+  const d=data.latest_discovery, progress=data.discovery_progress||{}, metrics=progress.metrics||{}, events=data.discovery_events||[];
+  if(!d){ $('latestDiscovery').innerHTML='<div class="empty">还没有发现任务。</div>'; $('discoveryEvents').innerHTML='<div class="empty">启动后会显示每一步发生了什么。</div>'; $('discoverySteps').innerHTML=''; return; }
+  $('latestDiscovery').innerHTML = `<div class="card"><div class="row"><span class="badge ${badgeClass(d.status)}">${statusText(d.status)}</span><span class="badge">${d.mode==='auto'?'满足条件自动生成':'人工确认后生成'}</span></div><div class="metric-grid"><div class="mini-metric"><span class="muted">关键词</span><b>${fmt(metrics.searched_query_count)}</b></div><div class="mini-metric"><span class="muted">竞品</span><b>${fmt(metrics.competitor_count)}</b></div><div class="mini-metric"><span class="muted">低分评论</span><b>${fmt(metrics.low_score_review_count)}</b></div><div class="mini-metric"><span class="muted">候选</span><b>${fmt(metrics.candidate_count)}</b></div></div>${d.error_message?`<div class="badge bad">${esc(d.error_message)}</div>`:''}</div>`;
   $('discoverySteps').innerHTML = (progress.steps||[]).map(step=>`<div class="step ${esc(step.status)}"><div class="step-name">${esc(step.label)}</div><span class="badge ${badgeClass(step.status)}">${statusText(step.status)}</span></div>`).join('');
-  $('discoveryHint').textContent = latestEvent ? latestEvent.message : '\u7b49\u5f85\u7b2c\u4e00\u6761\u91c7\u96c6\u4e8b\u4ef6\u3002';
-  $('discoveryEvents').innerHTML = events.length ? events.slice(-16).reverse().map(e=>{ const p=e.payload||{}; const detail = p.query ? `\u5173\u952e\u8bcd\uff1a${esc(p.query)}` : (p.app_title ? `\u7ade\u54c1\uff1a${esc(p.app_title)}` : ''); return `<div class="event ${eventClass(e.stage)}"><b>${esc(statusText(e.stage))}</b><div>${esc(e.message)}</div>${detail?`<div class="muted">${detail}</div>`:''}<div class="muted">${local(e.created_at)}</div></div>`; }).join('') : '<div class="empty">\u6682\u65e0\u8fc7\u7a0b\u4e8b\u4ef6\uff0c\u7a0d\u540e\u5237\u65b0\u3002</div>';
+  $('discoveryHint').textContent = events.length ? events[events.length-1].message : '等待采集事件。';
+  $('discoveryEvents').innerHTML = events.length ? events.slice(-16).reverse().map(e=>`<div class="event ${eventClass(e.stage)}"><b>${esc(statusText(e.stage))}</b><div>${esc(e.message)}</div><div class="muted">${local(e.created_at)}</div></div>`).join('') : '<div class="empty">暂无过程事件。</div>';
 }
-function renderOpportunities(items){ $('oppCount').textContent = `${items.length} 个候选`; $('opportunities').innerHTML = items.length ? items.map(opportunityCard).join('') : '<div class="empty">还没有候选 App，点击“搜索新机会”。</div>'; $('latestOpportunity').innerHTML = items[0] ? opportunityCard(items[0]) : '<div class="empty">还没有机会判断。</div>'; }
-function renderPipeline(items){ $('pipeCount').textContent = `${items.length} 个流程`; $('pipeline').innerHTML = items.length ? items.map(item=>{ const st=item.stages||{}; const step=(k)=>{ const q=st[k]?.quality_report||{}; const qline=k==='agent_b'&&q.quality_score!==undefined?`<div class="muted">质量分 ${esc(q.quality_score)} · ${q.release_ready?'可发布':'需打磨'} · ${(q.failure_classes||[]).slice(0,2).map(esc).join(' / ')}</div>`:''; return `<div class="step ${st[k]?.status||'waiting'}"><div class="step-name">${esc(st[k]?.label)}</div><span class="badge ${badgeClass(st[k]?.status)}">${statusText(st[k]?.status)}</span><div class="muted" style="margin-top:8px">${esc(humanDetail(st[k]?.detail))}</div>${qline}</div>`; }; return `<div class="pipe-card"><div class="row"><b>${esc(item.title)}</b><span class="badge">${esc(item.release_id||'未发布')}</span><span class="muted">${local(item.updated_at)}</span></div><div class="steps">${step('agent_a')}${step('agent_b')}${step('agent_c')}</div><div class="row" style="margin-top:10px"><button data-open-run="${esc(item.run_id)}">查看过程</button>${item.release_id ? `<button data-progress-release="${esc(item.release_id)}">发布详情</button>` : ''}</div></div>`; }).join('') : '<div class="empty">暂无流程。</div>'; }
-function renderAdvanced(data){
-  $('runs').innerHTML = (data.runs||[]).map(r=>`<div class="card"><div class="row"><b>${esc(r.opportunity_id)}</b><span class="badge ${badgeClass(r.status)}">${statusText(r.status)}</span></div><div class="muted">${esc(r.phase_detail)} · ${local(r.updated_at)}</div><div class="row"><button data-open-run="${esc(r.run_id)}">查看过程</button>${r.can_requeue?`<button data-requeue-run="${esc(r.run_id)}">重新生成</button>`:''}</div></div>`).join('') || '<div class="empty">暂无生成任务</div>';
-  $('releases').innerHTML = (data.releases||[]).map(r=>`<div class="card"><div class="row"><b>${esc(r.app_name||r.release_id)}</b><span class="badge ${badgeClass(r.status)}">${statusText(r.status)}</span></div><div class="muted">${esc(r.package_name)} · ${local(r.updated_at)}</div><div class="row">${r.can_requeue?`<button data-requeue-release="${esc(r.release_id)}">重新发布</button>`:''}</div></div>`).join('') || '<div class="empty">暂无发布任务</div>';
-  $('audit').innerHTML = (data.audit||[]).slice(-30).reverse().map(e=>`<div class="event"><b>${esc(e.event_type)}</b><div class="muted">${esc(e.actor)} · ${local(e.created_at)}</div></div>`).join('') || '<div class="empty">暂无操作记录</div>';
-}
-async function openRun(runId){ state.selectedRunId = runId; const d = await request(`/dashboard/api/runs/${encodeURIComponent(runId)}`); $('timeline').innerHTML = (d.events||[]).map(e=>`<div class="event"><b>${esc(e.phase)}</b><div>${esc(e.detail)}</div><div class="muted">${local(e.created_at)}</div></div>`).join('') || '<div class="empty">暂无查看过程</div>'; document.querySelector('[data-tab="advanced"]').click(); }
-async function load(){ try{ const data = await request('/dashboard/api/overview'); state.data=data; renderSummary(data); renderOpportunities(data.opportunities||[]); renderPipeline(data.pipeline||[]); renderAdvanced(data); $('updatedAt').textContent = '最近同步 ' + new Date().toLocaleString(); }catch(e){ $('updatedAt').textContent = '加载失败：' + e.message; } }
-document.addEventListener('click', async e=>{ const t=e.target; const tab=t.closest('[data-tab]'); if(tab){ document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active')); tab.classList.add('active'); document.querySelectorAll('.view').forEach(x=>x.classList.remove('active')); $(`view-${tab.dataset.tab}`).classList.add('active'); return; } const run=t.closest('[data-open-run]'); if(run) return openRun(run.dataset.openRun); const impl=t.closest('[data-implement-candidate]'); if(impl){ impl.disabled=true; try{ await request(`/dashboard/api/opportunities/${encodeURIComponent(impl.dataset.implementCandidate)}/implement`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operator:'dashboard-operator'})}); await load(); document.querySelector('[data-tab="progress"]').click(); } finally { impl.disabled=false; } return; } const rq=t.closest('[data-requeue-run]'); if(rq){ await request(`/dashboard/api/runs/${encodeURIComponent(rq.dataset.requeueRun)}/requeue`,{method:'POST'}); return load(); } const rr=t.closest('[data-requeue-release]'); if(rr){ await request(`/dashboard/api/releases/${encodeURIComponent(rr.dataset.requeueRelease)}/requeue`,{method:'POST'}); return load(); } });
-$('refreshBtn').onclick = load;
-$('startBtn').onclick = async ()=>{
-  $('startBtn').disabled = true;
-  $('updatedAt').textContent = '正在搜索应用商店...';
-  try{
-    const seed_queries = $('seedQueries').value.split(/\n|,/).map(s=>s.trim()).filter(Boolean);
-    const mode = $('discoveryMode').value;
-    const started = await request('/dashboard/api/discovery-runs',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({seed_queries,mode,operator:'dashboard-operator'})
-    });
-    await load();
-    document.querySelector('[data-tab="discover"]').click();
-    $('updatedAt').textContent = `已开始搜索机会：${started.discovery_run_id || ''}`;
-  }catch(e){
-    $('updatedAt').textContent = '开始失败：' + e.message;
-  } finally {
-    $('startBtn').disabled = false;
-  }
-};
-setInterval(()=>{ if($('autorefresh').checked) load(); }, 5000);
+function renderOpportunities(items){ $('oppCount').textContent=`${items.length} 个候选`; $('opportunities').innerHTML=items.length?items.map(opportunityCard).join(''):'<div class="empty">还没有候选 App，点击“一键自动生成并上架”。</div>'; $('latestOpportunity').innerHTML=items[0]?opportunityCard(items[0]):'<div class="empty">还没有机会判断。</div>'; }
+function qualityLine(q){ if(!q || q.quality_score===undefined) return ''; const notes=(q.manual_review_notes||q.repair_suggestions||[]).slice(0,2).map(esc).join('；'); return `<div class="muted">质量分 ${esc(q.quality_score)} · ${q.release_ready?'建议发布':(q.polish_required?'可以预览，建议打磨':'需要修复')}</div>${notes?`<div class="muted">${notes}</div>`:''}`; }
+function renderPipeline(items){ $('pipeCount').textContent=`${items.length} 个流程`; $('pipeline').innerHTML=items.length?items.map(item=>{ const st=item.stages||{}; const step=k=>`<div class="step ${st[k]?.status||'waiting'}"><div class="step-name">${esc(st[k]?.label)}</div><span class="badge ${badgeClass(st[k]?.status)}">${statusText(st[k]?.status)}</span><div class="muted" style="margin-top:8px">${esc(humanDetail(st[k]?.detail))}</div>${k==='agent_b'?qualityLine(st[k]?.quality_report):''}</div>`; return `<div class="card"><div class="row"><b>${esc(item.title)}</b><span class="badge">${esc(item.release_id||'未发布')}</span><span class="muted">${local(item.updated_at)}</span></div><div class="steps">${step('agent_a')}${step('agent_b')}${step('agent_c')}</div><div class="row" style="margin-top:10px"><button data-open-run="${esc(item.run_id)}">查看过程</button>${item.release_id?`<button data-progress-release="${esc(item.release_id)}">发布详情</button>`:''}</div></div>`; }).join(''):'<div class="empty">暂无流程。</div>'; }
+function renderPackagePool(raw){ const pool=raw.package_pool||raw; const s=pool.summary||{}; $('poolAvailable').textContent=fmt(s.available); $('poolUsed').textContent=fmt(s.used); $('poolInvalid').textContent=fmt(s.invalid); $('poolActionText').textContent=pool.operator_action||'请先在 Play Console 批量创建 App，系统会自动检查并使用。'; $('packagePoolList').innerHTML=(pool.items||[]).length?(pool.items||[]).map(p=>`<div class="card"><div class="row"><b>${esc(p.package_name)}</b><span class="badge ${badgeClass(p.status)}">${statusText(p.status)}</span>${p.play_accessible?'<span class="badge ok">Play 可访问</span>':''}</div><div class="muted">${p.last_error?esc(p.last_error):'暂无错误'}${p.allocated_to?` · 已分配给 ${esc(p.allocated_to)}`:''}</div><div class="row" style="margin-top:8px"><button data-release-package="${esc(p.package_name)}">释放</button><button class="danger" data-disable-package="${esc(p.package_name)}">标记无效</button></div></div>`).join(''):'<div class="empty">还没有包名。请先在 .env 配置 PACKAGE_POOL，然后点击同步配置。</div>'; }
+function renderAdvanced(data){ $('runs').innerHTML=(data.runs||[]).map(r=>`<div class="card"><div class="row"><b>${esc(r.opportunity_id)}</b><span class="badge ${badgeClass(r.status)}">${statusText(r.status)}</span></div><div class="muted">${esc(r.phase_detail)} · ${local(r.updated_at)}</div><div class="row"><button data-open-run="${esc(r.run_id)}">查看过程</button>${r.can_requeue?`<button data-requeue-run="${esc(r.run_id)}">重新生成</button>`:''}</div></div>`).join('')||'<div class="empty">暂无生成任务</div>'; $('releases').innerHTML=(data.releases||[]).map(r=>`<div class="card"><div class="row"><b>${esc(r.app_name||r.release_id)}</b><span class="badge ${badgeClass(r.status)}">${statusText(r.status)}</span></div><div class="muted">${esc(r.package_name)} · ${local(r.updated_at)}</div><div class="row">${r.can_requeue?`<button data-requeue-release="${esc(r.release_id)}">重新发布</button>`:''}</div></div>`).join('')||'<div class="empty">暂无发布任务</div>'; $('audit').innerHTML=(data.audit||[]).slice(-30).reverse().map(e=>`<div class="event"><b>${esc(e.event_type)}</b><div class="muted">${esc(e.actor)} · ${local(e.created_at)}</div></div>`).join('')||'<div class="empty">暂无操作记录</div>'; }
+async function openRun(runId){ const d=await request(`/dashboard/api/runs/${encodeURIComponent(runId)}`); $('timeline').innerHTML=(d.events||[]).map(e=>`<div class="event"><b>${esc(e.phase)}</b><div>${esc(e.detail)}</div><div class="muted">${local(e.created_at)}</div></div>`).join('')||'<div class="empty">暂无过程</div>'; document.querySelector('[data-tab="advanced"]').click(); }
+async function load(){ try{ const data=await request('/dashboard/api/overview'); state.data=data; renderSummary(data); try{ const pool=await request('/dashboard/api/package-pool'); renderPackagePool(pool); }catch(poolErr){ console.warn('package pool load failed', poolErr); } renderOpportunities(data.opportunities||[]); renderPipeline(data.pipeline||[]); renderAdvanced(data); $('updatedAt').textContent='最近同步 '+new Date().toLocaleString(); }catch(e){ $('updatedAt').textContent='加载失败：'+e.message; } }
+document.addEventListener('click', async e=>{ const t=e.target; const tab=t.closest('[data-tab]'); if(tab){ document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active')); tab.classList.add('active'); document.querySelectorAll('.view').forEach(x=>x.classList.remove('active')); $(`view-${tab.dataset.tab}`).classList.add('active'); return; } const run=t.closest('[data-open-run]'); if(run) return openRun(run.dataset.openRun); const impl=t.closest('[data-implement-candidate]'); if(impl){ impl.disabled=true; try{ await request(`/dashboard/api/opportunities/${encodeURIComponent(impl.dataset.implementCandidate)}/implement`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operator:'dashboard-operator'})}); await load(); document.querySelector('[data-tab="progress"]').click(); } finally { impl.disabled=false; } return; } const rq=t.closest('[data-requeue-run]'); if(rq){ await request(`/dashboard/api/runs/${encodeURIComponent(rq.dataset.requeueRun)}/requeue`,{method:'POST'}); return load(); } const rr=t.closest('[data-requeue-release]'); if(rr){ await request(`/dashboard/api/releases/${encodeURIComponent(rr.dataset.requeueRelease)}/requeue`,{method:'POST'}); return load(); } const rel=t.closest('[data-release-package]'); if(rel){ await request(`/dashboard/api/package-pool/${encodeURIComponent(rel.dataset.releasePackage)}/release`,{method:'POST'}); return load(); } const dis=t.closest('[data-disable-package]'); if(dis){ await request(`/dashboard/api/package-pool/${encodeURIComponent(dis.dataset.disablePackage)}/disable`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reason:'operator_disabled'})}); return load(); } });
+$('refreshBtn').onclick=load;
+syncPoolBtn.onclick=async()=>{ const b=syncPoolBtn; b.disabled=true; const old=b.textContent; b.textContent='同步中...'; poolActionText.textContent='正在同步包名池配置...'; try{ await request('/dashboard/api/package-pool/sync',{method:'POST'}); const pool=await request('/dashboard/api/package-pool'); renderPackagePool(pool); poolActionText.textContent='同步完成，请继续验证包名。'; }catch(e){ poolActionText.textContent='同步失败：'+e.message; } finally { b.disabled=false; b.textContent=old; } };
+verifyPoolBtn.onclick=async()=>{ const b=verifyPoolBtn; b.disabled=true; const old=b.textContent; b.textContent='验证中...'; poolActionText.textContent='正在连接 Google Play 验证包名，可能需要几十秒...'; try{ await request('/dashboard/api/package-pool/verify',{method:'POST'}); const pool=await request('/dashboard/api/package-pool'); renderPackagePool(pool); poolActionText.textContent='验证完成，已更新可用包名数量。'; }catch(e){ poolActionText.textContent='验证失败：'+e.message; } finally { b.disabled=false; b.textContent=old; } };
+$('startBtn').onclick=async()=>{ $('startBtn').disabled=true; const seed_queries=$('seedQueries').value.split(/\n|,/).map(s=>s.trim()).filter(Boolean); const mode=$('discoveryMode').value; $('updatedAt').textContent = mode === 'auto_publish' ? '正在自动生成并上架...' : '正在搜索应用商店...'; try{ const body=JSON.stringify({seed_queries,mode,operator:'dashboard-operator'}); const started=await request(mode === 'auto_publish' ? '/dashboard/api/autopilot' : '/dashboard/api/discovery-runs',{method:'POST',headers:{'Content-Type':'application/json'},body}); await load(); document.querySelector('[data-tab="discover"]').click(); $('updatedAt').textContent=`已开始：${started.discovery_run_id||started.run_id||''}`; }catch(e){ $('updatedAt').textContent='开始失败：'+e.message; } finally { $('startBtn').disabled=false; } };
+setInterval(()=>{ if($('autorefresh').checked) load(); },5000);
 load();
 </script>
 </body>

@@ -108,8 +108,8 @@ def _cmd_publish(args) -> None:
         st = data.get("status")
         agent_c = data.get("agent_c_status") or "?"
 
-        if st in ("published", "dry_run_complete"):
-            logger.info("*** PUBLISHED to %s track! ***", args.track)
+        if st in ("internal_submitted", "published"):
+            logger.info("*** SUBMITTED to %s track! ***", args.track)
             logger.info("   versionCode will be on your Play Console: https://play.google.com/console/")
             _cleanup(server_proc)
             sys.exit(0)

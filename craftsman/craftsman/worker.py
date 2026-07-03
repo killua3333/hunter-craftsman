@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 import time
@@ -11,6 +12,7 @@ from typing import Any
 from craftsman.config import settings
 from craftsman.orchestrator.failure_taxonomy import classify_runtime_exception
 from craftsman.orchestrator.pipeline import WorkerStopRequested, run_implementation
+from craftsman.orchestrator.policy_checks import check_release_compliance_metadata
 from craftsman.publisher.models import PublisherStatus
 from craftsman.publisher.orchestrator import run_android_release
 from craftsman.store.db import RunStore
@@ -33,18 +35,20 @@ def _bundle_id_from_handoff(handoff: dict[str, Any]) -> str | None:
 
 
 def _should_release_package_for_agent_c(final_status: str, failure_class: str | None) -> bool:
-    if final_status in {"internal_submitted", "published", "dry_run_complete"}:
+    if final_status in {"internal_submitted", "published"}:
         return False
     return failure_class in {
         "package_not_precreated",
         "service_account_permission",
+        "quality_gate_blocked",
+        "package_not_from_pool",
         "metadata_incomplete",
         "signing_config",
     }
 
 
 def _should_disable_package_for_agent_c(failure_class: str | None) -> bool:
-    return failure_class in {"package_not_precreated"}
+    return failure_class in {"package_not_precreated", "service_account_permission"}
 
 
 class BackgroundWorker:
@@ -117,6 +121,7 @@ class BackgroundWorker:
                     run_id,
                 )
                 self.store.complete_job(run_id)  # force-complete without ownership check
+            self._maybe_enqueue_auto_release(run_id)
         except WorkerStopRequested:
             action = self.store.fail_job(
                 run_id,
@@ -140,6 +145,102 @@ class BackgroundWorker:
             heartbeat_stop.set()
             heartbeat.join(timeout=1.0)
 
+
+    def _maybe_enqueue_auto_release(self, run_id: str) -> None:
+        row = self.store.get_run(run_id)
+        if not row:
+            return
+        try:
+            requirement = json.loads(row.get("requirement_json") or "{}")
+        except json.JSONDecodeError:
+            requirement = {}
+        automation = requirement.get("automation") if isinstance(requirement, dict) else {}
+        if not isinstance(automation, dict) or not automation.get("auto_release"):
+            return
+        if row.get("status") != "implementation_complete":
+            self.store.append_audit_log(
+                event_type="auto_release_skipped",
+                run_id=run_id,
+                actor="autopilot",
+                payload={"reason": "implementation_not_release_ready", "status": row.get("status")},
+            )
+            return
+        try:
+            feedback = json.loads(row.get("feedback_json") or "{}")
+        except json.JSONDecodeError:
+            feedback = {}
+        handoff = feedback.get("release_handoff") if isinstance(feedback, dict) else None
+        if not isinstance(handoff, dict):
+            self.store.append_audit_log(
+                event_type="auto_release_skipped",
+                run_id=run_id,
+                actor="autopilot",
+                payload={"reason": "release_handoff_missing"},
+            )
+            return
+        quality_score = int(handoff.get("quality_score") or 0)
+        if not handoff.get("release_ready") or quality_score < 75:
+            self.store.append_audit_log(
+                event_type="auto_release_skipped",
+                run_id=run_id,
+                actor="autopilot",
+                payload={"reason": "quality_gate_blocked", "quality_score": quality_score},
+            )
+            return
+        release_id = str(handoff.get("release_id") or f"rel-{run_id}")
+        handoff["release_id"] = release_id
+        policy = check_release_compliance_metadata(handoff)
+        self.store.record_release_policy_check(release_id, passed=bool(policy["passed"]), issues=list(policy["issues"]))
+        if not policy["passed"]:
+            self.store.upsert_release_state(
+                release_id,
+                status="needs_manual_action",
+                details={
+                    "policy_passed": False,
+                    "issues": list(policy["issues"]),
+                    "release_handoff": handoff,
+                    "platform_target": "android",
+                    "message": "Release metadata is incomplete. Please fix the listed issues before upload.",
+                },
+                updated_by="autopilot",
+            )
+            self.store.append_audit_log(
+                event_type="auto_release_blocked",
+                run_id=run_id,
+                release_id=release_id,
+                actor="autopilot",
+                payload={"policy": policy},
+            )
+            return
+        approved_by = str(automation.get("approved_by") or "autopilot")
+        self.store.record_release_approval(
+            release_id,
+            decision="approved",
+            approved_by=approved_by,
+            note="Auto-approved by one-click autopilot for Google Play internal track.",
+        )
+        approval = self.store.get_release_approval(release_id)
+        self.store.upsert_release_state(
+            release_id,
+            status="submitting",
+            details={
+                "policy": policy,
+                "approval": approval,
+                "platform_target": "android",
+                "release_handoff": handoff,
+                "auto_release": True,
+            },
+            updated_by="autopilot",
+        )
+        self.store.enqueue_release_submit(release_id, max_attempts=max(settings.job_retry_limit + 1, 1))
+        self.store.append_audit_log(
+            event_type="auto_release_submit_queued",
+            run_id=run_id,
+            release_id=release_id,
+            actor="autopilot",
+            payload={"quality_score": quality_score, "package": _bundle_id_from_handoff(handoff)},
+        )
+
     def _process_release(self, release_id: str, lease_token: str) -> None:
         heartbeat_stop = threading.Event()
         heartbeat = threading.Thread(
@@ -161,8 +262,6 @@ class BackgroundWorker:
             agent_status = str(agent_result.get("agent_c_status") or "failed")
             if agent_status in {PublisherStatus.SUBMITTED.value, PublisherStatus.INTERNAL_SUBMITTED.value}:
                 final_status = "internal_submitted" if agent_status == PublisherStatus.INTERNAL_SUBMITTED.value else "published"
-            elif agent_status == PublisherStatus.DRY_RUN_COMPLETE.value:
-                final_status = "dry_run_complete"
             else:
                 final_status = "failed"
 
@@ -197,16 +296,21 @@ class BackgroundWorker:
             )
             self._fire_webhook(release_id, final_status, agent_result)
             failure_class = agent_result.get("failure_class")
+            bundle_id = _bundle_id_from_handoff(handoff)
+            if bundle_id and final_status == "internal_submitted":
+                try:
+                    self.store.mark_package_submitted_internal(bundle_id, release_id)
+                except Exception:
+                    logger.exception("error marking package submitted for release %s", release_id)
             if _should_release_package_for_agent_c(final_status, str(failure_class) if failure_class else None):
                 try:
-                    bundle_id = _bundle_id_from_handoff(handoff)
                     if bundle_id:
                         if _should_disable_package_for_agent_c(str(failure_class) if failure_class else None):
                             self.store.disable_package(bundle_id, str(failure_class))
                         else:
                             self.store.release_package(bundle_id)
                         logger.info(
-                            "freed package %s back to pool (release %s, failure_class=%s)",
+                            "updated package %s after release %s failure_class=%s",
                             bundle_id,
                             release_id,
                             failure_class,

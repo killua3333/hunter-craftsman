@@ -6,7 +6,6 @@
 
 1. 确认服务可启动。
 2. 确认代理可用，尤其是 Google Play 搜索和 Google API。
-3. 如果只演示流程，设置 `PUBLISHER_DRY_RUN=true`。
 4. 如果演示真实 internal track 上传，确认 Play Console 已预创建包名并授权。
 5. 清楚说明：Google Play API 不能自动创建全新 App，包名池需要提前准备。
 
@@ -83,8 +82,6 @@ http://127.0.0.1:8791/dashboard
 3. 如果达标，准备发布。
 
 ### 4. 发布到 internal track
-
-如果是 dry-run：
 
 - 说明这是发布链路演练，不会真的上传 Google Play。
 

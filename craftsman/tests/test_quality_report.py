@@ -158,3 +158,62 @@ def test_repair_android_codegen_for_quality_rewrites_main_activity(tmp_path, mon
     assert "setContent" in text
     assert "Button(" in text or ".clickable" in text
     assert "remember" in text or "mutableState" in text
+
+
+def test_quality_report_v2_contains_subscores_and_notes(tmp_path):
+    workspace, project, metadata = _android_project(
+        tmp_path,
+        """
+        package com.example
+        fun MainActivity() {
+            setContent {
+                val value = rememberSaveable { mutableStateOf("Focus timer") }
+                if (value.value.isEmpty()) { Text("No items yet") }
+                TextField(value = value.value, onValueChange = { value.value = it })
+                Button(onClick = { value.value = "Saved result" }) { Text("Start focus timer") }
+                Text("Session history saved")
+            }
+        }
+        """,
+    )
+    icon = workspace / "icon.png"
+    shot = workspace / "shot.png"
+    icon.write_bytes(b"icon")
+    shot.write_bytes(b"shot")
+
+    report = evaluate_app_quality(
+        backend_mode="android_gradle",
+        compile_exit_code=0,
+        project_dir=project,
+        workspace=workspace,
+        requirement={"app": {"name": "Focus Timer"}, "features": [{"title": "Focus timer"}]},
+        icon_path=icon,
+        screenshots=[str(shot)],
+        metadata_root=metadata,
+        verification="verified",
+    )
+
+    assert report["schema_version"] == 2
+    assert report["core_flow_score"] >= 75
+    assert report["ui_completeness_score"] >= 75
+    assert report["persistence_score"] >= 75
+    assert report["store_asset_score"] >= 75
+    assert report["product_specificity_score"] >= 75
+    assert report["manual_review_notes"]
+
+
+def test_implementation_plan_v2_has_states_and_acceptance(tmp_path):
+    plan = write_implementation_plan(
+        tmp_path,
+        {
+            "app": {"name": "Checklist"},
+            "features": [{"title": "Add checklist item"}, {"title": "Mark done"}],
+            "core_logic": {"persistence": "SharedPreferences"},
+        },
+    )
+
+    assert plan["schema_version"] == 2
+    assert plan["primary_user_flow"] == "Add checklist item"
+    assert "empty" in plan["screen_states"]
+    assert plan["acceptance_actions"]
+    assert len(plan["core_features"]) <= 3

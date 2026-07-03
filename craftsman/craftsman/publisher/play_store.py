@@ -18,7 +18,6 @@ def upload_to_play(
     aab_path: Path,
     package_name: str,
     track: str | None = None,
-    dry_run: bool | None = None,
     metadata_dir: Path | None = None,
     icon_path: Path | None = None,
     screenshot_paths: list[Path] | None = None,
@@ -26,23 +25,21 @@ def upload_to_play(
 ) -> ReleaseUploadResult:
     """
     Upload AAB to Google Play via Edits API: listing → bundle → track → commit.
-    Falls back to dry-run when PUBLISHER_DRY_RUN=true or service account missing.
+    Real upload only: missing credentials or Play API access returns a failure.
     """
-    effective_dry_run = settings.publisher_dry_run if dry_run is None else dry_run
     release_track = track or settings.android_release_track
 
-    if effective_dry_run or service_account_info() is None:
+    if service_account_info() is None:
         return ReleaseUploadResult(
-            ok=True,
+            ok=False,
             track=release_track,
-            message=(
-                "dry-run upload accepted (configure GOOGLE_PLAY_SERVICE_ACCOUNT_FILE for live upload)"
-            ),
-            dry_run=True,
+            message="missing Google Play service account; real upload requires GOOGLE_PLAY_SERVICE_ACCOUNT_FILE or GOOGLE_PLAY_SERVICE_ACCOUNT_JSON",
+            dry_run=False,
             store_response={
                 "package_name": package_name,
                 "aab": str(aab_path),
                 "track": release_track,
+                "error": "missing_service_account",
             },
         )
 

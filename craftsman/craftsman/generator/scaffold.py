@@ -205,15 +205,29 @@ def repair_android_codegen_for_quality(
     rebuild the main flow with interaction and local state.
     """
     scoped = json.loads(json.dumps(req, ensure_ascii=False))
+    repair_round = int(quality_report.get("quality_repair_round") or quality_report.get("quality_repair_rounds") or 1)
+    if repair_round >= 3 and isinstance(scoped.get("features"), list) and scoped["features"]:
+        scoped["features"] = scoped["features"][:1]
     scoped["_quality_repair"] = {
+        "schema_version": 2,
+        "round": repair_round,
         "failure_classes": quality_report.get("failure_classes") or [],
         "repair_suggestions": quality_report.get("repair_suggestions") or [],
+        "subscores": {
+            "core_flow_score": quality_report.get("core_flow_score"),
+            "ui_completeness_score": quality_report.get("ui_completeness_score"),
+            "persistence_score": quality_report.get("persistence_score"),
+            "product_specificity_score": quality_report.get("product_specificity_score"),
+        },
         "required": [
-            "one clear primary user flow",
-            "at least one Button/TextField/Checkbox/clickable control",
+            "one clear primary user flow on the first screen",
+            "empty state, input/action state, and result/list state",
+            "at least one Button/TextField/Checkbox/Switch/Slider/clickable control",
             "local Compose state via rememberSaveable or SharedPreferences",
             "copy and state labels specific to this requirement",
+            "no login, subscription, payment, cloud sync, or backend dependency",
         ],
+        "round_strategy": "shrink to the single main feature" if repair_round >= 3 else "repair weak MVP quality without changing app type",
     }
     files = _codegen_with_retry(scoped, platform="android", max_retries=2)
     if files:

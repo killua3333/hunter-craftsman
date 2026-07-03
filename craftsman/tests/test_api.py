@@ -2,6 +2,9 @@ import time
 
 import json
 from pathlib import Path
+from unittest.mock import patch
+
+import pytest
 
 from fastapi.testclient import TestClient
 
@@ -10,6 +13,11 @@ from craftsman.api.app import create_app
 from craftsman.config import settings
 
 SAMPLE = Path(__file__).parent.parent / "examples" / "requirement.sample.json"
+
+
+@pytest.fixture(autouse=True)
+def _disable_package_pool_by_default(monkeypatch):
+    monkeypatch.setattr(settings, "package_pool", "")
 
 
 def test_analyze_endpoint():
@@ -127,10 +135,11 @@ def test_sync_implement_endpoint():
         assert body["release_handoff"]["platform"]["target"] == "android"
 
 
-def test_release_endpoints_agent_c_android(monkeypatch):
+def test_release_endpoints_agent_c_android(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "database_path", tmp_path / "runs.db")
     monkeypatch.setattr(settings, "release_require_human_approval", True)
     monkeypatch.setattr(settings, "release_require_policy_checks", True)
-    monkeypatch.setattr(settings, "publisher_dry_run", True)
+    monkeypatch.setattr(settings, "package_pool", "")
     req = json.loads(SAMPLE.read_text(encoding="utf-8"))
     with TestClient(create_app()) as client:
         sync = client.post("/v1/runs/sync-implement", json={"requirement": req})
@@ -158,34 +167,40 @@ def test_release_endpoints_agent_c_android(monkeypatch):
         assert approve.json()["status"] == "approval_recorded"
         assert approve.json()["approval"]["decision"] == "approved"
 
-        submit_after = client.post(f"/v1/releases/{release_id}/submit")
-        assert submit_after.status_code == 200
-        body = submit_after.json()
-        assert body["status"] == "submitting"
-        assert body["agent_c_status"] == "building"
-        assert body["platform_target"] == "android"
-        assert body["approval"]["decision"] == "approved"
-        assert body["policy"]["passed"] is True
+        fake_result = {
+            "agent_c_status": "internal_submitted",
+            "platform_target": "android",
+            "track": "internal",
+            "release_handoff": handoff,
+            "release_bundle": handoff.get("release_bundle", {}),
+        }
+        with patch("craftsman.worker.run_android_release", return_value=fake_result):
+            submit_after = client.post(f"/v1/releases/{release_id}/submit")
+            assert submit_after.status_code == 200
+            body = submit_after.json()
+            assert body["status"] == "submitting"
+            assert body["agent_c_status"] == "building"
+            assert body["platform_target"] == "android"
+            assert body["approval"]["decision"] == "approved"
+            assert body["policy"]["passed"] is True
 
-        final_status = "submitting"
-        for _ in range(100):
-            status = client.get(f"/v1/releases/{release_id}")
-            assert status.status_code == 200
-            final_status = status.json()["status"]
-            if final_status in ("dry_run_complete", "published", "failed"):
-                break
-            time.sleep(0.05)
-        assert final_status == "dry_run_complete"
+            final_status = "submitting"
+            for _ in range(100):
+                status = client.get(f"/v1/releases/{release_id}")
+                assert status.status_code == 200
+                final_status = status.json()["status"]
+                if final_status in ("internal_submitted", "published", "failed"):
+                    break
+                time.sleep(0.05)
+            assert final_status == "internal_submitted"
 
         status = client.get(f"/v1/releases/{release_id}")
         assert status.status_code == 200
-        assert status.json()["status"] == "dry_run_complete"
-        assert status.json()["agent_c_status"] == "dry_run_complete"
+        assert status.json()["status"] == "internal_submitted"
+        assert status.json()["agent_c_status"] == "internal_submitted"
         assert status.json()["approval"]["decision"] == "approved"
         assert status.json()["policy"]["passed"] is True
-        assert status.json()["state"]["status"] == "dry_run_complete"
-        agent_c = status.json().get("agent_c") or {}
-        assert agent_c.get("release_bundle", {}).get("aab_path")
+        assert status.json()["state"]["status"] == "internal_submitted"
 
 
 def test_release_submit_blocked_by_policy_failure(monkeypatch):
@@ -325,12 +340,13 @@ def test_audit_replay_endpoint():
             assert "event_type" in body["events"][0]
 
 
-def test_dashboard_overview_and_requeue_endpoints():
+def test_dashboard_overview_and_requeue_endpoints(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "database_path", tmp_path / "runs.db")
     req = json.loads(SAMPLE.read_text(encoding="utf-8"))
     with TestClient(create_app()) as client:
         page = client.get("/dashboard")
         assert page.status_code == 200
-        assert "Hunter-Craftsman 工作台" in page.text
+        assert "应用机会工作台" in page.text
 
         run = client.post(
             f"/v1/opportunities/{req['opportunity_id']}/implement",
@@ -451,3 +467,45 @@ def test_dashboard_release_reject_endpoint(monkeypatch):
         detail = client.get(f"/dashboard/api/releases/{release_id}")
         assert detail.status_code == 200
         assert detail.json()["approval"]["decision"] == "rejected"
+
+
+def test_dashboard_package_pool_api_sync_and_release(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "database_path", tmp_path / "runs.db")
+    monkeypatch.setattr(settings, "package_pool", "com.pool.one,com.pool.two")
+    with TestClient(create_app()) as client:
+        sync = client.post("/dashboard/api/package-pool/sync")
+        assert sync.status_code == 200
+        body = sync.json()
+        assert body["added"] == 2
+        assert body["package_pool"]["summary"]["available"] == 2
+
+        listing = client.get("/dashboard/api/package-pool")
+        assert listing.status_code == 200
+        assert len(listing.json()["package_pool"]["items"]) == 2
+
+        released = client.post("/dashboard/api/package-pool/com.pool.one/release")
+        assert released.status_code == 200
+        assert released.json()["ok"] is True
+
+
+def test_dashboard_package_pool_verify_marks_invalid(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "database_path", tmp_path / "runs.db")
+    monkeypatch.setattr(settings, "package_pool", "com.pool.missing")
+    monkeypatch.setattr(
+        api_app,
+        "verify_play_package_access",
+        lambda package_name: {
+            "ok": False,
+            "package_name": package_name,
+            "failure_class": "package_not_precreated",
+            "message": "not found",
+            "operator_action": "create it first",
+        },
+    )
+
+    with TestClient(create_app()) as client:
+        resp = client.post("/dashboard/api/package-pool/verify")
+        assert resp.status_code == 200
+        item = resp.json()["package_pool"]["items"][0]
+        assert item["status"] == "invalid"
+        assert item["disabled_reason"] == "not found"

@@ -84,7 +84,6 @@ class Settings(BaseSettings):
     execution_image_ref: str = "ghcr.io/hunter-craftsman/craftsman:py312-latest"
 
     # Agent C (Publisher) — Android release automation
-    publisher_dry_run: bool = True
     android_release_track: str = "internal"
     google_play_package_name: str | None = None
     google_play_service_account_file: str | None = None

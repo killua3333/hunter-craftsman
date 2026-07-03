@@ -39,7 +39,7 @@ When you later provide server access, the expected deployment path is:
 3. Set environment variables securely in the service manager.
 4. Create a long-running `craftsman` service.
 5. Verify `/health` and `/dashboard`.
-6. Run a `hunter autopilot --publish` smoke workflow in dry-run mode first.
+6. Run a `hunter autopilot --publish` smoke workflow against the Google Play internal track.
 
 ## Included service assets
 

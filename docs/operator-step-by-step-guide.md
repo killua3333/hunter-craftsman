@@ -1,237 +1,393 @@
-# Hunter + Craftsman 操作指南（最新版）
+﻿# Hunter-Craftsman 从头到尾操作指导书
 
-## 1) 环境准备
+这份文档只讲真实流程，不讲演示兜底，不讲 dry-run。目标是：
 
-### Craftsman（Agent B）
+- 点击一次后，系统自动完成真实需求发现。
+- 人工从候选池里选中一个方向。
+- 系统自动生成 Android App，做质量检查。
+- 达标后，系统把 AAB 真实上传到 Google Play Console 的 internal testing 轨道。
+
+## 1. 你先要知道的三件事
+
+1. Agent A 负责找真实需求。
+2. Agent B 负责把需求变成可运行的 Android MVP。
+3. Agent C 负责把达标产物真实上传到 Google Play internal testing。
+
+人类主要做两件事：
+
+- 一次性把 Google Play、service account、签名、包名池配好。
+- 运行时盯着 Dashboard，看结果、处理失败、必要时人工确认。
+
+## 2. 一次性准备
+
+### 2.1 Play Console 先准备好 App
+
+Google Play 不允许系统直接创建一个全新的 Play Console App，所以你必须先人工准备好包名。
+
+你需要做的事：
+
+1. 登录 Google Play Console。
+2. 预创建一批 App。
+3. 每个 App 都要有唯一包名。
+4. 把这些包名写进 `PACKAGE_POOL`。
+5. 确保 service account 对这些 App 有发布权限。
+
+建议包名示例：
+
+```env
+PACKAGE_POOL=com.yourbrand.template001,com.yourbrand.template002,com.yourbrand.template003
+```
+
+### 2.2 service account
+
+把 Google Cloud 里创建好的 service account JSON 放到：
+
+```text
+craftsman/secrets/play-sa.json
+```
+
+`.env` 里要有：
+
+```env
+GOOGLE_PLAY_SERVICE_ACCOUNT_FILE=./secrets/play-sa.json
+```
+
+### 2.3 签名配置
+
+你还需要准备 Android keystore：
+
+```env
+ANDROID_KEYSTORE_PATH=./secrets/release.jks
+ANDROID_KEYSTORE_PASSWORD=...
+ANDROID_KEY_ALIAS=release
+ANDROID_KEY_PASSWORD=...
+```
+
+### 2.4 网络代理
+
+如果本机访问 Google 需要代理，先设置：
 
 ```powershell
-cd craftsman
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-pip install -e .
+$env:HTTP_PROXY="http://127.0.0.1:10808"
+$env:HTTPS_PROXY="http://127.0.0.1:10808"
+```
+
+### 2.5 `.env` 基础配置
+
+先复制模板：
+
+```powershell
+cd D:\A\hunter-craftsman\craftsman
 copy .env.example .env
 ```
 
-最低建议配置：
+然后确认至少有这些项：
 
-- `DEEPSEEK_API_KEY=...`
-- `API_TOKEN=...`（可选但推荐）
-- Windows 开发机默认保持：
-  - `SKIP_XCODEBUILD=true`
-  - `SKIP_FASTLANE=true`
-
-启动：
-
-```powershell
-python -m craftsman.cli serve
-```
-
-### Hunter（Agent A）
-
-```powershell
-cd hunter
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -e ".[dev]"
-copy .env.example .env
-```
-
-最低建议配置：
-
-- `DEEPSEEK_API_KEY=...`
-- `TAVILY_API_KEY=...`
-- `CRAFTSMAN_API_TOKEN=...`（与 Craftsman 的 `API_TOKEN` 一致）
-- `CRAFTSMAN_CONTRACT_VERSION=1.0`
-
----
-
-## 2) Autopilot 全自动（推荐）
-
-无需具体 app 描述，系统自动搜索 Play 机会 → Soft Gate → 实现 → 可选发布：
-
-```powershell
-# Terminal 1 — Craftsman
-cd craftsman
-python -m craftsman.cli serve
-
-# Terminal 2 — Hunter Autopilot
-cd hunter
-hunter autopilot
-
-# 含 Agent C dry-run 发布
-hunter autopilot --publish
-```
-
-环境要求：
-
-- Hunter：`DEEPSEEK_API_KEY`、`TAVILY_API_KEY`
-- Craftsman 默认 Soft Gate：`GATE_MODE=soft`、`GATE_AUTO_ACCEPT=true`
-- Windows 默认 `SKIP_GRADLE_BUILD=true`（demo 模式）；有 Android SDK 时可设 `false` 启用 verified 编译
-- 真 live 上架见 [play-console-setup-checklist.md](play-console-setup-checklist.md)
-
-**超时预算（秒）**：
-
-| 命令 / 阶段 | 默认 | 说明 |
-|-------------|------|------|
-| `hunter run` | 600 | `--timeout` 覆盖 |
-| `hunter run --autopilot` | ≥1800 | 取 `max(--timeout, 1800)`，含多轮澄清 + Docker 冷构建 |
-| `hunter autopilot` | 600 | 建议 `--timeout 1800` 或更高 |
-| Agent C submit ACK | 60 | 仅等待入队；终态轮询最长 1800 |
-| Craftsman analyze | 90 | `CRAFTSMAN_ANALYZE_TIMEOUT_SECONDS` |
-
-反馈字段 `verification`：
-
-- `demo` — 跳过 Gradle 或仅 web demo 验证
-- `verified` — 原生编译通过
-
----
-
-## 3) 最快跑通（手动描述需求）
-
-在 Agent B 已启动情况下，执行：
-
-```powershell
-cd hunter
-.\.venv\Scripts\hunter.exe run "做一个离线番茄钟，目标是学生专注计时"
-```
-
-你会看到：
-
-- A 侧机会分析
-- B 侧异步实现进度（phase）
-- 终态反馈 `implementation_complete`（或失败原因）
-
----
-
-## 3) 发布治理流（prepare -> approve -> submit）
-
-### A. 先拿到 release_handoff
-
-可从 `sync-implement` 或异步 run 终态反馈中获得 `release_handoff`。
-
-### B. 校验 handoff
-
-`POST /v1/releases/validate-handoff`
-
-- 不通过：返回 `invalid_release_handoff`
-- 通过：`accepted=true`
-
-### C. prepare（触发 policy check）
-
-`POST /v1/releases/prepare`
-
-- 返回：
-  - `policy.passed`
-  - `policy.issues`
-  - `approval_required`
-
-### D. approve（人工审批）
-
-`POST /v1/releases/{release_id}/approve`
-
-- `decision=approved|rejected`
-- 记录审批人和备注
-
-### E. submit（受双闸门约束，异步入队）
-
-`POST /v1/releases/{release_id}/submit`
-
-- 若未通过 policy：`release_policy_check_failed`
-- 若未人工审批：`release_requires_human_approval`
-- 双闸门都通过后立即返回 `status=submitting`（`agent_c_status=building`）；Gradle + Play 在后台 worker 执行
-- 轮询 `GET /v1/releases/{release_id}` 直至 `dry_run_complete` / `published` / `failed`（建议最长 1800s）
-
-### F. status（独立 release 生命周期）
-
-`GET /v1/releases/{release_id}`
-
-- 查看 `state` / `policy` / `approval`
-
----
-
-## 4) 审计与回放
-
-`GET /v1/audit/replay`
-
-常用参数：
-
-- `run_id`
-- `release_id`
-- `after_id`
-- `limit`
-
-用途：
-
-- 回放一次 run/release 的关键事件
-- 辅助事故排查与合规审计
-
----
-
-## 5) Secrets 推荐用法
-
-推荐：
-
-- `SECRET_PROVIDER=env_file_fallback`
-- `SECRET_STORE_DIR=./secrets`
-
-可在 `secrets/` 下放：
-
-- `API_TOKEN`
-- `WEBHOOK_SECRET`
 - `DEEPSEEK_API_KEY`
+- `ANDROID_RELEASE_TRACK=internal`
+- `GOOGLE_PLAY_SERVICE_ACCOUNT_FILE`
+- `ANDROID_KEYSTORE_PATH`
+- `PACKAGE_POOL`
 
-避免把敏感值长期放在 `.env`。
+## 3. 启动前后端
 
----
-
-## 6) 产物与观测
-
-终态反馈中重点看：
-
-- `artifacts.metrics.phase_durations_seconds`
-- `artifacts.metrics.llm_usage`
-- `artifacts.metrics.alerts`
-- `release_handoff.build_provenance.backend_target`
-
-产物路径默认是 URI（`object://...`），本机调试可看 `artifacts.local_paths`。
-
----
-
-## 7) 真上架（internal track）
-
-完整配置清单见 [`play-console-setup-checklist.md`](play-console-setup-checklist.md)。
-
-### 快速步骤
-
-1. 配置 `play-sa.json`、`release.jks`、`ANDROID_KEY_*`
-2. 安装依赖：`pip install -e ".[publish]"`（Craftsman 目录）
-3. 设置 `PUBLISHER_DRY_RUN=false`、`ANDROID_RELEASE_TRACK=internal`
-4. Play Console 手动创建 app（包名与 Agent A 输出一致）
-5. 完成数据安全、内容分级、隐私政策 URL
-6. 添加 internal 测试员 Gmail
-
-### 一条命令发布
+### 3.1 安装依赖
 
 ```powershell
-# Craftsman 已启动
-cd hunter
-hunter run "做一个离线番茄钟" --publish
+cd D:\A\hunter-craftsman\craftsman
+pip install -e ".[dev,publish]"
 ```
 
-成功时 Agent C 返回 `agent_c_status=submitted`，Play Console → Internal testing 可见新 versionCode。
+### 3.2 启动 Dashboard
 
-### Agent C 自动完成
+```powershell
+cd D:\A\hunter-craftsman\craftsman
+$env:PYTHONPATH="D:\A\hunter-craftsman\hunter\src;D:\A\hunter-craftsman\craftsman"
+python .\scripts\serve_dashboard.py
+```
 
-- versionCode 递增（对比 Play track 与本地 Gradle）
-- Gradle `bundleRelease` + release 签名
-- 商店文案 / 图标 / 截图上传（来自 B 产物）
-- Play Edits API：bundle → internal track → commit
+打开：
 
-### 发布 API 状态
+- `http://127.0.0.1:8791/dashboard`
+- `http://127.0.0.1:8791/health`
 
-`POST /v1/releases/{id}/submit` 在 live 模式下返回：
+### 3.3 启动后先看什么
 
-- `status=published`（或 `dry_run_complete` 在 dry-run 时）
-- `agent_c_status=submitted`
-- `upload.store_response` 含 versionCode 与 commit 信息
+先确认三件事：
+
+- `health` 是正常的。
+- Dashboard 能打开。
+- 页面里没有明显报错。
+
+## 4. 正常工作流
+
+### 第 1 步：开始真实需求发现
+
+在 Dashboard 的“机会发现”页点击开始。
+
+这一步系统会做：
+
+1. 生成搜索方向。
+2. 搜索 Google Play。
+3. 扫竞品详情。
+4. 抓低分评论。
+5. 聚合痛点。
+6. 生成候选需求。
+
+你要看的是：
+
+- 当前阶段是否在推进。
+- 有没有真实搜索词。
+- 有没有竞品和评论证据。
+- 有没有候选进入需求池。
+
+### 第 2 步：人工挑一个候选
+
+进入“需求池”页，看每个候选的：
+
+- App 名称
+- 细分领域
+- 目标用户
+- 痛点摘要
+- 来源 App
+- 证据强度
+- 机会分
+- 适配分
+
+你要做的是：
+
+- 选一个最像真实产品机会的候选。
+- 不要选证据太弱、太空、太泛的方向。
+- 默认是人工确认后再进入生成。
+
+### 第 3 步：开始代码生成
+
+点击“进入生成”后，系统会：
+
+1. 生成 `implementation_plan.json`。
+2. 生成 Android 代码。
+3. 编译。
+4. 跑质量检查。
+5. 产出质量报告。
+
+你要看的是：
+
+- 是否有主页面。
+- 是否有交互控件。
+- 是否有本地状态。
+- 质量分是否达到发布门槛。
+
+### 第 4 步：质量达标后自动准备发布
+
+质量通过后，系统会自动进入发布准备：
+
+- 选包名池里的包名。
+- 检查签名。
+- 检查 metadata。
+- 检查 Play 权限。
+- 构建 AAB。
+
+### 第 5 步：真实上传到 Google Play internal testing
+
+这一部是真实上传，不是模拟。
+
+系统会把产物上传到：
+
+- Google Play Console
+- 对应 App 的 `Internal testing` 轨道
+
+上传动作通常是通过 Google Play Android Publisher API 的 edits 流程完成的：
+
+1. 创建 edit。
+2. 上传 AAB。
+3. 写入商店素材。
+4. 设置 internal testing 轨道。
+5. commit 提交。
+
+如果成功，Dashboard 会显示：
+
+- `uploading_internal`
+- `internal_submitted`
+
+这表示已经进到 Play Console 的 internal testing 里了。
+
+## 5. 人类在自动上传里要做什么
+
+### 你需要做的
+
+- 预先创建 Play Console App。
+- 把包名放进 `PACKAGE_POOL`。
+- 配好 service account。
+- 配好 keystore。
+- 确保 release track 是 `internal`。
+- 发现失败时按提示修权限、包名或素材。
+
+### 你不需要每次做的
+
+- 不需要手工打包 APK。
+- 不需要手工上传 AAB。
+- 不需要每次手工填 metadata。
+- 不需要每次手工去 Play Console 点发布。
+
+### 上传是传到哪里
+
+上传目标只有一个：
+
+- Google Play Console 里那个已经预创建好的 App
+- 它的 `Internal testing` 轨道
+
+不是传到别的服务器，也不是传到本地目录。
+
+## 6. 录演示视频时怎么讲
+
+建议按这个顺序演示：
+
+1. 打开 Dashboard。
+2. 先看“机会发现”。
+3. 点击开始发现，展示阶段变化。
+4. 进入“需求池”，展示候选、证据和评分。
+5. 选择一个候选进入生成。
+6. 展示生成进度和质量分。
+7. 展示发布配置里的包名池。
+8. 展示最终提交到 internal testing。
+
+## 7. 常见失败和处理
+
+### 7.1 发现失败
+
+常见原因：
+
+- 代理没配好。
+- 搜索词太窄。
+- Google Play 请求失败。
+- 评论证据太少。
+
+处理：
+
+- 检查代理。
+- 换更宽的搜索词。
+- 保留失败，不要造结果。
+
+### 7.2 生成失败
+
+常见原因：
+
+- 代码没编过。
+- UI 太空。
+- 没有交互控件。
+- 没有本地状态。
+- 质量分太低。
+
+处理：
+
+- 先看质量报告。
+- 再看 build log。
+- 必要时缩小功能范围。
+
+### 7.3 发布失败
+
+常见原因：
+
+- 包名没在 Play Console 预创建。
+- service account 没权限。
+- versionCode 冲突。
+- metadata 不完整。
+- Play API 临时失败。
+
+处理：
+
+- `package_not_precreated`：先去 Play Console 创建 App。
+- `service_account_permission`：先补权限。
+- `version_code_conflict`：提高 versionCode 后重试。
+- `play_api_transient`：稍后重试。
+
+## 8. 你可以直接照着做的一套最短流程
+
+```powershell
+cd D:\A\hunter-craftsman\craftsman
+copy .env.example .env
+$env:HTTP_PROXY="http://127.0.0.1:10808"
+$env:HTTPS_PROXY="http://127.0.0.1:10808"
+$env:PYTHONPATH="D:\A\hunter-craftsman\hunter\src;D:\A\hunter-craftsman\craftsman"
+python .\scripts\serve_dashboard.py
+```
+
+然后在浏览器里：
+
+1. 打开 Dashboard。
+2. 启动机会发现。
+3. 选一个候选。
+4. 进入生成。
+5. 等待自动上传 internal testing。
+
+## 9. 一句话总结
+
+这套系统的真实闭环就是：
+
+**Google Play 找机会 -> 人工选候选 -> 自动生成 App -> 自动质量检查 -> 自动上传到 Play internal testing**
+
+## 10. 跑完后怎么确认
+
+一轮完整流程成功后，至少确认三处：
+
+1. Dashboard 生成进度显示质量分 `>= 75`，并且发布阶段为“已提交测试”。
+2. Google Play Console -> 对应 App -> Internal testing 显示新版本已发布给内部测试人员。
+3. 本地 `workspace/<run_id>/artifacts/screenshots/` 有生成截图，`artifacts/app-release.aab` 存在。
+
+2026-07-03 已跑通的参考记录：
+
+```text
+App 方向：checklist app
+生成 App：Checklist App MVP
+包名：com.AEM.template002
+run_id：4aa416a6-181e-4b10-95c4-c584f03cf485
+release_id：rel-4aa416a6-181e-4b10-95c4-c584f03cf485
+Play Console：internal testing 已发布
+versionName：1.0.1
+versionCode：3
+```
+
+## 11. 怎么看生成 App 的真实内容
+
+Google Play Console 只能证明发布状态，不能像手机一样展示 App 的真实交互界面。
+
+要看 App 长什么样：
+
+1. 在 Dashboard 的“生成进度”查看 App 名称、质量分和发布状态。
+2. 打开本地生成截图：
+
+```text
+craftsman/workspace/<run_id>/artifacts/screenshots/
+```
+
+3. 安装 APK 到手机或模拟器：
+
+```text
+craftsman/workspace/<run_id>/artifacts/app-debug.apk
+```
+
+4. 或者用内部测试账号从 Google Play 安装 internal testing 版本。
+
+如果 Play Console 里仍显示 `AEM Template 002` 这类名称，而不是生成 App 名称，通常是因为这次只上传了 AAB，商店素材没有同步成功。发布链路仍然可以成功，但产品展示素材需要后续补同步或手动更新。
+
+## 12. 包名池用完怎么办
+
+每个新 App 都需要一个新的 Play Console 包名。已经提交 internal 的包名不能再作为新 App 使用。
+
+如果 Dashboard 显示：
+
+```text
+可用包名：0
+需要处理：18
+```
+
+说明当前没有可用于新发布的包名。下一轮前需要：
+
+1. 在 Play Console 创建新 App，例如 `AEM Template 003`。
+2. 软件包名称填写 `com.AEM.template003`。
+3. 给 service account 授权该 App。
+4. 回 Dashboard 点击“同步配置”。
+5. 点击“验证包名”。
+6. 等可用包名变成 `1` 后再开始下一轮。
+
+“同步配置”只是导入 `.env PACKAGE_POOL` 名单；“验证包名”才会连接 Google Play 检查这个包名是否真的能发布。
