@@ -552,7 +552,7 @@ def main() -> None:
     run_p.add_argument(
         "--publish",
         action="store_true",
-        help="实现完成后调用 Agent C（打包/签名/上传 Play，默认 dry-run）",
+        help="实现完成后调用 Agent C（打包/签名/上传 Google Play internal）",
     )
     run_p.add_argument(
         "--no-auto-approve",
@@ -596,7 +596,7 @@ def main() -> None:
     connect_p.add_argument(
         "--publish",
         action="store_true",
-        help="实现完成后调用 Agent C（打包/签名/上传 Play，默认 dry-run）",
+        help="实现完成后调用 Agent C（打包/签名/上传 Google Play internal）",
     )
     connect_p.add_argument(
         "--no-auto-approve",
@@ -700,3 +700,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

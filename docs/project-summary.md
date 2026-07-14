@@ -197,7 +197,7 @@ Phase 3 中 **多机会并行队列**、**批量 autopilot** 尚未做（按需�
 
 ```env
 DEEPSEEK_API_KEY=...          # 必需
-TAVILY_API_KEY=...            # autopilot 必需
+TAVILY_API_KEY=...            # 可选；仅在启用 Tavily web_search 补充搜索时需要
 CRAFTSMAN_API_TOKEN=...       # 可选，与 Craftsman 一致
 ```
 
@@ -209,8 +209,7 @@ GATE_AUTO_ACCEPT=true
 ANDROID_BUILD_BACKEND=auto       # Docker 可用时真编译
 SKIP_GRADLE_BUILD=false          # 配合 Docker auto；无 Docker 时可 true
 PRIVACY_DEPLOY_DRY_RUN=true      # live 时 false + CF token
-ANDROID_RELEASE_TRACK=true           # live 上架时 false
-ANDROID_RELEASE_TRACK=internal
+ANDROID_RELEASE_TRACK=internal   # 当前真实发布目标为 Google Play internal
 DEEPSEEK_API_KEY=...
 ```
 
@@ -333,3 +332,4 @@ start http://127.0.0.1:8791
 | `hunter/feedback/` | Hunter 保存的反馈副本 |
 
 清理开发产物：可删除 `workspace/*` 与 `callbacks/*`（不影响代码）。
+

@@ -99,7 +99,7 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
 copy .env.example .env
-# 编辑 .env：DEEPSEEK_API_KEY + TAVILY_API_KEY
+# 编辑 .env：至少配置 DEEPSEEK_API_KEY；若启用 web_search，再配置 TAVILY_API_KEY
 ```
 
 ```powershell
@@ -139,7 +139,7 @@ copy .env.example .env
 1. **换模型**：默认 `deepseek-chat`；**不要**用 `deepseek-reasoner`、`deepseek-v4-pro`（与工具/多轮不兼容，会报 `reasoning_content` 错误）
 2. **换回 OpenAI**：`settings.yaml` 设 `provider: openai`、`name: gpt-4o-mini`，`.env` 填 `OPENAI_API_KEY`
 3. **换角色**：编辑 `prompts/specialist_system.md` 或新建 prompt 并改 `agent.system_prompt`
-4. **Tavily**：`.env` 配置 `TAVILY_API_KEY`，默认工具 `web_search`（`tools/tavily_search.py`）
+4. **Tavily**：若需要额外网页搜索，再在 `.env` 配置 `TAVILY_API_KEY`；Google Play 主发现链路使用 `google-play-scraper`
 
 ### Tavily 配置
 
@@ -152,3 +152,4 @@ copy .env.example .env
 
 - [LangChain](https://python.langchain.com/) — 模型、Message、Tool 抽象
 - [LangGraph](https://langchain-ai.github.io/langgraph/) — `create_react_agent` ReAct 编排
+
