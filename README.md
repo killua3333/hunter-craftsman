@@ -2,6 +2,8 @@
 
 Hunter-Craftsman 是一个面向 Android 工具类 App 的三段式 AI 流水线：
 
+> 交付基线说明：本次对外交付、部署、文档和目录结构，请统一以 GitHub 分支 delivery/2026-07-14 为准。main 中可能保留历史阶段代码或旧目录结构，例如早期的 dashboard/gateway、dashboard/ui，不作为本次部署依据。
+
 1. 从 Google Play 搜索真实竞品、评论和差评痛点，形成可复核的需求候选池。
 2. 将人工选中的需求生成 Kotlin + Compose Android MVP，并做编译、交互、素材和质量检查。
 3. 将达到质量门槛的 App 构建为 AAB，通过包名池校验后提交到 Google Play `internal` 内部测试轨道。
@@ -109,3 +111,4 @@ $env:PYTHONPATH="D:\A\hunter-craftsman\hunter\src;D:\A\hunter-craftsman\craftsma
 - [docs/agent-b-code-quality.md](docs/agent-b-code-quality.md)：代码生成质量说明。
 - [docs/agent-c-internal-testing.md](docs/agent-c-internal-testing.md)：Google Play internal track 发布说明。
 - [docs/play-console-setup-checklist.md](docs/play-console-setup-checklist.md)：Play Console 与包名池配置清单。
+
