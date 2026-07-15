@@ -18,7 +18,7 @@ from craftsman.publisher.play_client import (
     map_play_api_error,
     service_account_info,
 )
-from craftsman.secrets import resolve_secret_path, resolve_secret_value
+from craftsman.secret_store import resolve_secret_path, resolve_secret_value
 
 
 def run_release_preflight(
@@ -288,3 +288,4 @@ def _operator_action_from_play_message(message: str) -> str:
     if failure_class == "internal_track_unavailable":
         return "请检查 Play Console 内部测试轨道是否已启用。"
     return "请查看 Google Play API 返回信息后重试。"
+

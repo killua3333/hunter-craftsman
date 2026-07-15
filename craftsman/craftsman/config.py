@@ -1,4 +1,4 @@
-﻿from pathlib import Path
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -107,7 +107,7 @@ class Settings(BaseSettings):
     min_free_disk_bytes: int = 8 * 1024 * 1024 * 1024
 
     def resolved_api_key(self) -> str | None:
-        from craftsman.secrets import resolve_secret_value
+        from craftsman.secret_store import resolve_secret_value
 
         key = resolve_secret_value("DEEPSEEK_API_KEY", self.deepseek_api_key)
         if key:
@@ -118,14 +118,15 @@ class Settings(BaseSettings):
         return self.deepseek_api_base.rstrip("/")
 
     def resolved_api_token(self) -> str | None:
-        from craftsman.secrets import resolve_secret_value
+        from craftsman.secret_store import resolve_secret_value
 
         return resolve_secret_value("API_TOKEN", self.api_token)
 
     def resolved_webhook_secret(self) -> str | None:
-        from craftsman.secrets import resolve_secret_value
+        from craftsman.secret_store import resolve_secret_value
 
         return resolve_secret_value("WEBHOOK_SECRET", self.webhook_secret)
 
 
 settings = Settings()
+

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from craftsman.config import settings
-from craftsman.secrets import resolve_secret_path, resolve_secret_value
+from craftsman.secret_store import resolve_secret_path, resolve_secret_value
 
 PLAY_SCOPE = "https://www.googleapis.com/auth/androidpublisher"
 # Phase 2: GCS scope for reading Play financial reports
@@ -82,3 +82,4 @@ def map_play_api_error(exc: Exception) -> str:
     if "applicationnotfound" in lower.replace(" ", ""):
         return "package name not registered in Play Console"
     return message[:500]
+

@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 
 from craftsman.config import settings
-from craftsman.secrets import resolve_secret_path, resolve_secret_value
+from craftsman.secret_store import resolve_secret_path, resolve_secret_value
 
 
 def write_keystore_properties(project_dir: Path) -> tuple[bool, str]:
@@ -60,3 +60,4 @@ def cleanup_keystore_properties(project_dir: Path) -> None:
 def signing_configured() -> bool:
     path = resolve_secret_path("ANDROID_KEYSTORE_PATH", settings.android_keystore_path)
     return bool(path and path.is_file())
+

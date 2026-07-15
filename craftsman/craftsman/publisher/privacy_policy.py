@@ -12,7 +12,7 @@ from typing import Any
 import httpx
 
 from craftsman.config import settings
-from craftsman.secrets import resolve_secret_value
+from craftsman.secret_store import resolve_secret_value
 
 _PLACEHOLDER_MARKERS = ("example.com", "placeholder", "http://localhost")
 _CF_API = "https://api.cloudflare.com/client/v4"
@@ -269,3 +269,4 @@ def ensure_privacy_url(
             encoding="utf-8",
         )
     return result
+
