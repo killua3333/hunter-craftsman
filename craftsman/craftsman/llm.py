@@ -6,7 +6,7 @@ from contextvars import ContextVar
 from typing import Any
 
 from craftsman.config import ROOT, settings
-from craftsman.prompts import load_prompt
+from craftsman.prompt_loader import load_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -227,3 +227,4 @@ def fix_code_llm(
         temperature=0.1,
     )
     return _files_from_response(data)
+
