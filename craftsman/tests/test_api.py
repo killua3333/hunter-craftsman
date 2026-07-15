@@ -347,6 +347,7 @@ def test_dashboard_overview_and_requeue_endpoints(tmp_path, monkeypatch):
         page = client.get("/dashboard")
         assert page.status_code == 200
         assert "应用机会工作台" in page.text
+        assert page.headers["cache-control"] == "no-store, no-cache, must-revalidate"
 
         run = client.post(
             f"/v1/opportunities/{req['opportunity_id']}/implement",
@@ -363,6 +364,7 @@ def test_dashboard_overview_and_requeue_endpoints(tmp_path, monkeypatch):
 
         overview = client.get("/dashboard/api/overview")
         assert overview.status_code == 200
+        assert overview.headers["cache-control"] == "no-store, no-cache, must-revalidate"
         body = overview.json()
         assert body["opportunities"] == []
         pipeline = next(item for item in body["pipeline"] if item["technical"]["run_status"] == "implementation_complete")

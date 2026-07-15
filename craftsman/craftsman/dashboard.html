@@ -170,7 +170,7 @@ function renderSummary(data){
   $('bStatus').textContent = statusText(a.agent_b?.status); $('bStep').textContent = humanDetail(a.agent_b?.current_step);
   $('cStatus').textContent = statusText(a.agent_c?.status); $('cStep').textContent = humanDetail(a.agent_c?.current_step);
   $('packageMetric').textContent = fmt(pool.available); $('packageHint').textContent = a.agent_c?.operator_action || '等待发布配置';
-  const checks=s.checks||{}; $('opsChecks').innerHTML = [['工作区',checks.workspace_ok],['回调目录',checks.callbacks_ok],['数据库',checks.database_ok],['????','????']].map(([k,v])=>`<div class="event"><b>${k}</b><div class="muted">${fmt(v)}</div></div>`).join('');
+  const checks=s.checks||{}; $('opsChecks').innerHTML = [['工作区',checks.workspace_ok],['回调目录',checks.callbacks_ok],['数据库',checks.database_ok],['环境状态',s.ready]].map(([k,v])=>`<div class="event"><b>${k}</b><div class="muted">${fmt(v)}</div></div>`).join('');
   renderDiscovery(data); renderPackagePool(data.package_pool || {summary:pool,items:[],operator_action:a.agent_c?.operator_action});
 }
 function eventClass(stage){ return stage === 'failed' || String(stage||'').includes('failed') ? 'failed' : 'running'; }

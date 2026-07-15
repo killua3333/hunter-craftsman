@@ -91,11 +91,11 @@ def _opportunity_from_run(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "opportunity_id": row.get("opportunity_id"),
         "run_id": row.get("run_id"),
-        "app_name": opportunity.get("app_name") or app.get("name") or "鍘嗗彶浠诲姟",
+        "app_name": opportunity.get("app_name") or app.get("name") or "历史任务",
         "niche": opportunity.get("niche") or "历史任务，暂无细分领域分析",
-        "target_users": opportunity.get("target_users") or "鏆傛棤鐢ㄦ埛鐢诲儚",
+        "target_users": opportunity.get("target_users") or "暂无用户画像",
         "pain_points": pain_points[:3] if isinstance(pain_points, list) else [],
-        "competitor_gap": opportunity.get("competitor_gap") or "鏆傛棤绔炲搧缂哄彛鍒嗘瀽",
+        "competitor_gap": opportunity.get("competitor_gap") or "暂无竞品缺口分析",
         "recommended_features": _feature_titles(requirement),
         "monetization": opportunity.get("monetization") or requirement.get("monetization") or "free",
         "price_tier": opportunity.get("price_tier") or requirement.get("price_tier"),
@@ -109,7 +109,7 @@ def _opportunity_from_run(row: dict[str, Any]) -> dict[str, Any]:
             "opportunity": opportunity.get("opportunity_score"),
             "build_fit": opportunity.get("build_fit_score"),
         },
-        "decision_reason": opportunity.get("decision_reason") or "鍘嗗彶浠诲姟锛屾殏鏃犻€夋嫨鐞嗙敱",
+        "decision_reason": opportunity.get("decision_reason") or "历史任务，暂无选择理由",
         "rejected_candidates": opportunity.get("rejected_candidates") or [],
         "status": status,
         "phase": row.get("phase"),
@@ -168,10 +168,10 @@ def _build_pipeline_items(
                 "agent_a": {
                     "label": "发现需求",
                     "status": "done" if row.get("opportunity_id") else "waiting",
-                    "detail": "闇€姹傚凡杩涘叆鐢熸垚闃熷垪" if row.get("opportunity_id") else "绛夊緟 Agent A",
+                    "detail": "需求已进入生成队列" if row.get("opportunity_id") else "等待 Agent A",
                 },
                 "agent_b": {
-                    "label": "鐢熸垚 App",
+                    "label": "生成 App",
                     "status": _stage_status(run_status, done={"implementation_complete"}, failed={"failed", "implementation_failed"}),
                     "detail": row.get("phase_detail") or run_job.get("last_error") or run_status,
                     "can_requeue": bool(run_job.get("status") in {"dead_letter", "done"}),
@@ -180,9 +180,9 @@ def _build_pipeline_items(
                     "release_ready": quality_report.get("release_ready") if quality_report else feedback.get("release_ready"),
                 },
                 "agent_c": {
-                    "label": "鍐呴儴娴嬭瘯涓婃灦",
+                    "label": "内部测试上架",
                     "status": _stage_status(release_status, done={"published", "internal_submitted"}, failed={"failed", "needs_manual_action"}),
-                    "detail": agent_c.get("operator_action") or release_details.get("message") or agent_c.get("agent_c_status") or release_status or "绛夊緟鍙戝竷浜ゆ帴",
+                    "detail": agent_c.get("operator_action") or release_details.get("message") or agent_c.get("agent_c_status") or release_status or "等待发布交接",
                     "track": agent_c.get("track") or release_details.get("track") or settings.android_release_track,
                     "can_requeue": bool(release_job.get("status") in {"dead_letter", "done"}),
                 },
@@ -342,19 +342,19 @@ def _build_agent_status(
     return {
         "agent_a": {
             "status": "ready" if latest_run else "idle",
-            "current_step": latest_run.get("opportunity_id") or "绛夊緟鍚姩鏈轰細鍙戠幇",
+            "current_step": latest_run.get("opportunity_id") or "等待启动机会发现",
             "last_error": None,
             "updated_at": latest_run.get("updated_at"),
         },
         "agent_b": {
             "status": latest_run.get("status") or "idle",
-            "current_step": latest_run.get("phase_detail") or latest_run.get("phase") or "绛夊緟鐢熸垚浠诲姟",
+            "current_step": latest_run.get("phase_detail") or latest_run.get("phase") or "等待生成任务",
             "last_error": latest_run.get("error_message") or run_job.get("last_error"),
             "updated_at": latest_run.get("updated_at"),
         },
         "agent_c": {
             "status": latest_release.get("status") or "idle",
-            "current_step": "Google Play internal track" if latest_release else "绛夊緟鍙戝竷浠诲姟",
+            "current_step": "Google Play internal track" if latest_release else "等待发布任务",
             "last_error": release_job.get("last_error"),
             "updated_at": latest_release.get("updated_at"),
         },
@@ -1013,7 +1013,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="Craftsman Agent B",
         version="0.1.0",
-        description="澶氬钩鍙拌嚜鍔ㄥ寲杞﹂棿锛圓ndroid 榛樿 / iOS 鍙€夛級鈥?Gate + Build + Release",
+        description="多平台自动化工作台（Android 为主 / iOS 可选）：Gate + Build + Release",
         lifespan=lifespan,
     )
 
@@ -1028,12 +1028,17 @@ def create_app() -> FastAPI:
                     content={
                         "error": {
                             "code": "rate_limited",
-                            "message": "璇锋眰棰戞杩囬珮锛岃绋嶅悗閲嶈瘯",
+                            "message": "请求过于频繁，请稍后重试",
                             "retryable": True,
                         }
                     },
                 )
-        return await call_next(request)
+        response = await call_next(request)
+        if path == "/" or path.startswith("/dashboard"):
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+        return response
 
     @app.get("/health")
     def health() -> dict[str, Any]:
@@ -1179,14 +1184,14 @@ def create_app() -> FastAPI:
         dead_letter_runs = sum(1 for row in run_jobs.values() if row.get("status") == "dead_letter")
         dead_letter_releases = sum(1 for row in release_jobs.values() if row.get("status") == "dead_letter")
 
-        # Phase 3: Agent D 鈥?embedded earnings summary
+        # Phase 3: Agent D embedded earnings summary
         earnings_summary: dict[str, Any] = {
             "configured": bool(settings.play_developer_bucket_id),
             "total_earnings_estimated": 0.0,
             "app_count": 0,
             "status": "not_configured" if not settings.play_developer_bucket_id else "available",
         }
-        # 灏濊瘯璇诲彇缂撳瓨鐨勬敹鍏ユ暟鎹紙鑻ユ湁锛?
+        # 尝试读取缓存的收入数据（如果有）
         try:
             cache_path = _store._db_path.parent / "earnings_cache.json" if hasattr(_store, "_db_path") else None
             if cache_path and cache_path.is_file():
@@ -1304,7 +1309,7 @@ def create_app() -> FastAPI:
             result["app_count"] = int(data.get("sales", {}).get("app_count", 0) or data.get("earnings", {}).get("app_count", 0))
             result["status"] = "fetched"
 
-            # 缂撳瓨鍒版枃浠?
+            # 缓存到文件
             try:
                 assert _store is not None
                 db_dir = _store._db_path.parent
