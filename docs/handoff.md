@@ -1,4 +1,4 @@
-﻿# Hunter-Craftsman 项目交接说明
+# Hunter-Craftsman 项目交接说明
 
 本文是交接入口。目标是让接手方能快速知道：项目能做什么、怎么启动、怎么跑一轮、哪些地方还不能承诺给客户。
 
@@ -6,15 +6,9 @@
 
 Hunter-Craftsman 是一个用于探索 Android 工具类 App 机会的 AI 流水线：先从 Google Play 找真实需求，再生成 Android MVP，最后尝试提交到 Google Play 内部测试轨道。
 
-## 当前代码分支
+## 当前交付基线
 
-当前开发分支：
-
-```text
-fix/worker-deadlock-and-play-api-proxy
-```
-
-建议交接后先基于这个分支继续验证，再决定是否合并到主分支。
+本次对外交付、部署和文档说明，请统一以 GitHub 分支 `delivery/2026-07-14` 为准。`main` 中可能保留历史阶段代码或旧目录结构，不作为本次部署依据。
 
 ## 目录结构
 
@@ -26,7 +20,7 @@ hunter-craftsman/
     craftsman/dashboard.html      # 单文件前端工作台
     craftsman/orchestrator/       # 生成、质量、验证流程
     craftsman/publisher/          # Google Play internal track 发布
-    scripts/serve_dashboard.py    # 本地启动入口
+    scripts/serve_dashboard.py    # 本地启动包装入口
     tests/                        # Craftsman 测试
   scheduler/                      # 自动调度脚本
   docs/                           # 文档
@@ -69,6 +63,23 @@ $env:HTTPS_PROXY="http://127.0.0.1:10808"
 
 ## 启动方法
 
+推荐使用仓库根目录的共享虚拟环境。已实测可行的启动步骤如下：
+
+```powershell
+cd D:\A\hunter-craftsman
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -e .\craftsman
+python -m pip install -e ".\craftsman[publish]"
+python -m pip install -e .\hunter
+copy .\craftsman\.env.example .\craftsman\.env
+$env:PYTHONPATH="D:\A\hunter-craftsman\hunter\src;D:\A\hunter-craftsman\craftsman"
+python -m craftsman.cli serve --host 127.0.0.1 --port 8791
+```
+
+如果只需要本地快速打开 Dashboard，也可以使用包装脚本：
+
 ```powershell
 cd D:\A\hunter-craftsman\craftsman
 $env:PYTHONPATH="D:\A\hunter-craftsman\hunter\src;D:\A\hunter-craftsman\craftsman"
@@ -86,6 +97,8 @@ http://127.0.0.1:8791/dashboard
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8791/health
 ```
+
+如果仅在 `craftsman/` 子目录单独创建虚拟环境，而没有把 `hunter` 也安装进同一个环境，后续 `hunter autopilot` 将无法正常运行。因此交付环境建议统一使用仓库根目录共享 `.venv`。
 
 ## 真实业务流程
 
@@ -218,91 +231,9 @@ python -m pytest tests\test_real_discovery_api.py tests\test_quality_report.py t
 
 已通过相关回归：
 
-```text
-54 passed
-py_compile passed
-node --check dashboard JS passed
-git diff --check passed
-```
-
-下一阶段建议优先继续做 Agent B 的真实 App 体验提升和 Agent A 的需求去重，而不是继续扩大发布范围。
-
-## 2026-07-03 真实端到端验证
-
-本轮已经在真实 Google Play Console 环境跑通一条完整链路：
-
-```text
-Google Play 真实需求发现 -> 候选入池 -> 自动选择 Checklist App -> Android MVP 生成 -> 质量分 100 -> 构建 AAB -> 上传 Google Play internal testing
-```
-
-验证结果：
-
-| 项目 | 结果 |
-| --- | --- |
-| discovery_run_id | `disc-680205358b` |
-| run_id | `4aa416a6-181e-4b10-95c4-c584f03cf485` |
-| release_id | `rel-4aa416a6-181e-4b10-95c4-c584f03cf485` |
-| App 方向 | checklist app |
-| 生成 App | Checklist App MVP |
-| 包名 | `com.AEM.template002` |
-| 质量分 | `100` |
-| Google Play track | `internal` |
-| Play Console 状态 | 已面向内部测试人员发布 |
-| versionName / versionCode | `1.0.1` / `3` |
-| Play edit id | `09795040429092485850` |
-
-需要特别说明：这次发布第一次尝试同步商店素材时失败，系统随后按稳定策略重试为“只上传 AAB 到 internal track”，最终成功。因此 Play Console 能看到内部测试版本，但不会显示生成 App 的真实截图/描述更新。App 的真实界面预览需要在 Dashboard、生成截图或安装 APK 中查看。
-
-本次生成产物位于：
-
-```text
-craftsman/workspace/4aa416a6-181e-4b10-95c4-c584f03cf485/artifacts/
-```
-
-关键文件：
-
-```text
-app-debug.apk
-app-release.aab
-screenshots/screenshot_1.png
-screenshots/screenshot_2.png
-screenshots/screenshot_3.png
-```
-
-生成的 Checklist MVP 具备：标题输入、备注输入、添加按钮、空状态、任务列表、完成复选框、完成项删除线、本地 SharedPreferences 保存。
-
-## 当前产品认知补充
-
-### Play Console 能看到什么
-
-Google Play Console 是发布后台，不是 App 预览器。它能看到：App 壳子、包名、版本、AAB、内部测试轨道、测试人员、商店素材。它不能像手机一样直接展示 App 的交互界面。
-
-因此面向客户解释时，应说明：
-
-- Play Console 证明“已经提交到 internal testing”。
-- App 长什么样，应在 Dashboard 的生成进度/截图预览、生成截图文件或测试手机下载后查看。
-- 如果商店素材同步失败但 AAB 上传成功，Console 里的名称可能仍是预创建 App 名称，例如 `AEM Template 002`，而不是生成 App 名称。
-
-### 包名池的真实边界
-
-一个新 App 必须占用一个新的包名。已经 `submitted_internal` 的包名视为永久占用，不应释放或复用。
-
-当前稳定模型仍是：
-
-1. 人在 Play Console 预创建 App 和包名。
-2. 将包名写入 `.env PACKAGE_POOL`。
-3. Dashboard 同步配置。
-4. Dashboard 验证包名。
-5. 系统自动分配可用包名并发布 internal track。
-
-Google Play Developer API 不能稳定自动创建 Play Console App，所以包名池耗尽后仍需要人工批量创建新 App。后续可以做“包名池准备向导”，但不应承诺 API 自动创建 App。
-
-### Dashboard 待优化点
-
-本轮使用中暴露出几个面向客户的关键体验问题：
-
-- 发布配置页需要持续显示完整包名池，而不是只显示汇总数字。
-- 已提交 internal 的包名不应展示“释放/标记无效”等容易误操作的主按钮。
-- 生成进度页应直接展示本次发布的 App 方向、核心功能、包名、版本和截图预览。
-- 自动刷新会造成页面闪烁，演示时建议关闭；产品上应减少整块重绘。
-- Google Play store listing 素材同步失败后，目前会降级为只上传 AAB；需要在 Dashboard 用人话明确提示“已发布测试版本，但商店素材未更新”。
+- 包名池同步与分配
+- 质量报告聚合
+- release preflight
+- overview API
+- internal track submit 状态轮询
+- 真实 discovery API 展示

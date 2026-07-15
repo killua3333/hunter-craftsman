@@ -223,7 +223,7 @@ def build_document() -> Path:
     add_paragraph(doc, "4. 真实密钥、service account JSON、keystore、数据库和 workspace 不建议上传至代码仓库。")
 
     doc.add_heading("5. 服务启动与验证", level=1)
-    add_paragraph(doc, "推荐先启动 Craftsman，再触发 Hunter。Hunter 是触发器，Craftsman 是长期运行的服务端。")
+    add_paragraph(doc, "推荐先启动 Craftsman，再触发 Hunter。Hunter 是触发器，Craftsman 是长期运行的服务端。部署时建议使用仓库根目录的共享虚拟环境，并在同一个环境中同时安装 Craftsman、Craftsman 发布依赖和 Hunter。")
     add_paragraph(doc, "5.1 手动启动方式")
     add_code_block(
         doc,
@@ -232,6 +232,10 @@ def build_document() -> Path:
             "source .venv/bin/activate",
             "python -m craftsman.cli serve --host 127.0.0.1 --port 8791",
         ],
+    )
+    add_paragraph(
+        doc,
+        "如果仅在 `craftsman/` 子目录单独创建虚拟环境，而没有把 `hunter` 也安装进同一个环境，后续 `hunter autopilot` 将无法正常运行。因此交付环境建议统一使用仓库根目录共享 `.venv`。",
     )
     add_paragraph(doc, "另开一个终端触发 Hunter：")
     add_code_block(
@@ -403,4 +407,6 @@ def build_document() -> Path:
 if __name__ == "__main__":
     path = build_document()
     print(path)
+
+
 

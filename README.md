@@ -2,7 +2,7 @@
 
 Hunter-Craftsman 是一个面向 Android 工具类 App 的三段式 AI 流水线：
 
-> 交付基线说明：本次对外交付、部署、文档和目录结构，请统一以 GitHub 分支 delivery/2026-07-14 为准。main 中可能保留历史阶段代码或旧目录结构，例如早期的 dashboard/gateway、dashboard/ui，不作为本次部署依据。
+> 交付基线说明：本次对外交付、部署、文档和目录结构，请统一以 GitHub 分支 `delivery/2026-07-14` 为准。`main` 中可能保留历史阶段代码或旧目录结构，例如早期的 `dashboard/gateway`、`dashboard/ui`，不作为本次部署依据。
 
 1. 从 Google Play 搜索真实竞品、评论和差评痛点，形成可复核的需求候选池。
 2. 将人工选中的需求生成 Kotlin + Compose Android MVP，并做编译、交互、素材和质量检查。
@@ -38,12 +38,25 @@ Hunter-Craftsman 是一个面向 Android 工具类 App 的三段式 AI 流水线
 
 ## 本地启动
 
-推荐在 Windows PowerShell 中运行：
+推荐使用仓库根目录的共享虚拟环境。已实测可行的 Windows PowerShell 启动步骤如下：
+
+```powershell
+cd D:\A\hunter-craftsman
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -e .\craftsman
+python -m pip install -e ".\craftsman[publish]"
+python -m pip install -e .\hunter
+copy .\craftsman\.env.example .\craftsman\.env
+$env:PYTHONPATH="D:\A\hunter-craftsman\hunter\src;D:\A\hunter-craftsman\craftsman"
+python -m craftsman.cli serve --host 127.0.0.1 --port 8791
+```
+
+如果只是本地快速打开 Dashboard，也可以在 `craftsman/` 目录运行：
 
 ```powershell
 cd D:\A\hunter-craftsman\craftsman
-copy .env.example .env
-pip install -e ".[dev,publish]"
 $env:PYTHONPATH="D:\A\hunter-craftsman\hunter\src;D:\A\hunter-craftsman\craftsman"
 python .\scripts\serve_dashboard.py
 ```
@@ -111,4 +124,3 @@ $env:PYTHONPATH="D:\A\hunter-craftsman\hunter\src;D:\A\hunter-craftsman\craftsma
 - [docs/agent-b-code-quality.md](docs/agent-b-code-quality.md)：代码生成质量说明。
 - [docs/agent-c-internal-testing.md](docs/agent-c-internal-testing.md)：Google Play internal track 发布说明。
 - [docs/play-console-setup-checklist.md](docs/play-console-setup-checklist.md)：Play Console 与包名池配置清单。
-
