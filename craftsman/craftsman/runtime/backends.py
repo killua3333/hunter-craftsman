@@ -2,6 +2,7 @@
 
 import platform
 from pathlib import Path
+from urllib.parse import urlparse
 
 from craftsman.runtime.docker_android import (
     effective_skip_gradle_build,
@@ -13,6 +14,33 @@ from craftsman.tools.shell import run_cmd
 from craftsman.runtime.interfaces import BuildResult, ExecutionBackend
 from craftsman.runtime.pool import choose_backend_target
 from craftsman.config import settings
+
+
+def _java_proxy_options(proxy_url: str) -> str | None:
+    proxy_url = (proxy_url or '').strip()
+    if not proxy_url:
+        return None
+    normalized = proxy_url if '://' in proxy_url else f'http://{proxy_url}'
+    parsed = urlparse(normalized)
+    host = parsed.hostname
+    port = parsed.port
+    if not host or not port:
+        return None
+    scheme = (parsed.scheme or 'http').lower()
+    if scheme.startswith('socks'):
+        return f'-DsocksProxyHost={host} -DsocksProxyPort={port}'
+    return (
+        f'-Dhttps.proxyHost={host} -Dhttps.proxyPort={port} '
+        f'-Dhttp.proxyHost={host} -Dhttp.proxyPort={port}'
+    )
+
+
+def _merge_java_tool_options(existing: str, extra: str | None) -> str:
+    existing = (existing or '').strip()
+    extra = (extra or '').strip()
+    if existing and extra:
+        return f'{existing} {extra}'
+    return extra or existing
 
 
 class DemoExecutionBackend:
@@ -91,9 +119,19 @@ class AndroidGradleExecutionBackend:
         # Inject proxy and Android SDK settings for Gradle.
         import os as _os
         env = dict(_os.environ)
-        https_proxy = env.get("HTTPS_PROXY") or env.get("https_proxy") or ""
-        if https_proxy:
-            env["JAVA_TOOL_OPTIONS"] = "-Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=10808 -Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort=10808"
+        proxy_url = (
+            env.get("HTTPS_PROXY")
+            or env.get("https_proxy")
+            or env.get("HTTP_PROXY")
+            or env.get("http_proxy")
+            or ""
+        )
+        java_proxy_options = _java_proxy_options(proxy_url)
+        if java_proxy_options:
+            env["JAVA_TOOL_OPTIONS"] = _merge_java_tool_options(
+                env.get("JAVA_TOOL_OPTIONS", ""),
+                java_proxy_options,
+            )
 
         # Ensure Gradle sees the Android SDK even when it only comes from .env.
         android_home = (

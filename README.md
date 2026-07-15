@@ -61,12 +61,14 @@ $env:PYTHONPATH="D:\A\hunter-craftsman\hunter\src;D:\A\hunter-craftsman\craftsma
 python .\scripts\serve_dashboard.py
 ```
 
-如果本机需要代理访问 Google / Google Play：
+如果当前服务器访问 Google / Google Play / Tavily 需要代理，请在启动当前终端前显式设置实际可用的代理地址；如果服务器本身可以直连外网，则不需要设置代理：
 
 ```powershell
-$env:HTTP_PROXY="http://127.0.0.1:10808"
-$env:HTTPS_PROXY="http://127.0.0.1:10808"
+$env:HTTP_PROXY="http://<your-proxy-host>:<your-proxy-port>"
+$env:HTTPS_PROXY="http://<your-proxy-host>:<your-proxy-port>"
 ```
+
+这里的代理端口是服务器本机的出网代理配置，不是需要对外开放的访问端口。
 
 打开：
 

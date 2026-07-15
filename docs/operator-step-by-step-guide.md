@@ -65,12 +65,14 @@ ANDROID_KEY_PASSWORD=...
 
 ### 2.4 网络代理
 
-如果本机访问 Google 需要代理，先设置：
+如果当前服务器访问 Google Play / Google Publisher API / Tavily 需要代理，请先设置实际可用的代理地址；如果服务器可直连外网，则这一步可以跳过：
 
 ```powershell
-$env:HTTP_PROXY="http://127.0.0.1:10808"
-$env:HTTPS_PROXY="http://127.0.0.1:10808"
+$env:HTTP_PROXY="http://<your-proxy-host>:<your-proxy-port>"
+$env:HTTPS_PROXY="http://<your-proxy-host>:<your-proxy-port>"
 ```
+
+这里的代理端口只用于服务器本机出网，不是需要对外开放的访问端口。
 
 ### 2.5 `.env` 基础配置
 
@@ -306,8 +308,9 @@ python .\scripts\serve_dashboard.py
 ```powershell
 cd D:\A\hunter-craftsman\craftsman
 copy .env.example .env
-$env:HTTP_PROXY="http://127.0.0.1:10808"
-$env:HTTPS_PROXY="http://127.0.0.1:10808"
+# 只有当前服务器访问 Google / Tavily 必须经过代理时，才需要设置下面两行
+$env:HTTP_PROXY="http://<your-proxy-host>:<your-proxy-port>"
+$env:HTTPS_PROXY="http://<your-proxy-host>:<your-proxy-port>"
 $env:PYTHONPATH="D:\A\hunter-craftsman\hunter\src;D:\A\hunter-craftsman\craftsman"
 python .\scripts\serve_dashboard.py
 ```

@@ -34,20 +34,42 @@ except ModuleNotFoundError:
 
 
 def _ensure_play_proxy() -> None:
-    """确保 google-play-scraper（基于 urllib）能通过代理连接 Google Play。
+    """标准化已显式配置的代理变量，但不注入任何默认代理。
 
-    google-play-scraper 内部使用 urllib.request.urlopen，不会自动读取
-    系统代理设置。需要显式设置 HTTPS_PROXY 环境变量。
+    google-play-scraper 基于 urllib，请求会直接使用进程环境中的代理变量。
+    这里仅做大小写和 HTTP/HTTPS 键名的兼容处理；如果当前环境能直连外网，
+    就不应强行塞入 127.0.0.1:10808 之类的默认本地代理。
     """
-    for key in ("HTTPS_PROXY", "HTTP_PROXY"):
-        val = os.environ.get(key, "").strip()
-        if val:
-            return
-    # .env 中配置的代理也需要被识别
-    candidates = ["http://127.0.0.1:10808", "socks5://127.0.0.1:10808"]
-    for c in candidates:
-        os.environ.setdefault("HTTPS_PROXY", c)
-        os.environ.setdefault("HTTP_PROXY", c)
+    https_proxy = os.environ.get("HTTPS_PROXY", "").strip() or os.environ.get("https_proxy", "").strip()
+    http_proxy = os.environ.get("HTTP_PROXY", "").strip() or os.environ.get("http_proxy", "").strip()
+
+    if https_proxy and not os.environ.get("HTTPS_PROXY", "").strip():
+        os.environ["HTTPS_PROXY"] = https_proxy
+    if http_proxy and not os.environ.get("HTTP_PROXY", "").strip():
+        os.environ["HTTP_PROXY"] = http_proxy
+
+    if https_proxy and not os.environ.get("HTTP_PROXY", "").strip():
+        os.environ["HTTP_PROXY"] = https_proxy
+    if http_proxy and not os.environ.get("HTTPS_PROXY", "").strip():
+        os.environ["HTTPS_PROXY"] = http_proxy
+
+
+def _play_access_error(prefix: str, exc: Exception, **context: str) -> str:
+    detail = str(exc)
+    configured_proxy = (
+        os.environ.get("HTTPS_PROXY", "").strip()
+        or os.environ.get("HTTP_PROXY", "").strip()
+        or os.environ.get("https_proxy", "").strip()
+        or os.environ.get("http_proxy", "").strip()
+    )
+    if configured_proxy:
+        hint = " 请检查当前 HTTP_PROXY/HTTPS_PROXY 是否可用。"
+    else:
+        hint = " 如果当前服务器访问 Google Play 需要代理，请显式设置 HTTP_PROXY/HTTPS_PROXY；若服务器可直连外网，则无需配置代理。"
+
+    payload = {"error": f"{prefix}: {detail}{hint}"}
+    payload.update(context)
+    return json.dumps(payload, ensure_ascii=False)
 
 
 # google-play-scraper 常量
@@ -118,8 +140,11 @@ def play_search_apps(
     try:
         return _play_search_apps_impl(query, category, collection, count, page)
     except Exception as exc:
-        return json.dumps({"error": f"Play Store 搜索失败: {exc}", "query": query.strip() or collection.strip().upper()},
-                          ensure_ascii=False)
+        return _play_access_error(
+            "Play Store 搜索失败",
+            exc,
+            query=query.strip() or collection.strip().upper(),
+        )
 
 
 def _play_search_apps_impl(query, category, collection, count, page):
@@ -225,8 +250,7 @@ def play_get_reviews(
             indent=2,
         )
     except Exception as exc:
-        return json.dumps({"error": f"Play Store 评论获取失败: {exc}", "app_id": app_id.strip()},
-                          ensure_ascii=False)
+        return _play_access_error("Play Store 评论获取失败", exc, app_id=app_id.strip())
 
 
 @tool
@@ -276,8 +300,7 @@ def play_get_app_detail(app_id: str) -> str:
             indent=2,
         )
     except Exception as exc:
-        return json.dumps({"error": f"Play Store 详情获取失败: {exc}", "app_id": app_id.strip()},
-                          ensure_ascii=False)
+        return _play_access_error("Play Store 详情获取失败", exc, app_id=app_id.strip())
 
 
 @tool
@@ -421,8 +444,7 @@ def play_analyze_reviews(
         }, ensure_ascii=False, indent=2)
 
     except Exception as exc:
-        return json.dumps({"error": f"差评分析失败: {exc}", "app_id": app_id.strip()},
-                          ensure_ascii=False)
+        return _play_access_error("差评分析失败", exc, app_id=app_id.strip())
 
 
 @tool
@@ -520,5 +542,4 @@ def play_competitive_analysis(
         }, ensure_ascii=False, indent=2)
 
     except Exception as exc:
-        return json.dumps({"error": f"竞品分析失败: {exc}", "query": query.strip()},
-                          ensure_ascii=False)
+        return _play_access_error("竞品分析失败", exc, query=query.strip())

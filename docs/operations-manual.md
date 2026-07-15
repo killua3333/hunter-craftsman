@@ -10,12 +10,14 @@ $env:PYTHONPATH="D:\A\hunter-craftsman\hunter\src;D:\A\hunter-craftsman\craftsma
 python .\scripts\serve_dashboard.py
 ```
 
-如需代理：
+只有当前服务器访问 Google Play / Google Publisher API / Tavily 必须经过代理时，才需要设置代理；如果服务器可以直连外网，则无需配置：
 
 ```powershell
-$env:HTTP_PROXY="http://127.0.0.1:10808"
-$env:HTTPS_PROXY="http://127.0.0.1:10808"
+$env:HTTP_PROXY="http://<your-proxy-host>:<your-proxy-port>"
+$env:HTTPS_PROXY="http://<your-proxy-host>:<your-proxy-port>"
 ```
+
+这里的代理端口仅供服务器本机出网使用，不是对外访问端口。
 
 打开：
 
@@ -77,7 +79,7 @@ http://127.0.0.1:8791/dashboard
 5. 点击进入生成。
 6. 到“生成进度”页等待构建和质量检查。
 7. 质量达标后再进入发布。
-8. Confirm package pool, signing, service account, and Android build environment before submitting to Google Play internal track.
+8. 提交到 Google Play internal track 之前，确认包名池、签名、service account 和 Android 构建环境都已准备完成。
 
 ## 4. Google Play internal track 发布
 
@@ -90,14 +92,9 @@ http://127.0.0.1:8791/dashboard
 - Android SDK 或 Docker builder 可用。
 - 隐私政策 URL、metadata、图标、截图存在。
 
-如果只是演练链路，保持：
+当前产品发布只做 Google Play internal 真实上传。
 
-```env
-当前产品发布只做 Google Play internal 真实上传。配置不完整时，系统必须阻止发布并显示修复建议。
-真实上传时改为：
-
-```env
-```
+如果配置不完整，系统应阻止发布，并在页面上明确提示是包名池、权限、签名还是素材缺失。
 
 ## 5. 常见问题
 

@@ -221,6 +221,8 @@ def build_document() -> Path:
     add_paragraph(doc, "2. `ANDROID_RELEASE_TRACK` 当前建议固定为 `internal`。")
     add_paragraph(doc, "3. 真实发布时应确保 `SKIP_GRADLE_BUILD=false`。")
     add_paragraph(doc, "4. 真实密钥、service account JSON、keystore、数据库和 workspace 不建议上传至代码仓库。")
+    add_paragraph(doc, "5. 代理不是必填项。只有当部署服务器访问 Google Play、Google Publisher API、DeepSeek 或 Tavily 必须经过代理时，才需要显式设置 HTTP_PROXY / HTTPS_PROXY；如果服务器本身能够直连外网，则不需要配置代理。")
+    add_paragraph(doc, "6. 代理地址指的是服务器本机出网代理地址，不是需要对外开放的访问端口。")
 
     doc.add_heading("5. 服务启动与验证", level=1)
     add_paragraph(doc, "推荐先启动 Craftsman，再触发 Hunter。Hunter 是触发器，Craftsman 是长期运行的服务端。部署时建议使用仓库根目录的共享虚拟环境，并在同一个环境中同时安装 Craftsman、Craftsman 发布依赖和 Hunter。")

@@ -5,17 +5,18 @@
 ## 演示前准备
 
 1. 确认服务可启动。
-2. 确认代理可用，尤其是 Google Play 搜索和 Google API。
-4. 如果演示真实 internal track 上传，确认 Play Console 已预创建包名并授权。
-5. 清楚说明：Google Play API 不能自动创建全新 App，包名池需要提前准备。
+2. 如果演示服务器不能直接访问 Google Play / Google API / Tavily，再确认代理可用；若服务器能直连外网，则不需要配置代理。
+3. 如果演示真实 internal track 上传，确认 Play Console 已预创建包名并授权。
+4. 清楚说明：Google Play API 不能自动创建全新 App，包名池需要提前准备。
 
 ## 启动
 
 ```powershell
 cd D:\A\hunter-craftsman\craftsman
 $env:PYTHONPATH="D:\A\hunter-craftsman\hunter\src;D:\A\hunter-craftsman\craftsman"
-$env:HTTP_PROXY="http://127.0.0.1:10808"
-$env:HTTPS_PROXY="http://127.0.0.1:10808"
+# 只有当前服务器访问 Google / Tavily 必须经过代理时，才需要设置下面两行
+$env:HTTP_PROXY="http://<your-proxy-host>:<your-proxy-port>"
+$env:HTTPS_PROXY="http://<your-proxy-host>:<your-proxy-port>"
 python .\scripts\serve_dashboard.py
 ```
 
@@ -82,8 +83,6 @@ http://127.0.0.1:8791/dashboard
 3. 如果达标，准备发布。
 
 ### 4. 发布到 internal track
-
-- 说明这是发布链路演练，不会真的上传 Google Play。
 
 如果是真实上传：
 

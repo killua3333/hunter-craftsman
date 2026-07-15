@@ -52,12 +52,14 @@ ANDROID_KEY_PASSWORD=...
 PACKAGE_POOL=com.yourbrand.template001,com.yourbrand.template002
 ```
 
-如果本机访问 Google 服务需要代理，启动服务前设置：
+如果当前服务器访问 Google Play / Google Publisher API / Tavily 需要代理，请在启动服务前显式设置实际可用的代理地址；如果服务器可以直连外网，则无需配置代理：
 
 ```powershell
-$env:HTTP_PROXY="http://127.0.0.1:10808"
-$env:HTTPS_PROXY="http://127.0.0.1:10808"
+$env:HTTP_PROXY="http://<your-proxy-host>:<your-proxy-port>"
+$env:HTTPS_PROXY="http://<your-proxy-host>:<your-proxy-port>"
 ```
+
+这里的代理端口只用于服务器本机出网，不是对外访问端口。
 
 不要把 `.env`、`secrets/`、`workspace/`、数据库和构建产物提交到 Git。
 
@@ -168,7 +170,7 @@ Agent C 现在的稳定目标只到 internal track。
 
 | 现象 | 常见原因 | 处理方式 |
 | --- | --- | --- |
-| 机会发现失败 | 代理未生效、Google Play 请求失败、评论抓取被限制 | 检查 `HTTP_PROXY` / `HTTPS_PROXY`，重试不同搜索词 |
+| 机会发现失败 | 服务器无法直连 Google Play / Tavily、代理配置错误、评论抓取被限制 | 先确认服务器是否可直连外网；若必须走代理，再检查 `HTTP_PROXY` / `HTTPS_PROXY`，并重试不同搜索词 |
 | 发现很快失败 | Play 搜索阶段就失败，没有进入评论抓取 | 看技术日志里的 discovery event |
 | 代码生成失败 | LLM 配置缺失、Gradle 找不到 Android SDK、需求范围过大 | 检查 `DEEPSEEK_API_KEY`、`ANDROID_HOME`、质量报告 |
 | App 质量低 | 主流程不清晰、生成内容模板化、痛点被误当功能 | 选择更聚焦的候选，或人工调整需求后重试 |
