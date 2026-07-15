@@ -139,3 +139,5 @@ def _cleanup(proc) -> None:
     if proc and proc.poll() is None:
         proc.terminate()
         proc.wait(timeout=5)
+if __name__ == "__main__":
+    main()
