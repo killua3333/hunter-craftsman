@@ -1685,6 +1685,33 @@ def create_app() -> FastAPI:
         ok = _store.disable_package(package_name, body.reason)
         return {"ok": ok, "package_pool": _package_pool_payload(_store)}
 
+    @app.post("/dashboard/api/package-pool/{package_name}/restore")
+    def dashboard_package_pool_restore(
+        package_name: str,
+        x_api_token: str | None = Header(default=None, alias="X-API-Token"),
+    ) -> dict[str, Any]:
+        """Undo an accidental dashboard pause without bypassing Play verification failures."""
+        if settings.resolved_api_token():
+            _require_api_token(x_api_token)
+        assert _store is not None
+        item = next((row for row in _store.list_pool() if row.get("package_name") == package_name), None)
+        if not item:
+            raise HTTPException(404, detail=_error_detail(code="package_not_found", message="package not found"))
+        if item.get("disabled_reason") != "operator_disabled":
+            raise HTTPException(
+                409,
+                detail=_error_detail(
+                    code="package_restore_requires_verification",
+                    message="this package was disabled by Play verification; fix Play Console or service-account access and verify it again",
+                ),
+            )
+        ok = _store.enable_package(package_name)
+        _store.append_audit_log(
+            event_type="package_pool_restored",
+            actor="dashboard",
+            payload={"package_name": package_name, "source": "dashboard"},
+        )
+        return {"ok": ok, "package_pool": _package_pool_payload(_store)}
     @app.post("/dashboard/api/pool/reset")
     def dashboard_pool_reset(
         x_api_token: str | None = Header(default=None, alias="X-API-Token"),

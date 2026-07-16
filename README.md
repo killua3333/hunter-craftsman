@@ -77,8 +77,9 @@ http://127.0.0.1:8791/dashboard
 http://127.0.0.1:8791/health
 ```
 
-## 一轮真实流程
+服务启动后，不需要再单独启动 Hunter。Dashboard 所在的 Craftsman 服务会在后台调用 Agent A、Agent B 和 Agent C；不要同时再执行旧的独立选品脚本。兼容命令 `hunter autopilot --publish --base-url http://127.0.0.1:8791` 也会转发到同一服务，但日常操作直接使用 Dashboard 即可。
 
+## 一轮真实流程
 1. 打开 Dashboard。
 2. 在“找机会”页输入或确认搜索方向，点击开始发现。
 3. 等待阶段进度完成：搜索 Play、扫描竞品、抓取评论、聚类痛点、生成候选。

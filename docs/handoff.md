@@ -100,8 +100,20 @@ http://127.0.0.1:8791/dashboard
 Invoke-RestMethod http://127.0.0.1:8791/health
 ```
 
-如果仅在 `craftsman/` 子目录单独创建虚拟环境，而没有把 `hunter` 也安装进同一个环境，后续 `hunter autopilot` 将无法正常运行。因此交付环境建议统一使用仓库根目录共享 `.venv`。
+建议使用仓库根目录共享 `.venv`，并将 `hunter` 与 `craftsman` 都安装到该环境。这样 Dashboard 服务可以直接加载需求发现模块。
 
+## 启动与自动流程
+
+只需启动 **一个** Craftsman 服务并打开 Dashboard：服务启动时会同时启动后台 Worker，Worker 负责调用 Agent A 的 Play 采集、Agent B 的生成和 Agent C 的内部测试提交。
+
+- 不需要另开终端启动 Hunter，也不需要手工启动 `hunter autopilot`。
+- 在“找机会”页选择“我确认后再生成”时，系统只完成真实需求采集，候选会停在需求池等待选择。
+- 选择“符合条件就自动生成”时，只有证据和开发适配度达到门槛的候选才会进入 Agent B。
+- 选择“一键自动生成并上架”时，满足门槛的候选会依次进入 Agent B、质量门槛和 Agent C；任一环节不满足时，流程会停在对应页面显示原因，不会伪造成功结果。
+
+`hunter autopilot --publish --base-url http://127.0.0.1:8791` 仅保留给脚本调用。它现在会转发到同一 Dashboard 服务；在人工操作和演示时，直接点击网页按钮即可。
+
+运行过程优先在 Dashboard 的“搜索过程”“生成进度”“技术日志”查看。`callbacks/` 是内部回调与兼容集成目录，不是排障时唯一或首选的日志位置；服务终端输出和 Dashboard 技术日志才是第一检查点。
 ## 真实业务流程
 
 1. 在“找机会”页输入搜索方向或使用默认方向。

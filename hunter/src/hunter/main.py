@@ -8,14 +8,6 @@ import os
 import sys
 from pathlib import Path
 
-from hunter.messages import (
-    AIMessage,
-    HumanMessage,
-    SystemMessage,
-    ToolMessage,
-    build_conversation,
-)
-from hunter.prompts import load_system_prompt
 
 
 def _configure_stdio() -> None:
@@ -30,6 +22,7 @@ def _configure_stdio() -> None:
 
 
 def _format_message(msg) -> str:
+    from hunter.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
     if isinstance(msg, SystemMessage):
         role = "system"
     elif isinstance(msg, HumanMessage):
@@ -49,7 +42,9 @@ def _format_message(msg) -> str:
 
 
 def cmd_demo_messages() -> None:
-    """打印 Message 类型示例（不调用 API）。"""
+    """打印 Message 类型示例（不调用模型）。"""
+    from hunter.messages import build_conversation
+    from hunter.prompts import load_system_prompt
     system = load_system_prompt()
     msgs = build_conversation(system, "演示：Message 类型有哪些？")
     print("=== Message 演示（不调用模型）===\n", flush=True)
@@ -412,40 +407,83 @@ def cmd_autopilot(
     publish: bool = False,
     auto_approve_release: bool = True,
 ) -> int:
-    """Autopilot：人类只触发开始，自动发现机会 → B → 可选 C。"""
-    from hunter.orchestrator import run_autopilot_pipeline
+    """Start the same real Play workflow used by the dashboard.
 
-    print("Autopilot：自动搜索 Play 机会 → Gate → implement → 可选发布...", flush=True)
-    seen_phases: set[str] = set()
+    This is a compatibility command for automation. It deliberately delegates to
+    Craftsman instead of running Hunter's legacy LLM-to-JSON discovery pipeline.
+    """
+    import time
 
-    def _print_progress(event: dict[str, object]) -> None:
-        phase = str(event.get("phase") or "").strip()
-        detail = str(event.get("detail") or "").strip()
-        key = f"{phase}:{detail}"
-        if not phase or key in seen_phases:
-            return
-        seen_phases.add(key)
-        print(f"[autopilot] {phase}: {detail}", flush=True)
+    import httpx
+
+    mode = "auto_publish" if publish else "auto"
+    if opportunity_id:
+        print("提示：当前自动发现会从真实 Play 候选池选择需求，--opportunity-id 不再参与选品。", flush=True)
+    if sync_implement or max_rounds != 3 or not auto_approve_release:
+        print("提示：生成、质量门槛和发布由 Craftsman 后台统一执行；此命令的旧编排参数不再单独生效。", flush=True)
+
+    base = base_url.rstrip("/")
+    headers: dict[str, str] = {}
+    api_token = os.environ.get("API_TOKEN", "").strip()
+    if api_token:
+        headers["X-API-Token"] = api_token
 
     try:
-        earnings_signal = os.environ.get("AUTOPILOT_EARNINGS_SIGNAL", "").strip()
-        outcome = run_autopilot_pipeline(
-            base_url=base_url,
-            opportunity_id=opportunity_id,
-            timeout_seconds=timeout,
-            poll_interval_seconds=poll_interval,
-            use_async_implement=not sync_implement,
-            progress_callback=_print_progress,
-            max_rounds=max_rounds,
-            publish=publish,
-            auto_approve_release=auto_approve_release,
-            earnings_signal=earnings_signal,
+        with httpx.Client(timeout=30.0, headers=headers) as client:
+            response = client.post(
+                f"{base}/dashboard/api/discovery-runs",
+                json={"mode": mode, "operator": "hunter-cli"},
+            )
+            response.raise_for_status()
+            started = response.json()
+            discovery_run_id = str(started.get("discovery_run_id") or "")
+            if not discovery_run_id:
+                raise RuntimeError("dashboard did not return a discovery run id")
+
+            print(f"已启动真实 Google Play 需求发现：{discovery_run_id}", flush=True)
+            print("系统正在搜索竞品和低分评论；不会再走旧的 LLM JSON 解析流程。", flush=True)
+            deadline = time.monotonic() + max(timeout, 1.0)
+            last_status = ""
+            while time.monotonic() < deadline:
+                detail_response = client.get(f"{base}/dashboard/api/discovery-runs/{discovery_run_id}")
+                detail_response.raise_for_status()
+                detail = detail_response.json()
+                run = detail.get("discovery_run") or {}
+                status = str(run.get("status") or "queued")
+                events = detail.get("events") or []
+                if status != last_status:
+                    message = str(events[-1].get("message") or "") if events else ""
+                    print(f"[{status}] {message}", flush=True)
+                    last_status = status
+
+                if status == "failed":
+                    print(f"发现失败：{run.get('error_message') or '请查看 Dashboard 的搜索过程。'}", file=sys.stderr, flush=True)
+                    return 2
+                if status == "waiting_for_selection":
+                    print("已找到候选，但没有候选达到自动生成门槛。请在 Dashboard 的“可做的 App”页人工选择。", flush=True)
+                    return 0
+                if status == "auto_submitted":
+                    candidates = detail.get("candidates") or []
+                    submitted = next((c for c in candidates if c.get("submitted_run_id")), None)
+                    if submitted:
+                        print(
+                            f"已将“{submitted.get('app_name') or '候选应用'}”交给生成队列，"
+                            f"任务编号：{submitted.get('submitted_run_id')}。",
+                            flush=True,
+                        )
+                    print("后续代码生成、质量检查和内部测试发布由同一 Craftsman 服务后台执行，请在 Dashboard 查看进度。", flush=True)
+                    return 0
+                time.sleep(max(poll_interval, 0.5))
+    except (httpx.HTTPError, RuntimeError, ValueError) as exc:
+        print(
+            f"无法启动自动流程：{exc}。请先启动 Craftsman 服务，并确认 --base-url 指向其地址。",
+            file=sys.stderr,
+            flush=True,
         )
-    except (ValueError, RuntimeError) as exc:
-        print(f"失败: {exc}", file=sys.stderr)
         return 2
 
-    return _print_pipeline_outcome(outcome)
+    print("发现任务仍在运行，请在 Dashboard 继续查看搜索过程。", flush=True)
+    return 0
 
 
 def cmd_run(

@@ -511,3 +511,22 @@ def test_dashboard_package_pool_verify_marks_invalid(tmp_path, monkeypatch):
         item = resp.json()["package_pool"]["items"][0]
         assert item["status"] == "invalid"
         assert item["disabled_reason"] == "not found"
+
+
+def test_dashboard_package_pool_restores_only_operator_pause(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "database_path", tmp_path / "runs.db")
+    monkeypatch.setattr(settings, "package_pool", "com.pool.one")
+    with TestClient(create_app()) as client:
+        assert client.post("/dashboard/api/package-pool/sync").status_code == 200
+        paused = client.post(
+            "/dashboard/api/package-pool/com.pool.one/disable",
+            json={"reason": "operator_disabled"},
+        )
+        assert paused.status_code == 200
+        assert paused.json()["package_pool"]["items"][0]["status"] == "invalid"
+
+        restored = client.post("/dashboard/api/package-pool/com.pool.one/restore")
+        assert restored.status_code == 200
+        item = restored.json()["package_pool"]["items"][0]
+        assert item["status"] == "available"
+        assert item["disabled_reason"] is None
