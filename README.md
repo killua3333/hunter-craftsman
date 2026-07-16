@@ -99,6 +99,9 @@ http://127.0.0.1:8791/health
 - `PACKAGE_POOL` 中的包名已经在 Play Console 预创建。
 - service account 对这些 App 有 internal testing 发布权限。
 - Android SDK 或 Docker builder 可用。
+- 隐私政策 URL 必须是真实可公网访问的地址。可使用 Cloudflare Pages，也可使用阿里云或自有域名；后者在 `.env` 设置 `PRIVACY_POLICY_URL=https://<your-domain>/privacy`。
+
+`PRIVACY_DEPLOY_DRY_RUN=true` 只会在工作区生成隐私政策 HTML，不会真的部署页面，也不能作为真实 internal 发布的合规地址。未设置真实 URL 时，系统会阻断发布并提示处理。
 
 完整配置清单见 [docs/play-console-setup-checklist.md](docs/play-console-setup-checklist.md)。
 

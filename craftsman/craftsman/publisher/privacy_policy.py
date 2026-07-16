@@ -253,6 +253,17 @@ def ensure_privacy_url(
     if not is_placeholder_privacy_url(current):
         return {"ok": True, "url": current, "skipped": True}
 
+    configured_url = str(settings.privacy_policy_url or "").strip()
+    if configured_url:
+        if not configured_url.startswith(("https://", "http://")) or is_placeholder_privacy_url(configured_url):
+            return {
+                "ok": False,
+                "url": "",
+                "message": "PRIVACY_POLICY_URL must be a real public http(s) privacy-policy URL",
+            }
+        store["privacy_url"] = configured_url
+        req["store"] = store
+        return {"ok": True, "url": configured_url, "skipped": True, "source": "configured_url"}
     bundle = str((req.get("app") or {}).get("bundle_id") or "com.example.app")
     project_name = _slug_from_bundle(bundle)
     html = render_privacy_html(req)
@@ -261,6 +272,13 @@ def ensure_privacy_url(
     (privacy_dir / "index.html").write_text(html, encoding="utf-8")
 
     result = deploy_to_cloudflare_pages(project_name, html)
+    if result.get("dry_run"):
+        return {
+            "ok": False,
+            "dry_run": True,
+            "url": "",
+            "message": "privacy policy was generated locally but not deployed; configure PRIVACY_POLICY_URL or enable a real Cloudflare deploy",
+        }
     if result.get("ok") and result.get("url"):
         store["privacy_url"] = result["url"]
         req["store"] = store

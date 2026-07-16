@@ -177,6 +177,7 @@ Agent C 现在的稳定目标只到 internal track。
 5. 成功提交 internal 后，包名永久占用。
 
 如果出现 `package_not_precreated`，说明包名没有在 Play Console 预创建，或 service account 没有权限。
+隐私政策不强制使用 Cloudflare。若服务器部署在阿里云，可将隐私政策页面部署到阿里云对象存储、静态网站或自有域名，并在 `.env` 配置 `PRIVACY_POLICY_URL=https://<your-domain>/privacy`。该地址必须可从公网访问且内容真实有效。`PRIVACY_DEPLOY_DRY_RUN=true` 仅生成本地 HTML，不能作为实际上架时的隐私政策地址；未配置真实地址时发布会被阻断。
 
 ## 常见失败原因
 

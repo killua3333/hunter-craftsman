@@ -142,7 +142,7 @@ def test_deploy_live_retries_on_transient_failure(monkeypatch):
     assert attempts["n"] >= 2
 
 
-def test_ensure_privacy_url_updates_store(tmp_path, monkeypatch):
+def test_ensure_privacy_url_dry_run_is_not_a_live_url(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "craftsman.publisher.privacy_policy.deploy_to_cloudflare_pages",
         lambda *args, **kwargs: {"ok": True, "url": "https://timer-privacy.pages.dev/", "dry_run": True},
@@ -152,6 +152,19 @@ def test_ensure_privacy_url_updates_store(tmp_path, monkeypatch):
         "store": {"privacy_url": "https://example.com/privacy"},
     }
     result = ensure_privacy_url(req, tmp_path)
-    assert result["ok"] is True
-    assert req["store"]["privacy_url"] == "https://timer-privacy.pages.dev/"
+    assert result["ok"] is False
+    assert result["dry_run"] is True
+    assert req["store"]["privacy_url"] == "https://example.com/privacy"
     assert (tmp_path / "privacy" / "index.html").is_file()
+
+
+def test_ensure_privacy_url_uses_configured_public_url(tmp_path, monkeypatch):
+    monkeypatch.setattr("craftsman.publisher.privacy_policy.settings.privacy_policy_url", "https://apps.example.cn/privacy")
+    req = {
+        "app": {"name": "Timer", "bundle_id": "com.test.timer"},
+        "store": {"privacy_url": "https://example.com/privacy"},
+    }
+    result = ensure_privacy_url(req, tmp_path)
+    assert result["ok"] is True
+    assert result["source"] == "configured_url"
+    assert req["store"]["privacy_url"] == "https://apps.example.cn/privacy"

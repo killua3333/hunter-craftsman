@@ -53,6 +53,7 @@ class Settings(BaseSettings):
 
     privacy_deploy_dry_run: bool = True
     privacy_contact_email: str = "privacy@example.com"
+    privacy_policy_url: str | None = None
     cloudflare_api_token: str | None = None
     cloudflare_account_id: str | None = None
 
