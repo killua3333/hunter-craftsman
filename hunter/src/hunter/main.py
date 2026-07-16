@@ -149,10 +149,12 @@ def _print_blueprint_status(
 
 
 _REPAIR_PROMPT = (
-    "你上一条助手消息中的 JSON 未通过程序校验，/make 无法使用。\n"
-    "错误如下：\n{error}\n\n"
-    "请**仅**输出修正后的完整 AppOpportunityBlueprint JSON（纯 JSON，无 Markdown 说明）。\n"
-    "features 每项必须有 id、title、type；items 只能是字符串数组；store.keywords 必须是字符串数组。"
+    "上一条回复不是可用的 AppOpportunityBlueprint，/make 不能使用。\n"
+    "校验错误：\n{error}\n\n"
+    "现在停止说明、停止推理过程、不要调用工具；只输出一个完整 JSON 对象。\n"
+    "该对象必须含 accepted=true、app_name、core_logic、ui_layout、keywords、data_quality、evidence、requirement。\n"
+    "requirement.features 每项必须有 id、title、type，items 只能是字符串数组；"
+    "store.keywords 必须是字符串数组；最多 3 个 features，内容保持简短。"
 )
 
 
@@ -253,16 +255,16 @@ def cmd_chat(
                 return True
             raise
         _apply_turn_result(result)
-        blueprint = result.get("blueprint")
-        if blueprint is None or not blueprint.accepted:
-            parse_error = result.get("parse_error")
-            if parse_error:
-                print("\n正在根据校验错误自动修正 JSON…", flush=True)
-                try:
-                    repaired = session.send(_REPAIR_PROMPT.format(error=parse_error))
-                except Exception:
-                    raise
-                _apply_turn_result(repaired)
+        # A conversational model can answer in prose even when the system prompt
+        # asks for JSON. Retry twice with a compact, explicit repair instruction.
+        for repair_attempt in range(1, 3):
+            blueprint = result.get("blueprint")
+            if blueprint is not None:
+                break
+            parse_error = result.get("parse_error") or "回复中未找到 AppOpportunityBlueprint JSON"
+            print(f"\n正在生成可提交的机会单（第 {repair_attempt}/2 次修正）…", flush=True)
+            result = session.send(_REPAIR_PROMPT.format(error=parse_error))
+            _apply_turn_result(result)
         return True
 
     print(
