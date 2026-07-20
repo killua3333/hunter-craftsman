@@ -1129,11 +1129,10 @@ class RunStore:
         payload: dict[str, Any] | None = None,
     ) -> int:
         with self._conn() as conn:
-            row = conn.execute(
+            cur = conn.execute(
                 """
                 INSERT INTO discovery_events (discovery_run_id, stage, message, payload_json, created_at)
                 VALUES (?, ?, ?, ?, ?)
-                RETURNING id
                 """,
                 (
                     discovery_run_id,
@@ -1142,8 +1141,8 @@ class RunStore:
                     json.dumps(payload or {}, ensure_ascii=False),
                     _utc_now_iso(),
                 ),
-            ).fetchone()
-        return int(row["id"]) if row else 0
+            )
+        return int(cur.lastrowid or 0)
 
     def list_discovery_events(
         self,
@@ -1323,11 +1322,10 @@ class RunStore:
         payload: dict[str, Any] | None = None,
     ) -> int:
         with self._conn() as conn:
-            row = conn.execute(
+            cur = conn.execute(
                 """
                 INSERT INTO audit_logs (event_type, run_id, release_id, actor, payload_json, created_at)
                 VALUES (?, ?, ?, ?, ?, ?)
-                RETURNING id
                 """,
                 (
                     event_type,
@@ -1337,9 +1335,9 @@ class RunStore:
                     json.dumps(payload or {}, ensure_ascii=False),
                     _utc_now_iso(),
                 ),
-            ).fetchone()
+            )
             self._purge_audit_logs(conn)
-        return int(row["id"]) if row else 0
+        return int(cur.lastrowid or 0)
 
     def list_audit_logs(
         self,

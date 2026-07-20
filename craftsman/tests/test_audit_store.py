@@ -47,3 +47,12 @@ def test_repair_release_job_state_reconciles_terminal_jobs(tmp_path):
     row = next(item for item in jobs if item["release_id"] == release_id)
     assert row["status"] == "done"
 
+
+def test_event_insert_returns_lastrowid_without_sqlite_returning(tmp_path):
+    store = RunStore(db_path=tmp_path / "runs.db")
+    discovery_id = store.create_discovery_run("disc-1", seed_queries=["timer"], categories=[], mode="manual", operator="tester")
+    event_id = store.append_discovery_event(discovery_id, "queued", "queued", {"x": 1})
+    audit_id = store.append_audit_log(event_type="queued", run_id="run-1", actor="tester", payload={"x": 1})
+    assert event_id > 0
+    assert audit_id > 0
+

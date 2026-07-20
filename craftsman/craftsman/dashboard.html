@@ -65,6 +65,13 @@
     .plain-list { margin:0; padding-left:18px; color:#344054; line-height:1.45; }
     pre { white-space:pre-wrap; word-break:break-word; background:#101828; color:#e4e7ec; padding:12px; border-radius:8px; max-height:360px; overflow:auto; }
     .footer { color:var(--muted); font-size:12px; margin-top:18px; }
+    .auth-status { display:inline-flex; align-items:center; gap:6px; color:var(--muted); font-size:12px; }
+    .auth-status.ready { color:var(--ok); }
+    .auth-panel { display:none; margin-bottom:14px; }
+    .auth-panel.open { display:block; }
+    .auth-form { display:flex; gap:10px; align-items:end; flex-wrap:wrap; }
+    .auth-form label { display:grid; gap:5px; min-width:min(360px,100%); flex:1; }
+    .auth-form input { border:1px solid var(--line); border-radius:6px; padding:8px; width:100%; }
     @media (max-width:900px) { .span-3,.span-4,.span-5,.span-6,.span-7,.span-8,.span-12 { grid-column:span 12; } .topbar { flex-direction:column; } .steps,.metric-grid { grid-template-columns:1fr; } .kv { grid-template-columns:1fr; } }
   </style>
 </head>
@@ -80,6 +87,16 @@
         <button id="refreshBtn">刷新</button>
         <button id="startBtn" class="primary">一键自动生成并上架</button>
       </div>
+    </div>
+
+    <div class="panel auth-panel" id="authPanel">
+      <div class="panel-head"><div><div class="panel-title">Dashboard 访问令牌</div><div class="muted">服务器配置了 API_TOKEN 时，请填写对应令牌。令牌只保存在当前浏览器，不会写入项目文件或发送到页面地址。</div></div></div>
+      <div class="auth-form">
+        <label><span class="muted">API_TOKEN</span><input id="apiTokenInput" type="password" autocomplete="off" placeholder="请输入服务器配置的访问令牌" /></label>
+        <button id="saveTokenBtn" class="primary">保存并验证</button>
+        <button id="clearTokenBtn">清除</button>
+      </div>
+      <div class="muted" id="authHint" style="margin-top:8px"></div>
     </div>
 
     <div class="tabs" id="tabs">
@@ -149,7 +166,27 @@ const local = iso => iso ? new Date(iso).toLocaleString() : "-";
 const statusText = s => ({ready:"就绪", idle:"空闲", queued:"排队中", checking_environment:"准备采集", searching_play:"搜索应用", searching_query:"搜索关键词", query_search_complete:"搜索完成", query_search_failed:"搜索失败", scanning_competitors:"分析竞品", fetching_reviews:"读取评论", reviews_complete:"评论读取完成", review_fetch_failed:"评论读取失败", candidate_saved:"候选已入池", candidate_rejected:"候选未入池", scoring_candidates:"候选评分", waiting_for_selection:"等待选择", auto_submitted:"已自动生成", in_progress:"进行中", implementation_complete:"已生成", needs_polish:"需要打磨", failed:"失败", prepared:"已准备", approved:"已确认", submitting:"提交中", internal_submitted:"已提交测试", published:"已发布", done:"完成", running:"进行中", waiting:"等待", ready_for_review:"待选择", submitted_to_b:"已进入生成", available:"可用", allocated:"已分配", verified:"已验证", invalid:"需处理", released:"已释放", submitted_internal:"已提交测试"})[s] || fmt(s);
 const badgeClass = s => ["done","ready","implementation_complete","internal_submitted","published","waiting_for_selection","ready_for_review","submitted_to_b","auto_submitted","available","verified","released"].includes(s) ? "ok" : (["failed","dead_letter","needs_manual_action","invalid","rejected"].includes(s) ? "bad" : "warn");
 function esc(s){ return fmt(s).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
-async function request(path, options={}){ const r = await fetch(path, options); const p = await r.json().catch(()=>({})); if(!r.ok) throw new Error(p?.detail?.error?.message || p?.message || r.statusText); return p; }
+const TOKEN_STORAGE_KEY = 'craftsman.dashboard.apiToken';
+function storedApiToken(){ try { return localStorage.getItem(TOKEN_STORAGE_KEY) || ''; } catch (_) { return ''; } }
+function updateAuthStatus(message){ const token=storedApiToken(); $('authStatus').textContent=message || (token ? '已设置访问令牌' : '未设置访问令牌'); $('authStatus').classList.toggle('ready', Boolean(token)); }
+function setApiToken(token){ try { if(token) localStorage.setItem(TOKEN_STORAGE_KEY, token); else localStorage.removeItem(TOKEN_STORAGE_KEY); } catch (_) {} updateAuthStatus(); }
+async function request(path, options={}){
+  const headers = new Headers(options.headers || {});
+  const token = storedApiToken();
+  if(token) headers.set('X-API-Token', token);
+  const r = await fetch(path, {...options, headers});
+  const p = await r.json().catch(()=>({}));
+  if(!r.ok){
+    const message = p?.detail?.error?.message || p?.message || r.statusText;
+    if(r.status === 401 && /invalid api token|unauthorized/i.test(String(message))){
+      $('authPanel').classList.add('open');
+      $('authHint').textContent = token ? '当前令牌无效，请检查服务端 API_TOKEN 后重新填写。' : '当前服务需要访问令牌，请填写后重试。';
+      updateAuthStatus('需要访问令牌');
+    }
+    throw new Error(message);
+  }
+  return p;
+}
 function scoreBar(value){ const n = Number(value); const w = Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 0; return `<div class="score"><i style="width:${w}%"></i></div>`; }
 function cleanAppName(name){ return fmt(name).replace(/\s*MVP\s*$/i,'').trim() || '候选应用'; }
 function qualityText(q){ return ({measured:'证据较充分', mixed:'证据一般', assumption:'证据不足'})[q] || '证据待确认'; }
@@ -192,6 +229,9 @@ async function openRun(runId){ const d=await request(`/dashboard/api/runs/${enco
 async function load(){ try{ const data=await request('/dashboard/api/overview'); state.data=data; renderSummary(data); try{ const pool=await request('/dashboard/api/package-pool'); renderPackagePool(pool); }catch(poolErr){ console.warn('package pool load failed', poolErr); } renderOpportunities(data.opportunities||[]); renderPipeline(data.pipeline||[]); renderAdvanced(data); $('updatedAt').textContent='最近同步 '+new Date().toLocaleString(); }catch(e){ $('updatedAt').textContent='加载失败：'+e.message; } }
 document.addEventListener('click', async e=>{ const t=e.target; const tab=t.closest('[data-tab]'); if(tab){ document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active')); tab.classList.add('active'); document.querySelectorAll('.view').forEach(x=>x.classList.remove('active')); $(`view-${tab.dataset.tab}`).classList.add('active'); return; } const run=t.closest('[data-open-run]'); if(run) return openRun(run.dataset.openRun); const impl=t.closest('[data-implement-candidate]'); if(impl){ impl.disabled=true; try{ await request(`/dashboard/api/opportunities/${encodeURIComponent(impl.dataset.implementCandidate)}/implement`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operator:'dashboard-operator'})}); await load(); document.querySelector('[data-tab="progress"]').click(); } finally { impl.disabled=false; } return; } const rq=t.closest('[data-requeue-run]'); if(rq){ await request(`/dashboard/api/runs/${encodeURIComponent(rq.dataset.requeueRun)}/requeue`,{method:'POST'}); return load(); } const rr=t.closest('[data-requeue-release]'); if(rr){ await request(`/dashboard/api/releases/${encodeURIComponent(rr.dataset.requeueRelease)}/requeue`,{method:'POST'}); return load(); } const rel=t.closest('[data-release-package]'); if(rel){ await request(`/dashboard/api/package-pool/${encodeURIComponent(rel.dataset.releasePackage)}/release`,{method:'POST'}); return load(); } const restore=t.closest('[data-restore-package]'); if(restore){ await request(`/dashboard/api/package-pool/${encodeURIComponent(restore.dataset.restorePackage)}/restore`,{method:'POST'}); poolActionText.textContent='已恢复使用。建议点击“验证包名”确认 Play 权限。'; return load(); } const dis=t.closest('[data-disable-package]'); if(dis){ const packageName=dis.dataset.disablePackage; if(!window.confirm(`确定暂停使用 ${packageName} 吗？这不会修改 Google Play 中的 App，之后可点击“恢复使用”撤销。`)) return; await request(`/dashboard/api/package-pool/${encodeURIComponent(packageName)}/disable`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reason:'operator_disabled'})}); return load(); } });
 $('refreshBtn').onclick=load;
+authBtn.onclick=()=>{ $('authPanel').classList.toggle('open'); if($('authPanel').classList.contains('open')) $('apiTokenInput').focus(); };
+saveTokenBtn.onclick=async()=>{ const token=$('apiTokenInput').value.trim(); if(!token){ $('authHint').textContent='请输入访问令牌。'; return; } setApiToken(token); $('authHint').textContent='正在验证访问令牌...'; try{ await request('/dashboard/api/overview'); $('authHint').textContent='验证成功，页面请求已启用。'; $('authPanel').classList.remove('open'); await load(); }catch(e){ setApiToken(''); $('authHint').textContent='验证失败：'+e.message; } };
+clearTokenBtn.onclick=()=>{ setApiToken(''); $('apiTokenInput').value=''; $('authHint').textContent='已清除浏览器中的访问令牌。'; };
 syncPoolBtn.onclick=async()=>{ const b=syncPoolBtn; b.disabled=true; const old=b.textContent; b.textContent='同步中...'; poolActionText.textContent='正在同步包名池配置...'; try{ await request('/dashboard/api/package-pool/sync',{method:'POST'}); const pool=await request('/dashboard/api/package-pool'); renderPackagePool(pool); poolActionText.textContent='同步完成，请继续验证包名。'; }catch(e){ poolActionText.textContent='同步失败：'+e.message; } finally { b.disabled=false; b.textContent=old; } };
 verifyPoolBtn.onclick=async()=>{ const b=verifyPoolBtn; b.disabled=true; const old=b.textContent; b.textContent='验证中...'; poolActionText.textContent='正在连接 Google Play 验证包名，可能需要几十秒...'; try{ await request('/dashboard/api/package-pool/verify',{method:'POST'}); const pool=await request('/dashboard/api/package-pool'); renderPackagePool(pool); poolActionText.textContent='验证完成，已更新可用包名数量。'; }catch(e){ poolActionText.textContent='验证失败：'+e.message; } finally { b.disabled=false; b.textContent=old; } };
 $('startBtn').onclick=async()=>{ $('startBtn').disabled=true; const seed_queries=$('seedQueries').value.split(/\n|,/).map(s=>s.trim()).filter(Boolean); const mode=$('discoveryMode').value; $('updatedAt').textContent = mode === 'auto_publish' ? '正在自动生成并上架...' : '正在搜索应用商店...'; try{ const body=JSON.stringify({seed_queries,mode,operator:'dashboard-operator'}); const started=await request(mode === 'auto_publish' ? '/dashboard/api/autopilot' : '/dashboard/api/discovery-runs',{method:'POST',headers:{'Content-Type':'application/json'},body}); await load(); document.querySelector('[data-tab="discover"]').click(); $('updatedAt').textContent=`已开始：${started.discovery_run_id||started.run_id||''}`; }catch(e){ $('updatedAt').textContent='开始失败：'+e.message; } finally { $('startBtn').disabled=false; } };

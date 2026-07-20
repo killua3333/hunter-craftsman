@@ -105,6 +105,26 @@ def test_api_token_auth(monkeypatch):
     assert authorized.status_code == 200
 
 
+def test_dashboard_api_token_auth_and_page_support(monkeypatch, tmp_path):
+    monkeypatch.delenv("API_TOKEN", raising=False)
+    monkeypatch.setattr(settings, "api_token", "dashboard-token")
+    monkeypatch.setattr(settings, "database_path", tmp_path / "runs.db")
+    with TestClient(create_app()) as client:
+        page = client.get("/dashboard")
+        assert page.status_code == 200
+        assert "TOKEN_STORAGE_KEY" in page.text
+        assert "X-API-Token" in page.text
+
+        denied = client.get("/dashboard/api/overview")
+        assert denied.status_code == 401
+
+        allowed = client.get(
+            "/dashboard/api/overview",
+            headers={"X-API-Token": "dashboard-token"},
+        )
+        assert allowed.status_code == 200
+
+
 def test_api_token_from_secret_store(tmp_path, monkeypatch):
     req = json.loads(SAMPLE.read_text(encoding="utf-8"))
     store = tmp_path / "secrets"
