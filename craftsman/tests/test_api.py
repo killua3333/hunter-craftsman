@@ -113,6 +113,7 @@ def test_dashboard_api_token_auth_and_page_support(monkeypatch, tmp_path):
         page = client.get("/dashboard")
         assert page.status_code == 200
         assert "TOKEN_STORAGE_KEY" in page.text
+        assert 'id="authBtn"' in page.text
         assert "X-API-Token" in page.text
 
         denied = client.get("/dashboard/api/overview")
