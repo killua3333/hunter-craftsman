@@ -217,3 +217,91 @@ def test_implementation_plan_v2_has_states_and_acceptance(tmp_path):
     assert "empty" in plan["screen_states"]
     assert plan["acceptance_actions"]
     assert len(plan["core_features"]) <= 3
+
+
+def test_scope_detection_ignores_negative_constraints():
+    from craftsman.orchestrator.quality import _contains_positive_scope
+
+    for text in (
+        "No login, no account, without payment, and no backend.",
+        "This app does not require login or subscription.",
+        "无需登录、账号、支付或后端服务。",
+        "避免订阅和云同步。",
+        "An accountability timer with observer mode.",
+    ):
+        assert _contains_positive_scope(text) is False
+
+
+def test_scope_detection_keeps_real_scope_as_advisory(tmp_path):
+    workspace, project, metadata = _android_project(
+        tmp_path,
+        """
+        package com.example
+        fun MainActivity() {
+            setContent {
+                val value = rememberSaveable { mutableStateOf("Account") }
+                TextField(value = value.value, onValueChange = { value.value = it })
+                Button(onClick = { value.value = "Saved" }) { Text("Save account") }
+            }
+        }
+        """,
+    )
+    icon = workspace / "icon.png"
+    shot = workspace / "shot.png"
+    icon.write_bytes(b"icon")
+    shot.write_bytes(b"shot")
+
+    report = evaluate_app_quality(
+        backend_mode="android_gradle",
+        compile_exit_code=0,
+        project_dir=project,
+        workspace=workspace,
+        requirement={
+            "app": {"name": "Account Notes"},
+            "features": [{"title": "Account login"}],
+        },
+        icon_path=icon,
+        screenshots=[str(shot)],
+        metadata_root=metadata,
+        verification="verified",
+    )
+
+    assert "scope_too_large" in report["failure_classes"]
+    assert report["quality_score"] >= 75
+    assert report["release_ready"] is True
+    assert report["polish_required"] is False
+
+
+def test_legacy_scope_only_quality_report_is_release_ready():
+    from craftsman.orchestrator.quality import release_quality_gate
+
+    decision = release_quality_gate({
+        "quality_score": 94,
+        "release_ready": False,
+        "quality_report": {
+            "quality_score": 94,
+            "release_ready": False,
+            "failure_classes": ["scope_too_large"],
+        },
+    })
+
+    assert decision["passed"] is True
+    assert decision["legacy_advisory_override"] is True
+    assert decision["hard_failure_classes"] == []
+
+
+def test_legacy_hard_failure_stays_blocked():
+    from craftsman.orchestrator.quality import release_quality_gate
+
+    decision = release_quality_gate({
+        "quality_score": 94,
+        "release_ready": False,
+        "quality_report": {
+            "quality_score": 94,
+            "release_ready": False,
+            "failure_classes": ["empty_ui"],
+        },
+    })
+
+    assert decision["passed"] is False
+    assert decision["hard_failure_classes"] == ["empty_ui"]

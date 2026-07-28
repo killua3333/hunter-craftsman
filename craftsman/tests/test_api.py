@@ -161,6 +161,7 @@ def test_release_endpoints_agent_c_android(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "release_require_human_approval", True)
     monkeypatch.setattr(settings, "release_require_policy_checks", True)
     monkeypatch.setattr(settings, "package_pool", "")
+    monkeypatch.setattr(settings, "privacy_policy_url", "https://privacy.test/policy")
     req = json.loads(SAMPLE.read_text(encoding="utf-8"))
     with TestClient(create_app()) as client:
         sync = client.post("/v1/runs/sync-implement", json={"requirement": req})
@@ -444,6 +445,7 @@ def test_dashboard_release_approve_and_submit_endpoints(monkeypatch):
     monkeypatch.setattr(settings, "release_require_human_approval", True)
     monkeypatch.setattr(settings, "release_require_policy_checks", True)
     req = json.loads(SAMPLE.read_text(encoding="utf-8"))
+    monkeypatch.setattr(settings, "privacy_policy_url", "https://privacy.test/policy")
     with TestClient(create_app()) as client:
         sync = client.post("/v1/runs/sync-implement", json={"requirement": req})
         assert sync.status_code == 200
@@ -551,3 +553,11 @@ def test_dashboard_package_pool_restores_only_operator_pause(tmp_path, monkeypat
         item = restored.json()["package_pool"]["items"][0]
         assert item["status"] == "available"
         assert item["disabled_reason"] is None
+
+
+def test_pipeline_needs_polish_is_not_reported_as_running():
+    assert api_app._stage_status(
+        "needs_polish",
+        done={"implementation_complete"},
+        failed={"failed", "implementation_failed"},
+    ) == "needs_polish"

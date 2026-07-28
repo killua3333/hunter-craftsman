@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,48 @@ FORBIDDEN_SCOPE_KEYWORDS = {
     "login", "account", "subscription", "payment", "server", "backend", "cloud sync",
     "登录", "账号", "订阅", "支付", "服务器", "后端", "云同步",
 }
+
+RELEASE_QUALITY_THRESHOLD = 75
+RELEASE_HARD_BLOCKERS = frozenset({"build_failed", "empty_ui", "weak_core_flow"})
+
+
+def release_quality_gate(handoff: dict[str, Any]) -> dict[str, Any]:
+    """Return the effective quality decision, including legacy advisory overrides."""
+    report = (
+        handoff.get("quality_report") if isinstance(handoff.get("quality_report"), dict) else {}
+    )
+    score = handoff.get("quality_score")
+    if score is None:
+        score = report.get("quality_score")
+    release_ready = handoff.get("release_ready")
+    if release_ready is None:
+        release_ready = report.get("release_ready")
+    failures = list(
+        report.get("failure_classes") or handoff.get("quality_failure_classes") or []
+    )
+    if score is None:
+        return {
+            "passed": True,
+            "quality_score": None,
+            "release_ready": bool(release_ready),
+            "failure_classes": failures,
+        }
+    try:
+        score_int = int(score)
+    except (TypeError, ValueError):
+        score_int = 0
+    hard_failures = sorted(set(failures) & RELEASE_HARD_BLOCKERS)
+    passed = score_int >= RELEASE_QUALITY_THRESHOLD and not hard_failures
+    return {
+        "passed": passed,
+        "quality_score": score_int,
+        "release_ready": bool(release_ready),
+        "effective_release_ready": passed,
+        "legacy_advisory_override": passed and not bool(release_ready),
+        "failure_classes": failures,
+        "hard_failure_classes": hard_failures,
+    }
+
 
 
 def write_implementation_plan(
@@ -137,11 +180,14 @@ def evaluate_app_quality(
     if build_score == 0:
         weighted = min(weighted, 55)
 
-    hard_blockers = {"build_failed", "empty_ui", "weak_core_flow", "scope_too_large"}
+    # Scope findings are advisory; broad wording alone must not block a usable MVP.
+    hard_blockers = RELEASE_HARD_BLOCKERS
     failure_classes = _dedupe(failure_classes)
     repair_suggestions = _dedupe(repair_suggestions)
-    release_ready = weighted >= 75 and not (set(failure_classes) & hard_blockers)
-    polish_required = 60 <= weighted < 75 or (weighted >= 75 and not release_ready)
+    release_ready = weighted >= RELEASE_QUALITY_THRESHOLD and not (set(failure_classes) & hard_blockers)
+    polish_required = 60 <= weighted < RELEASE_QUALITY_THRESHOLD or (
+        weighted >= RELEASE_QUALITY_THRESHOLD and not release_ready
+    )
 
     if not release_ready and weighted >= 60:
         manual_review_notes.append("可预览，但建议继续打磨后再上架。")
@@ -372,12 +418,36 @@ def _has_forbidden_scope(requirement: dict[str, Any], project_dir: Path) -> bool
         "store": requirement.get("store"),
     }
     req_text = json.dumps(scoped_requirement, ensure_ascii=False).lower()
-    if any(keyword in req_text for keyword in FORBIDDEN_SCOPE_KEYWORDS):
+    if _contains_positive_scope(req_text):
         return True
     src_root = project_dir / "app" / "src" / "main" / "java"
     files = list(src_root.rglob("*.kt")) if src_root.exists() else []
     text = "\n".join(p.read_text(encoding="utf-8", errors="ignore") for p in files[:8]).lower()
-    return any(keyword in text for keyword in FORBIDDEN_SCOPE_KEYWORDS)
+    return _contains_positive_scope(text)
+
+
+
+def _contains_positive_scope(text: str) -> bool:
+    """Detect requested scope while ignoring common negative constraints."""
+    lower = text.lower()
+    negations = ("no", "not", "without", "avoid", "exclude", "forbid", "无需", "不需要", "不含", "没有", "避免", "禁止")
+    post_negations = ("not required", "is not required", "isn't required", "optional", "不需要", "无需")
+    clause_boundaries = ".;:!?。；！？\n"
+    for keyword in FORBIDDEN_SCOPE_KEYWORDS:
+        pattern = re.escape(keyword)
+        if keyword.isascii():
+            pattern = rf"(?<![a-z0-9]){pattern}(?![a-z0-9])"
+        for match in re.finditer(pattern, lower):
+            index = match.start()
+            clause_start = max(lower.rfind(mark, 0, index) for mark in clause_boundaries)
+            prefix = re.sub(r"[\s_\-]+", " ", lower[clause_start + 1:index]).strip()
+            suffix_start = index + len(keyword)
+            suffix = re.sub(r"[\s_\-]+", " ", lower[suffix_start:suffix_start + 24]).strip()
+            prefix_is_negated = any(token in prefix for token in negations)
+            suffix_is_negated = any(suffix.startswith(token) for token in post_negations)
+            if not prefix_is_negated and not suffix_is_negated:
+                return True
+    return False
 
 
 def _find_tokens(text: str, token_map: dict[str, str]) -> list[str]:

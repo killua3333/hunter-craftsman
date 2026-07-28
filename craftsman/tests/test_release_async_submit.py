@@ -18,6 +18,7 @@ def test_release_submit_returns_immediately_and_worker_completes(tmp_path, monke
     monkeypatch.setattr(settings, "release_require_human_approval", False)
     monkeypatch.setattr(settings, "release_require_policy_checks", True)
     monkeypatch.setattr(settings, "package_pool", "")
+    monkeypatch.setattr(settings, "privacy_policy_url", "https://privacy.test/policy")
 
     req = json.loads(SAMPLE.read_text(encoding="utf-8"))
     with TestClient(create_app()) as client:
@@ -112,10 +113,15 @@ def test_auto_release_enqueues_internal_submit_after_quality_gate(tmp_path, monk
             "privacy_url": "https://example.com/privacy",
         },
         "quality_score": 82,
-        "release_ready": True,
+        "release_ready": False,
+        "quality_report": {
+            "quality_score": 82,
+            "release_ready": False,
+            "failure_classes": ["scope_too_large"],
+        },
         "app": {"bundle_id": "com.example.autopublish"},
     }
-    run_id = store.create_run("opp-auto", 1, requirement, status="implementation_complete")
+    run_id = store.create_run("opp-auto", 1, requirement, status="needs_polish")
     handoff["run_id"] = run_id
     handoff["release_bundle"]["project_path"] = f"object://local/runs/{run_id}/project"
     store.update_run(run_id, feedback={"release_handoff": handoff})

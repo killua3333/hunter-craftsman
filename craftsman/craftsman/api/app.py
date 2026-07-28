@@ -16,6 +16,7 @@ from craftsman.callback import deliver_feedback
 from craftsman.config import settings
 from craftsman.dashboard import dashboard_html
 from craftsman.models import AgentBStatus
+from craftsman.orchestrator.quality import release_quality_gate
 from craftsman.orchestrator.policy_checks import check_release_compliance_metadata
 from craftsman.orchestrator.pipeline import analyze_requirement, run_implementation
 from craftsman.publisher.preflight import verify_play_package_access
@@ -128,7 +129,9 @@ def _stage_status(value: str | None, *, done: set[str], failed: set[str]) -> str
         return "done"
     if raw in failed or "failed" in raw or raw == "dead_letter":
         return "failed"
-    if raw in {"pending", "queued", "in_progress", "submitting", "processing", "prepared", "approved", "needs_polish"}:
+    if raw == "needs_polish":
+        return "needs_polish"
+    if raw in {"pending", "queued", "in_progress", "submitting", "processing", "prepared", "approved"}:
         return "running"
     return "waiting"
 
@@ -471,26 +474,15 @@ def _release_platform_target(release_handoff: dict[str, Any] | None, *, fallback
 
 
 def _release_quality_blocker(handoff: dict[str, Any]) -> dict[str, Any] | None:
-    score = handoff.get("quality_score")
-    report = handoff.get("quality_report") if isinstance(handoff.get("quality_report"), dict) else {}
-    if score is None:
-        score = report.get("quality_score")
-    release_ready = handoff.get("release_ready")
-    if release_ready is None:
-        release_ready = report.get("release_ready")
-    if score is None:
-        return None
-    try:
-        score_int = int(score)
-    except (TypeError, ValueError):
-        score_int = 0
-    if bool(release_ready) and score_int >= 75:
+    decision = release_quality_gate(handoff)
+    if decision["passed"]:
         return None
     return {
-        "quality_score": score_int,
-        "release_ready": bool(release_ready),
-        "failure_classes": report.get("failure_classes") or [],
-        "operator_action": "App 质量分未达到 75，需要继续修复或人工确认后再发布。",
+        "quality_score": decision["quality_score"],
+        "release_ready": decision["release_ready"],
+        "failure_classes": decision["failure_classes"],
+        "hard_failure_classes": decision["hard_failure_classes"],
+        "operator_action": "App 未通过基础质量检查，请修复编译、空界面或核心流程后再发布。",
     }
 
 

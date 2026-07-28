@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from craftsman.config import settings
+from craftsman.orchestrator.quality import release_quality_gate
 from craftsman.orchestrator.policy_checks import check_release_compliance_metadata
 from craftsman.publisher.android_build import build_release_aab, write_build_manifest
 from craftsman.publisher.android_signing import cleanup_keystore_properties, write_keystore_properties
@@ -259,27 +260,16 @@ def classify_play_failure(message: str) -> dict[str, str]:
 
 
 def _quality_blocker(handoff: dict[str, Any]) -> dict[str, Any] | None:
-    report = handoff.get("quality_report") if isinstance(handoff.get("quality_report"), dict) else {}
-    score = handoff.get("quality_score")
-    if score is None:
-        score = report.get("quality_score")
-    release_ready = handoff.get("release_ready")
-    if release_ready is None:
-        release_ready = report.get("release_ready")
-    if score is None:
-        return None
-    try:
-        score_int = int(score)
-    except (TypeError, ValueError):
-        score_int = 0
-    if bool(release_ready) and score_int >= 75:
+    decision = release_quality_gate(handoff)
+    if decision["passed"]:
         return None
     return {
-        "quality_score": score_int,
-        "release_ready": bool(release_ready),
-        "failure_classes": report.get("failure_classes") or [],
+        "quality_score": decision["quality_score"],
+        "release_ready": decision["release_ready"],
+        "failure_classes": decision["failure_classes"],
+        "hard_failure_classes": decision["hard_failure_classes"],
         "failure_class": "quality_gate_blocked",
-        "operator_action": "App 质量分未达到 75，需继续修复后再发布。",
+        "operator_action": "App 未通过基础质量检查，请修复编译、空界面或核心流程后再发布。",
     }
 
 

@@ -12,6 +12,7 @@ from typing import Any
 from craftsman.config import settings
 from craftsman.orchestrator.failure_taxonomy import classify_runtime_exception
 from craftsman.orchestrator.pipeline import WorkerStopRequested, run_implementation
+from craftsman.orchestrator.quality import release_quality_gate
 from craftsman.orchestrator.policy_checks import check_release_compliance_metadata
 from craftsman.publisher.models import PublisherStatus
 from craftsman.publisher.orchestrator import run_android_release
@@ -157,7 +158,7 @@ class BackgroundWorker:
         automation = requirement.get("automation") if isinstance(requirement, dict) else {}
         if not isinstance(automation, dict) or not automation.get("auto_release"):
             return
-        if row.get("status") != "implementation_complete":
+        if row.get("status") not in {"implementation_complete", "needs_polish"}:
             self.store.append_audit_log(
                 event_type="auto_release_skipped",
                 run_id=run_id,
@@ -178,13 +179,18 @@ class BackgroundWorker:
                 payload={"reason": "release_handoff_missing"},
             )
             return
-        quality_score = int(handoff.get("quality_score") or 0)
-        if not handoff.get("release_ready") or quality_score < 75:
+        quality_decision = release_quality_gate(handoff)
+        quality_score = int(quality_decision["quality_score"] or 0)
+        if not quality_decision["passed"]:
             self.store.append_audit_log(
                 event_type="auto_release_skipped",
                 run_id=run_id,
                 actor="autopilot",
-                payload={"reason": "quality_gate_blocked", "quality_score": quality_score},
+                payload={
+                    "reason": "quality_gate_blocked",
+                    "quality_score": quality_score,
+                    "hard_failure_classes": quality_decision["hard_failure_classes"],
+                },
             )
             return
         release_id = str(handoff.get("release_id") or f"rel-{run_id}")
