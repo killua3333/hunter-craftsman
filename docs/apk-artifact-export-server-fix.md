@@ -211,28 +211,3 @@ sudo -u www-data <REPO_ROOT>/.venv/bin/python -c 'import craftsman; print(crafts
 ### 只有历史任务缺少 APK
 
 这是预期情况。部署后必须新建任务验证；历史任务不会重新运行，也不会自动从旧项目目录复制产物。
-
-## 7. 回滚
-
-更新前应记录原分支名和提交号。如果修复部署后出现异常，可切回原发布分支并重启：
-
-```bash
-cd <REPO_ROOT>
-git switch <PREVIOUS_BRANCH>
-git pull --ff-only origin <PREVIOUS_BRANCH>
-sudo systemctl restart craftsman
-sudo systemctl status craftsman --no-pager
-```
-
-如果修复已经通过 cherry-pick 合入共享发布分支，应使用 `git revert` 创建可审计的回滚提交并走正常评审流程，不要在共享分支上强制重写历史。
-
-## 8. 验收清单
-
-- [ ] 已轮换曾暴露的 Google Play 服务账号密钥、签名密码和 API Token。
-- [ ] 服务器部署代码包含核心修复提交 `70bdcf8`。
-- [ ] `craftsman` 服务重启成功，`health` 与 `readyz` 检查通过。
-- [ ] 使用 `SKIP_GRADLE_BUILD=false` 创建了一个新任务。
-- [ ] 新任务存在 `artifacts/app-debug.apk`。
-- [ ] 原始 APK 与导出 APK 的 SHA-256 一致。
-- [ ] 控制台能够显示并下载 APK。
-- [ ] 日志、截图和 Git 历史中没有新增敏感信息。
