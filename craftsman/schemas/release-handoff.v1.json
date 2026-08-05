@@ -32,6 +32,7 @@
       "properties": {
         "project_path": { "type": "string" },
         "aab_path": { "type": "string" },
+        "apk_path": { "type": "string" },
         "ipa_path": { "type": "string" },
         "dsym_path": { "type": "string" },
         "icon": { "type": "string" },

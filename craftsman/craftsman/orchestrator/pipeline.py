@@ -22,6 +22,7 @@ from craftsman.orchestrator.quality import evaluate_app_quality, write_implement
 from craftsman.orchestrator.reflexion import apply_fixes, apply_gradle_fixes, save_build_log
 from craftsman.orchestrator.verify_gates import run_verify_hard_gates
 from craftsman.runtime import select_execution_backend
+from craftsman.runtime.android_artifacts import export_debug_apk
 from craftsman.schema_validate import validate_requirement
 from craftsman.store.db import RunStore
 from craftsman.tools import assets as assets_tool
@@ -160,6 +161,8 @@ def _build_release_handoff(
     }
     if artifacts.get("aab"):
         release_bundle["aab_path"] = str(artifacts.get("aab"))
+    if artifacts.get("apk"):
+        release_bundle["apk_path"] = str(artifacts.get("apk"))
     return {
         "schema_version": "1.0",
         "run_id": run_id,
@@ -802,6 +805,12 @@ def run_implementation(
         if privacy_note:
             reasons.append(privacy_note)
 
+        debug_apk_path: Path | None = None
+        if can_build and backend.mode in _ANDROID_BACKENDS and exit_code == 0:
+            debug_apk_path = export_debug_apk(project_dir, artifacts_dir)
+            if debug_apk_path is None:
+                raise RuntimeError("assembleDebug succeeded but no debug APK output was found")
+
         workspace_uri = _artifact_base_uri(run_id, workspace)
         project_uri = _artifact_uri(project_dir, run_id=run_id, workspace=workspace)
         preview_uri = _artifact_uri(Path(preview_path), run_id=run_id, workspace=workspace)
@@ -835,6 +844,13 @@ def run_implementation(
                 "implementation_plan": str(workspace / "implementation_plan.json"),
             },
         }
+        if debug_apk_path:
+            artifacts_payload["apk"] = _artifact_uri(
+                debug_apk_path,
+                run_id=run_id,
+                workspace=workspace,
+            )
+            artifacts_payload["local_paths"]["apk"] = str(debug_apk_path)
         enter_phase("complete", "implementation complete and handoff generated")
         phase_durations["complete"] = round(time.monotonic() - last_phase_tick, 4)
         total_duration = round(time.monotonic() - started, 4)

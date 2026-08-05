@@ -6,6 +6,7 @@ from pathlib import Path
 
 from craftsman.config import settings
 from craftsman.publisher.models import ReleaseBuildResult
+from craftsman.runtime.android_artifacts import export_debug_apk, find_debug_apk
 from craftsman.runtime.docker_android import run_gradle_in_container, should_use_docker_backend
 from craftsman.tools.shell import run_cmd
 
@@ -27,18 +28,6 @@ def ensure_gradle_wrapper(project_dir: Path) -> bool:
     return result.exit_code == 0 and gradlew.is_file()
 
 
-def _find_debug_apk(project_dir: Path) -> Path | None:
-    """Look for assembled debug APK (unsigned, suitable for adb install)."""
-    candidates = [
-        project_dir / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk",
-        project_dir / "app" / "build" / "outputs" / "apk" / "debug" / "app-universal-debug.apk",
-    ]
-    for p in candidates:
-        if p.is_file():
-            return p
-    return None
-
-
 def _run_local_build(project_dir: Path) -> ReleaseBuildResult:
     """Run bundleRelease + assembleDebug locally (both AAB and APK)."""
     if not ensure_gradle_wrapper(project_dir):
@@ -54,7 +43,7 @@ def _run_local_build(project_dir: Path) -> ReleaseBuildResult:
         log += "\n[gradle build timed out]"
 
     aab = project_dir / "app" / "build" / "outputs" / "bundle" / "release" / "app-release.aab"
-    apk = _find_debug_apk(project_dir)
+    apk = find_debug_apk(project_dir)
 
     is_ok = result.exit_code == 0 and aab.is_file()
     reasons = []
@@ -80,21 +69,18 @@ def build_release_aab(project_dir: Path) -> ReleaseBuildResult:
     artifacts_dir = project_dir.parent / "artifacts"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     output_aab = artifacts_dir / "app-release.aab"
-    output_apk = artifacts_dir / "app-debug.apk"
 
     if should_use_docker_backend():
         docker_result = run_gradle_in_container(project_dir, "bundleRelease assembleDebug")
         built_aab = project_dir / "app" / "build" / "outputs" / "bundle" / "release" / "app-release.aab"
-        built_apk = _find_debug_apk(project_dir)
 
         if docker_result.ok and built_aab.is_file():
             shutil.copy2(built_aab, output_aab)
-            if built_apk:
-                shutil.copy2(built_apk, output_apk)
+            exported_apk = export_debug_apk(project_dir, artifacts_dir)
             return ReleaseBuildResult(
                 ok=True,
                 aab_path=str(output_aab),
-                apk_path=str(output_apk) if built_apk else None,
+                apk_path=str(exported_apk) if exported_apk else None,
                 log=docker_result.log,
             )
         return ReleaseBuildResult(
@@ -106,12 +92,11 @@ def build_release_aab(project_dir: Path) -> ReleaseBuildResult:
     local = _run_local_build(project_dir)
     if local.ok and local.aab_path:
         shutil.copy2(Path(local.aab_path), output_aab)
-        if local.apk_path:
-            shutil.copy2(Path(local.apk_path), output_apk)
+        exported_apk = export_debug_apk(project_dir, artifacts_dir)
         return ReleaseBuildResult(
             ok=True,
             aab_path=str(output_aab),
-            apk_path=str(output_apk) if local.apk_path else None,
+            apk_path=str(exported_apk) if exported_apk else None,
             log=local.log,
         )
     return local
