@@ -228,6 +228,18 @@ Google Play API 不能创建新的 App。需要人工在 Play Console 先创建 
 
 在 Play Console 的 Users and permissions 中给 service account 授权。至少需要查看 App 信息、管理测试轨道、发布到测试轨道。
 
+处理顺序：
+
+1. 打开 Google Play Console 的“用户和权限”。
+2. 使用 service account JSON 中的 `client_email` 查找对应账号；如果不存在，先邀请该账号。
+3. 为包名池中的 App 授予查看 App 信息、管理测试轨道和发布测试版本的权限。可使用 Play Console 中等价的 Release manager 权限，但不要授予生产发布权限。
+4. 保存后等待权限生效，再回到 Dashboard 点击“验证包名”。
+5. 验证成功的包名应显示“Play 可访问”；验证失败时以页面新的错误为准。
+
+验证失败后被标记为 `invalid` 的包名不是永久报废。修复 Play Console 权限后再次执行“验证包名”，系统会重新检查并恢复可用状态。
+
+如果 service account 私钥曾通过截图、聊天或日志暴露，应先在 Google Cloud 删除旧 Key、生成新 JSON、替换服务器配置文件并重启 Craftsman，然后再验证包名。
+
 ## 6. 日常维护建议
 
 - 每次真实上传前检查包名池剩余量。
