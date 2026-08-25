@@ -89,8 +89,9 @@ def web_search(
     if time_range:
         kwargs["time_range"] = time_range
 
+    client = _get_client()
     try:
-        response = _get_client().search(**kwargs)
+        response = client.search(**kwargs)
         return _format_search_response(response)
     except Exception as exc:
         return json.dumps({"error": f"Tavily 搜索失败: {exc}", "query": query}, ensure_ascii=False)

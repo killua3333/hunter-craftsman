@@ -2,6 +2,84 @@
 
 本文面向日常使用和维护人员，尽量不用内部术语。
 
+## 0. 云端共享服务器操作边界
+
+当前云服务器同时运行 Hunter-Craftsman 和其他业务。任何维护操作都必须先确认目录、服务和端口，不能把整台服务器当作本项目的独占环境。
+
+### 本项目范围
+
+截至 2026-08-25，Hunter-Craftsman 的云端范围如下：
+
+| 类型 | 路径或名称 |
+| --- | --- |
+| 项目根目录 | `/opt/hcapply` |
+| Craftsman 代码 | `/opt/hcapply/craftsman` |
+| Hunter 代码 | `/opt/hcapply/hunter` |
+| Python 虚拟环境 | `/opt/hcapply/.venv` |
+| systemd 服务 | `craftsman.service` |
+| 服务环境文件 | `/opt/hcapply/craftsman/.env` |
+| SQLite 数据库 | `/opt/hcapply/craftsman/craftsman.db` |
+| 生成工作区 | `/opt/hcapply/craftsman/workspace` |
+| 标准输出日志 | `/var/log/hcapply/output.log` |
+| 错误日志 | `/var/log/hcapply/error.log` |
+| 本地监听地址 | `127.0.0.1:8791` |
+| Nginx 配置 | `/etc/nginx/conf.d/hcapply.conf` |
+| 对外域名 | `hcapply.npzsk.com.cn` |
+
+只允许在上述范围内进行本项目的检查和变更。修改 Nginx 前仍需完整核对配置，因为 Nginx 是共享基础服务。
+
+### 不属于本项目的内容
+
+以下内容属于同机其他业务，Hunter-Craftsman 的维护过程中禁止修改、删除、重启或占用其端口：
+
+- `/opt/oral-evaluator`
+- `/home/admin/docker-compose.yml`
+- `/home/admin/oral-evaluator*`
+- Docker 容器 `oral-evaluator`
+- 公网端口 `8000`
+- Nginx 中与 Hunter-Craftsman 域名无关的站点配置
+
+不要执行整机级 `docker restart`、`docker compose down`、`systemctl restart nginx`、批量杀进程或清理 `/opt`。如确实需要重载 Nginx，应先执行 `sudo nginx -t`，确认变更仅涉及本项目，并取得服务器负责人确认。
+
+### 每次变更前必须检查
+
+```bash
+sudo systemctl status craftsman --no-pager
+sudo systemctl show craftsman -p WorkingDirectory -p ExecStart -p EnvironmentFiles --no-pager
+sudo git -C /opt/hcapply status --short --branch
+sudo git -C /opt/hcapply log -5 --oneline --decorate
+sudo ss -ltnp | grep -E ':(8791|8000|8800) '
+```
+
+检查原则：
+
+- 先记录当前分支、提交号和未提交文件，再决定如何更新。
+- 云端存在未提交修改时，不执行覆盖、重置或强制拉取。
+- 不直接用本地目录覆盖 `/opt/hcapply`；代码更新必须基于明确分支和提交。
+- 当前云端曾部署 `codex/apk-artifact-hotfix`，并存在 `craftsman/.gitignore` 未提交修改。后续操作仍以现场检查结果为准，不能假定分支一直不变。
+- 只重启 `craftsman.service`，且仅在本项目代码或环境配置确实变更后执行。
+- 修改数据库前必须备份；普通排查优先使用只读查询。
+
+### 凭据与密钥边界
+
+- 不在聊天、截图、日志或文档中展示 `.env`、API Token、Google service account 私钥、keystore 密码。
+- 不使用 `cat` 输出完整密钥文件；只检查文件是否存在、JSON 是否可解析、配置项是否为空。
+- Dashboard 的访问令牌保存在浏览器本地。服务端已配置 `API_TOKEN` 时，浏览器必须先在“访问设置”中填写同一令牌，否则接口会返回 `401 Unauthorized`。
+- service account JSON 能被读取和解析，只说明文件格式正确，不代表它已经获得目标 Play Console App 的权限。
+- service account 私钥一旦出现在截图或聊天中，必须在 Google Cloud 删除旧 Key、生成新 Key、替换服务器文件并重启 Craftsman。
+
+### 云端排查纪律
+
+默认只做以下只读操作：查看服务状态、端口、日志、Git 状态、配置项是否存在，以及数据库只读查询。以下操作必须另行确认：修改云端文件、重启服务、修改数据库、验证 Play 包名、创建 Play edit、上传 AAB、提交 internal 版本。
+
+真实发布前还必须确认：
+
+- 页面“验证包名”请求实际到达后端，且目标包名显示 Play 可访问。
+- 质量报告为 `release_ready=true` 且质量分不低于 75。
+- 任务保留了“生成后自动发布”意图，并创建了 release state 和 release job。
+- `PRIVACY_POLICY_URL` 是真实可公网访问的隐私政策地址，不能使用 `https://example.com/privacy`。
+- Google Play service account、签名文件、AAB、图标、截图和商店文案均通过发布前检查。
+
 ## 1. 启动服务
 
 ```powershell
@@ -81,6 +159,15 @@ http://127.0.0.1:8791/dashboard
 7. 质量达标后再进入发布。
 8. 提交到 Google Play internal track 之前，确认包名池、签名、service account 和 Android 构建环境都已准备完成。
 
+### 人工确认与自动发布模式
+
+- `manual`：发现结束后只进入需求池。人工点击“进入生成”后执行 B，但不会自动发布。
+- `auto`：证据分、机会分和开发适配分达到门槛时自动进入 B，但不会自动发布。
+- `auto_publish`：达到门槛时自动进入 B；B 质量达标且发布配置完整后继续进入 C。
+- `auto_publish` 未达到自动选择门槛时会停在需求池。人工确认候选后，系统仍应保留“生成后自动发布”的选择；质量或发布配置不达标时继续阻断，不会绕过门禁。
+
+差评中的“订阅、广告、云同步”等文字表示竞品用户在抱怨的问题，不能直接视为新 App 需要实现的功能或依赖。开发复杂度只根据拟实现功能和明确技术依赖判断。
+
 ## 4. Google Play internal track 发布
 
 发布前必须确认：
@@ -148,6 +235,19 @@ Google Play API 不能创建新的 App。需要人工在 Play Console 先创建 
 - 不要把失败任务伪装成成功候选。
 - 不要把 demo、fallback、assumption 数据放进客户默认视图。
 - 每次大改后至少跑 discovery、quality、release preflight 三类测试。
+
+本地运行发现与发布相关回归测试时，必须同时加入 Hunter 和 Craftsman 源码路径：
+
+```powershell
+cd D:\A\hunter-craftsman
+$env:PYTHONPATH=".\hunter\src;.\craftsman"
+.\craftsman\.venv\Scripts\python.exe -m pytest `
+  craftsman\tests\test_real_discovery_api.py `
+  craftsman\tests\test_release_async_submit.py `
+  craftsman\tests\test_api.py `
+  hunter\tests\test_play_monitor_discovery.py `
+  -q -p no:cacheprovider
+```
 
 ## 当前版本补充：质量门槛与包名池
 

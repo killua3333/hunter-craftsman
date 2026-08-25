@@ -226,7 +226,7 @@ def run_autopilot_pipeline(
                 f"包含 target_users / pain_points / differentiation / feature_priority：\n"
                 f"app_name: {blueprint.app_name}\n"
                 f"core_logic: {blueprint.core_logic}\n"
-                f"store description: {blueprint.requirement.store.get('description', '')}\n"
+                f"store description: {blueprint.requirement.store.description}\n"
             )
             answer = session.send(brief_prompt)
             brief_text = answer.get("final_answer") or answer.get("answer") or ""

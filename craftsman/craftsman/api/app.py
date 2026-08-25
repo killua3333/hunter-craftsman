@@ -389,6 +389,7 @@ class DiscoveryStartBody(BaseModel):
 
 class OpportunityImplementBody(BaseModel):
     operator: str = Field(default="dashboard-operator")
+    auto_release: bool | None = None
 class PackageDisableBody(BaseModel):
     reason: str = Field(default="operator_disabled")
 
@@ -569,19 +570,27 @@ def _candidate_payload(discovery_run_id: str, raw: dict[str, Any], *, data_quali
 
 
 def _candidate_has_complex_dependency(candidate: dict[str, Any]) -> bool:
-    fields = [
-        candidate.get("niche"),
-        candidate.get("target_users"),
-        candidate.get("competitor_gap"),
-        candidate.get("decision_reason"),
-        candidate.get("pain_points"),
-        candidate.get("review_pain_summary"),
-    ]
-    text = json.dumps(fields, ensure_ascii=False).lower()
+    requirement = candidate.get("requirement") if isinstance(candidate.get("requirement"), dict) else {}
+    budget = requirement.get("budget") if isinstance(requirement.get("budget"), dict) else {}
+    if any(budget.get(flag) is False for flag in ("no_backend", "no_login", "no_payment")):
+        return True
+
+    implementation_fields: list[Any] = [candidate.get("niche")]
+    for feature in requirement.get("features") or []:
+        if isinstance(feature, dict):
+            implementation_fields.append(feature.get("title") or feature.get("name"))
+            description = str(feature.get("description") or "").split("Evidence pain points to avoid:", 1)[0]
+            implementation_fields.append(description)
+        else:
+            implementation_fields.append(feature)
+    implementation_fields.append(requirement.get("core_logic"))
+    text = json.dumps(implementation_fields, ensure_ascii=False).lower()
     blockers = (
-        "account", "login", "sign in", "subscription", "payment",
-        "backend", "server", "cloud sync", "real-time sync",
-        "账号", "登录", "支付", "订阅", "服务器", "云同步",
+        "requires account", "user account", "login required", "sign in required",
+        "payment processing", "in-app purchase", "subscription billing",
+        "remote backend", "server api", "cloud sync", "real-time sync",
+        "需要账号", "用户账号", "必须登录", "支付处理", "应用内购买",
+        "订阅计费", "远程后端", "服务器接口", "云同步", "实时同步",
     )
     return any(token in text for token in blockers)
 
@@ -598,7 +607,6 @@ def _passes_auto_discovery_threshold(candidate: dict[str, Any]) -> bool:
 
 def _features_for_candidate(candidate: dict[str, Any]) -> list[dict[str, Any]]:
     niche = str(candidate.get("niche") or candidate.get("app_name") or "").lower()
-    pain_text = ", ".join(str(p) for p in (candidate.get("pain_points") or [])[:3])
 
     presets: list[tuple[tuple[str, ...], list[tuple[str, str]]]] = [
         (("checklist", "todo", "to do", "task"), [
@@ -650,7 +658,7 @@ def _features_for_candidate(candidate: dict[str, Any]) -> list[dict[str, Any]]:
             "id": f"feature_{idx}",
             "type": "local_tool",
             "title": title,
-            "description": f"{description} Evidence pain points to avoid: {pain_text or 'unclear value proposition'}." ,
+            "description": description,
         })
     return result
 
@@ -739,13 +747,16 @@ def _submit_candidate_to_b(
     candidate_id: str,
     *,
     actor: str = "dashboard",
-    auto_release: bool = False,
+    auto_release: bool | None = None,
 ) -> dict[str, Any]:
     candidate = store.get_discovery_candidate(candidate_id)
     if not candidate:
         raise HTTPException(404, detail=_error_detail(code="candidate_not_found", message="opportunity candidate not found"))
     if candidate.get("submitted_run_id"):
         return {"accepted": True, "candidate_id": candidate_id, "run_id": candidate.get("submitted_run_id"), "status": "already_submitted"}
+    if auto_release is None:
+        discovery_run = store.get_discovery_run(str(candidate.get("discovery_run_id") or ""))
+        auto_release = bool(discovery_run and discovery_run.get("mode") == "auto_publish")
     requirement = candidate.get("requirement") if isinstance(candidate.get("requirement"), dict) and candidate.get("requirement") else _requirement_from_candidate(candidate)
     if auto_release:
         automation = requirement.setdefault("automation", {})
@@ -784,7 +795,7 @@ def _submit_candidate_to_b(
         event_type="discovery_candidate_submitted_to_b",
         run_id=run_id,
         actor=actor,
-        payload={"candidate_id": candidate_id, "opportunity_id": opportunity_id},
+        payload={"candidate_id": candidate_id, "opportunity_id": opportunity_id, "auto_release": bool(auto_release)},
     )
     return {"accepted": True, "candidate_id": candidate_id, "run_id": run_id, "status": "queued"}
 
@@ -1403,7 +1414,12 @@ def create_app() -> FastAPI:
             _require_api_token(x_api_token)
         assert _store is not None
         actor = body.operator or "dashboard-operator"
-        result = _submit_candidate_to_b(_store, candidate_id, actor=actor)
+        result = _submit_candidate_to_b(
+            _store,
+            candidate_id,
+            actor=actor,
+            auto_release=body.auto_release,
+        )
         return result
     @app.get("/dashboard/api/releases/{release_id}")
     def dashboard_release_detail(

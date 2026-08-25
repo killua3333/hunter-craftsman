@@ -291,11 +291,26 @@ def _candidate_from_query(query: str, matrix: list[dict[str, Any]], reviews: lis
 
 
 def _build_fit_score(query: str, pain_summary: list[dict[str, Any]]) -> int:
-    text = (query + " " + " ".join(str(p.get("theme") or "") for p in pain_summary)).lower()
+    # Review themes describe competitor problems, not capabilities our MVP must implement.
+    # Only the requested product direction should affect implementation complexity.
+    del pain_summary
+    text = query.lower()
     score = 82
-    for token in ("sync", "account", "subscription", "cloud", "social", "payment"):
-        if token in text:
-            score -= 12
+    for phrase in (
+        "social network",
+        "online multiplayer",
+        "cloud storage",
+        "live streaming",
+        "payment processor",
+        "ride sharing",
+        "实时多人",
+        "社交网络",
+        "云存储",
+        "直播平台",
+        "支付平台",
+    ):
+        if phrase in text:
+            score -= 28
     for token in ("timer", "checklist", "converter", "tracker", "reminder", "calculator"):
         if token in text:
             score += 4

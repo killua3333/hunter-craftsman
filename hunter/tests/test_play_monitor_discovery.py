@@ -91,3 +91,13 @@ def test_discovery_prompt_forces_candidate_pool_selection():
     assert "candidate_opportunities" in prompt
     assert "disc-test" in prompt
     assert "source_apps" in prompt
+
+
+def test_build_fit_uses_product_scope_not_review_complaints():
+    subscription_complaints = [{"theme": "subscription", "review_count": 20}]
+
+    local_score = play_monitor._build_fit_score("simple timer", subscription_complaints)
+    complex_score = play_monitor._build_fit_score("online multiplayer game", [])
+
+    assert local_score == 86
+    assert complex_score < 60
