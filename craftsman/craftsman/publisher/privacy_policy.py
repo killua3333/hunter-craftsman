@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import base64
+import html
 import json
 import re
 import time
+from datetime import date
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -69,6 +71,43 @@ def render_privacy_html(req: dict[str, Any]) -> str:
   <h2>联系</h2>
   <p>如有疑问请联系：<a href="mailto:{email}">{email}</a></p>
   <p>商店描述：{store.get('subtitle', name)}</p>
+</body>
+</html>
+"""
+
+
+def render_public_privacy_html() -> str:
+    """Render the public policy used by the local-only Android MVP product line."""
+    email = html.escape(settings.privacy_contact_email, quote=True)
+    updated = date.today().isoformat()
+    return f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>应用隐私政策</title>
+  <style>
+    body {{ color: #202124; font-family: system-ui, sans-serif; max-width: 760px; margin: 0 auto; padding: 32px 20px 56px; line-height: 1.7; }}
+    h1 {{ font-size: 28px; }}
+    h2 {{ font-size: 19px; margin-top: 28px; }}
+    .meta {{ color: #5f6368; }}
+    a {{ color: #0b57d0; }}
+  </style>
+</head>
+<body>
+  <h1>应用隐私政策</h1>
+  <p class="meta">最后更新：{updated}</p>
+  <p>本政策适用于通过本开发者账号发布、且在 Google Play 商店页面引用本地址的本地工具类应用。</p>
+  <h2>数据处理</h2>
+  <p>这些应用默认不要求注册账号，不收集可识别个人身份的信息。用户输入的记录和设置仅保存在用户设备本地，不会上传到我们的服务器。</p>
+  <h2>第三方服务</h2>
+  <p>当前版本默认不包含第三方广告、分析 SDK、支付、订阅或云同步服务。</p>
+  <h2>数据删除</h2>
+  <p>用户可以在应用内清除记录，也可以通过清除应用数据或卸载应用删除全部本地数据。</p>
+  <h2>政策变更</h2>
+  <p>如果某个应用未来增加联网、账号或第三方服务，将在发布前更新相应声明和隐私政策。</p>
+  <h2>联系我们</h2>
+  <p>如有隐私相关问题，请联系：<a href="mailto:{email}">{email}</a></p>
 </body>
 </html>
 """
@@ -287,4 +326,3 @@ def ensure_privacy_url(
             encoding="utf-8",
         )
     return result
-

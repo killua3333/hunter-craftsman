@@ -19,6 +19,7 @@ from craftsman.models import AgentBStatus
 from craftsman.orchestrator.quality import release_quality_gate
 from craftsman.orchestrator.policy_checks import check_release_compliance_metadata
 from craftsman.orchestrator.pipeline import analyze_requirement, run_implementation
+from craftsman.publisher.privacy_policy import render_public_privacy_html
 from craftsman.publisher.preflight import verify_play_package_access
 from craftsman.schema_validate import validate_feedback, validate_release_handoff
 from craftsman.store.db import RunStore
@@ -1090,6 +1091,10 @@ def create_app() -> FastAPI:
     @app.get("/dashboard", response_class=HTMLResponse)
     def dashboard_page() -> str:
         return dashboard_html()
+
+    @app.get("/privacy", response_class=HTMLResponse)
+    def privacy_page() -> str:
+        return render_public_privacy_html()
 
     @app.get("/dashboard/api/overview")
     def dashboard_overview(

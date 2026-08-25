@@ -51,6 +51,17 @@ def test_readyz_endpoint():
         assert "repaired_release_jobs" in body
 
 
+def test_public_privacy_page(monkeypatch):
+    monkeypatch.setattr(settings, "privacy_contact_email", "privacy@example.test")
+    client = TestClient(create_app())
+
+    resp = client.get("/privacy")
+
+    assert resp.status_code == 200
+    assert "应用隐私政策" in resp.text
+    assert "privacy@example.test" in resp.text
+
+
 def test_analyze_rejects_incomplete(monkeypatch):
     from craftsman.config import settings
 
