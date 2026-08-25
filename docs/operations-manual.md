@@ -174,6 +174,7 @@ http://127.0.0.1:8791/dashboard
 
 - Play Console 已经预创建对应包名。
 - `PACKAGE_POOL` 中只放已预创建、已授权的包名。
+- service account 所属 Google Cloud 项目已启用 `androidpublisher.googleapis.com`。
 - service account 有 internal testing 发布权限。
 - 签名 keystore 可用。
 - Android SDK 或 Docker builder 可用。
@@ -237,6 +238,8 @@ Google Play API 不能创建新的 App。需要人工在 Play Console 先创建 
 5. 验证成功的包名应显示“Play 可访问”；验证失败时以页面新的错误为准。
 
 验证失败后被标记为 `invalid` 的包名不是永久报废。修复 Play Console 权限后再次执行“验证包名”，系统会重新检查并恢复可用状态。
+
+如果错误为 `play_api_disabled`，不要继续调整 Play Console 的 App 权限。应进入 service account 所属 Google Cloud 项目的“API 和服务 -> API 库”，启用 **Google Play Android Developer API**，等待数分钟后重新验证包名。
 
 如果 service account 私钥曾通过截图、聊天或日志暴露，应先在 Google Cloud 删除旧 Key、生成新 JSON、替换服务器配置文件并重启 Craftsman，然后再验证包名。
 

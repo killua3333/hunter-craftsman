@@ -70,16 +70,29 @@ def build_android_publisher_service():
 def map_play_api_error(exc: Exception) -> str:
     """Turn Google API errors into operator-friendly messages."""
     message = str(exc)
-    lower = message.lower()
+    content = getattr(exc, "content", b"")
+    if isinstance(content, bytes):
+        content = content.decode("utf-8", errors="replace")
+    detail = f"{message}\n{content}" if content else message
+    lower = detail.lower()
+    compact = lower.replace("_", "").replace(" ", "")
     if "version code" in lower and "already been used" in lower:
         return "versionCode conflict: bump version and retry"
     if "changes are sent for review automatically" in lower or "changesnotsentforreview" in lower:
         return "Play API commit denied: grant service account permission to send changes for review / release apps"
-    if "403" in message or "forbidden" in lower:
+    if (
+        "service_disabled" in lower
+        or "servicedisabled" in compact
+        or (
+            "androidpublisher.googleapis.com" in lower
+            and ("has not been used" in lower or "is disabled" in lower)
+        )
+    ):
+        return "Google Play Android Developer API is disabled: enable androidpublisher.googleapis.com in the service account Google Cloud project"
+    if "403" in detail or "forbidden" in lower or "permission_denied" in lower:
         return "Play API permission denied: grant service account Release manager in Play Console"
-    if "404" in message or "not found" in lower:
+    if "404" in detail or "not found" in lower:
         return "Play app not found: create the app in Console with matching package name first"
-    if "applicationnotfound" in lower.replace(" ", ""):
+    if "applicationnotfound" in compact:
         return "package name not registered in Play Console"
-    return message[:500]
-
+    return detail[:500]

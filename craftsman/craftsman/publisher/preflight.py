@@ -270,6 +270,8 @@ def _operator_action_for_check(name: str) -> str:
 
 def _failure_class_from_play_message(message: str) -> str:
     lower = message.lower()
+    if "android developer api is disabled" in lower or "androidpublisher.googleapis.com" in lower:
+        return "play_api_disabled"
     if "not found" in lower or "not registered" in lower:
         return "package_not_precreated"
     if "permission" in lower or "forbidden" in lower or "denied" in lower or "401" in lower or "403" in lower:
@@ -281,6 +283,8 @@ def _failure_class_from_play_message(message: str) -> str:
 
 def _operator_action_from_play_message(message: str) -> str:
     failure_class = _failure_class_from_play_message(message)
+    if failure_class == "play_api_disabled":
+        return "请在 service account 所属 Google Cloud 项目中启用 Google Play Android Developer API，等待生效后重新验证包名。"
     if failure_class == "package_not_precreated":
         return "请先在 Play Console 预创建这个包名，并确认包名池只包含已创建应用。"
     if failure_class == "service_account_permission":
@@ -288,4 +292,3 @@ def _operator_action_from_play_message(message: str) -> str:
     if failure_class == "internal_track_unavailable":
         return "请检查 Play Console 内部测试轨道是否已启用。"
     return "请查看 Google Play API 返回信息后重试。"
-

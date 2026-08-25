@@ -95,6 +95,7 @@ http://127.0.0.1:8791/health
 
 - `ANDROID_RELEASE_TRACK=internal`。
 - `GOOGLE_PLAY_SERVICE_ACCOUNT_FILE` 指向有效 service account JSON。
+- service account 所属 Google Cloud 项目已启用 `androidpublisher.googleapis.com`。
 - `ANDROID_KEYSTORE_PATH`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD` 可用。
 - `PACKAGE_POOL` 中的包名已经在 Play Console 预创建。
 - service account 对这些 App 有 internal testing 发布权限。

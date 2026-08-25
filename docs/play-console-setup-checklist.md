@@ -30,6 +30,9 @@ Google Play Developer API 不能自动创建一个全新的 Play Console App。�
 2. 创建 service account。
 3. 创建 JSON key。
 4. 下载为 `play-sa.json`。
+5. 打开“API 和服务 -> API 库”，启用 **Google Play Android Developer API**（服务名 `androidpublisher.googleapis.com`）。
+
+注意：创建 service account 不会自动启用 Android Publisher API。未启用时 Google 返回 HTTP 403 和 `SERVICE_DISABLED`；这与 Play Console 的 App 权限不足是两个不同问题。
 
 在 Play Console：
 
@@ -120,6 +123,7 @@ ANDROID_RELEASE_TRACK=internal
 
 | failure_class | 含义 | 处理 |
 | --- | --- | --- |
+| `play_api_disabled` | Google Cloud 项目未启用 Android Publisher API | 在 API 库启用后等待数分钟，再重新验证 |
 | `package_not_precreated` | 包名没有在 Play Console 创建，或 service account 看不到 | 预创建 App，检查权限 |
 | `service_account_permission` | service account 权限不足 | 在 Play Console 授权测试轨道发布权限 |
 | `version_code_conflict` | versionCode 已经用过 | 提高 versionCode 后重试 |
