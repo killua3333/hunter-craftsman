@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -63,10 +64,18 @@ def _container_project_path(project_dir: Path) -> tuple[Path, str]:
 
 def run_gradle_in_container(
     project_dir: Path,
-    gradle_task: str,
+    gradle_tasks: str | Sequence[str],
     *,
     extra_env: dict[str, str] | None = None,
 ) -> DockerGradleResult:
+    tasks = [gradle_tasks] if isinstance(gradle_tasks, str) else list(gradle_tasks)
+    if not tasks or any(not task.strip() or any(char.isspace() for char in task) for task in tasks):
+        return DockerGradleResult(
+            ok=False,
+            exit_code=2,
+            log="invalid gradle task list",
+            reasons=["gradle tasks must be passed as separate arguments"],
+        )
     if not is_docker_available():
         return DockerGradleResult(
             ok=False,
@@ -113,7 +122,7 @@ def run_gradle_in_container(
             "/opt/gradle-8.7/bin/gradle",
             settings.docker_android_image,
             "--no-daemon",
-            gradle_task,
+            *tasks,
         ]
     )
 
@@ -134,7 +143,7 @@ def run_gradle_in_container(
     ok = proc.returncode == 0
     reasons: list[str] = []
     if not ok:
-        reasons.append(f"gradle {gradle_task} failed in docker (exit {proc.returncode})")
+        reasons.append(f"gradle {' '.join(tasks)} failed in docker (exit {proc.returncode})")
     return DockerGradleResult(ok=ok, exit_code=proc.returncode, log=log, reasons=reasons)
 
 

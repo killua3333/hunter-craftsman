@@ -39,6 +39,40 @@ def test_run_gradle_in_container_invokes_docker(monkeypatch, tmp_path):
     assert "assembleDebug" in calls[0]
 
 
+def test_run_gradle_in_container_passes_multiple_tasks_separately(monkeypatch, tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "gradlew").write_text("#!/bin/sh\n", encoding="utf-8")
+
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        return MagicMock(returncode=0, stdout="BUILD SUCCESSFUL", stderr="")
+
+    monkeypatch.setattr("craftsman.runtime.docker_android.is_docker_available", lambda: True)
+    monkeypatch.setattr("craftsman.runtime.docker_android.subprocess.run", fake_run)
+    monkeypatch.setattr(settings, "docker_android_image", "test/android-builder")
+
+    result = run_gradle_in_container(project, ["bundleRelease", "assembleDebug"])
+
+    assert result.ok is True
+    assert calls[0][-2:] == ["bundleRelease", "assembleDebug"]
+
+
+def test_run_gradle_in_container_rejects_space_joined_tasks(monkeypatch, tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "gradlew").write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setattr("craftsman.runtime.docker_android.is_docker_available", lambda: True)
+
+    result = run_gradle_in_container(project, "bundleRelease assembleDebug")
+
+    assert result.ok is False
+    assert result.exit_code == 2
+    assert "separate arguments" in " ".join(result.reasons)
+
+
 def test_run_gradle_missing_wrapper(tmp_path, monkeypatch):
     project = tmp_path / "project"
     project.mkdir()

@@ -71,7 +71,7 @@ def build_release_aab(project_dir: Path) -> ReleaseBuildResult:
     output_aab = artifacts_dir / "app-release.aab"
 
     if should_use_docker_backend():
-        docker_result = run_gradle_in_container(project_dir, "bundleRelease assembleDebug")
+        docker_result = run_gradle_in_container(project_dir, ["bundleRelease", "assembleDebug"])
         built_aab = project_dir / "app" / "build" / "outputs" / "bundle" / "release" / "app-release.aab"
 
         if docker_result.ok and built_aab.is_file():
