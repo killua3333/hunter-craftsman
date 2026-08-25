@@ -6,7 +6,7 @@
 
 - [handoff.md](handoff.md)：项目现状、真实能力、启动方式、配置边界、已知问题。
 - [operations-manual.md](operations-manual.md)：日常操作手册，从启动服务到处理失败。
-- [operator-step-by-step-guide.md](operator-step-by-step-guide.md)：从零开始的完整操作指导书，适合第一次接手的人。
+- [operator-step-by-step-guide.md](operator-step-by-step-guide.md)：面向实际用户和管理员的完整操作指导书，明确一次性配置、每个 App 的人工步骤、自动流程和正式发布前责任。
 - [play-console-setup-checklist.md](play-console-setup-checklist.md)：Google Play internal track 所需账号、包名池、签名和 service account 配置。
 - [demo-script.md](demo-script.md)：给客户或内部评审演示时的推荐脚本。
 

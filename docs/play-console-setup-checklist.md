@@ -113,13 +113,26 @@ ANDROID_SDK_ROOT=C:\Users\Administrator\AppData\Local\Android\Sdk
 ANDROID_BUILD_BACKEND=auto
 ```
 
-## 6. 发布轨道
+## 6. 隐私政策
+
+真实发布必须使用公网可访问、内容与 App 实际行为一致的隐私政策 URL：
+
+```env
+PRIVACY_POLICY_URL=https://your-domain.example/privacy
+PRIVACY_CONTACT_EMAIL=support@your-domain.example
+```
+
+同一开发者可以让多款行为一致的本地工具 App 共用一份开发者级隐私政策，不需要为每个包名重复部署网页。但出现以下任一变化时必须更新政策和数据安全声明：联网传输数据、登录账号、广告或分析 SDK、支付订阅、云同步、敏感权限或第三方数据共享。
+
+当前甲方云端使用 `https://hcapply.npzsk.com.cn/privacy`。它适用于当前“本地存储、无账号、无广告、无分析 SDK”的测试 App，不应未经审核直接用于功能范围不同的正式产品。
+
+## 7. 发布轨道
 当前产品流程只支持真实上传到 Google Play internal track：
 
 ```env
 ANDROID_RELEASE_TRACK=internal
 ```
-## 7. 常见失败
+## 8. 常见失败
 
 | failure_class | 含义 | 处理 |
 | --- | --- | --- |
@@ -132,16 +145,18 @@ ANDROID_RELEASE_TRACK=internal
 | `play_api_transient` | Google API 临时失败或网络超时 | 保留包名，稍后重试 |
 | `internal_track_unavailable` | internal track 配置不可用 | 在 Play Console 初始化内部测试轨道 |
 
-## 8. 验收标准
+## 9. 验收标准
 
 配置完成后，应能做到：
 
 1. Dashboard 能准备 release。
 2. 发布前检查能识别包名、签名、metadata、service account。
+3. 隐私政策 URL 可以从公网访问，并且内容符合 App 实际行为。
 4. 真实上传进入 `uploading_internal`。
 5. 成功后状态为 `internal_submitted`。
 6. 失败时能给出明确 failure_class 和人工处理建议。
-## Dashboard 包名池验收
+
+## 10. Dashboard 包名池验收
 
 配置好 `.env PACKAGE_POOL` 后，在 Dashboard 执行：
 
@@ -164,12 +179,13 @@ ANDROID_RELEASE_TRACK=internal
 
 如果真实上传失败：
 
+- `play_api_disabled`：到 service account 所属 Google Cloud 项目启用 Android Publisher API；同一项目只需启用一次。
 - `package_not_precreated`：不要重试代码，先在 Play Console 创建 App。
 - `service_account_permission`：不要更换代码，先给 service account 授权。
 - `version_code_conflict`：保留包名，提高 versionCode 后重试。
 - `play_api_transient`：保留包名，稍后重试。
 
-## 9. 2026-07-03 验证记录与解释
+## 11. 验证记录与解释
 
 已验证成功案例：
 

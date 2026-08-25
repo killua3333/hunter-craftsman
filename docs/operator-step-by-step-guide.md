@@ -13,16 +13,51 @@
 2. Agent B 负责把需求变成可运行的 Android MVP。
 3. Agent C 负责把达标产物真实上传到 Google Play internal testing。
 
-人类主要做两件事：
+角色分工：
 
-- 一次性把 Google Play、service account、签名、包名池配好。
-- 运行时盯着 Dashboard，看结果、处理失败、必要时人工确认。
+- 普通用户：只需要打开 Dashboard，填写关注方向、查看候选和进度。
+- 系统管理员：负责 Google Play、Google Cloud、service account、签名、包名池、模型密钥和服务器环境。
+- 应用负责人：确认生成 App 的真实质量，以及 Play Console 中由人承担责任的合规声明。
+
+已经部署好的云端环境不需要普通用户再次启动 Hunter、Docker 或 Android 构建命令。Craftsman 服务会在后台调用这些能力。
+
+### 1.1 哪些工作只做一次
+
+以下配置对同一套服务器、同一个 Google Cloud 项目长期有效，不需要每发布一个 App 都重复操作：
+
+1. 注册并完成 Google Play 开发者账号身份和付款验证。
+2. 创建 Google Cloud 项目和 service account。
+3. 在该 Google Cloud 项目启用 **Google Play Android Developer API**（`androidpublisher.googleapis.com`）。
+4. 把 service account 加入 Play Console，并授予测试轨道和商店资料权限。
+5. 配置并备份 Android keystore。
+6. 配置模型 API Key、Dashboard `API_TOKEN`、Android SDK 或 Docker 构建环境。
+7. 配置真实公网隐私政策地址、联系邮箱和 HTTPS 域名。
+8. 仅在服务器无法直连 Google Play 时配置真实可用的出网代理。
+
+### 1.2 每新增一个 Play App 都要做
+
+Google Play Developer API 不能创建全新的 Play Console App。每增加一个可发布包名，管理员必须：
+
+1. 在 Play Console 点击“创建应用”，创建真正的 App，而不是只在 `.env` 写一个包名字符串。
+2. 为 App 设置唯一包名。
+3. 如果 service account 不是全账号授权，为这个新 App 单独授予权限。
+4. 把同一个包名加入 `.env` 的 `PACKAGE_POOL`。
+5. 在 Dashboard“发布配置”依次点击“同步配置”和“验证包名”。
+6. 看到“Play 可访问”后，才能交给 Agent B/C 使用。
+
+### 1.3 每次生成和发布都要确认
+
+1. 候选需求确实值得做，来源证据与建议功能没有明显偏差。
+2. 生成 App 可以安装和操作，质量分不代替人工产品验收。
+3. 隐私政策描述与 App 实际行为一致。
+4. 内部测试成功后，在 Play Console 确认版本、包名和测试轨道正确。
+5. 进入封闭测试或正式发布前，人工完成数据安全、内容分级、目标受众、广告、App 访问权限和测试人员等官方配置。
 
 ## 2. 一次性准备
 
 ### 2.1 Play Console 先准备好 App
 
-Google Play 不允许系统直接创建一个全新的 Play Console App，所以你必须先人工准备好包名。
+Google Play 不允许系统通过 Android Publisher API 创建一个全新的 Play Console App，所以必须先人工创建真正的 App，并为它设置包名。只把包名写入 `.env` 不会创建 Play App。
 
 你需要做的事：
 
@@ -39,6 +74,14 @@ PACKAGE_POOL=com.yourbrand.template001,com.yourbrand.template002,com.yourbrand.t
 ```
 
 ### 2.2 service account
+
+先在 service account 所属 Google Cloud 项目执行一次：
+
+1. 打开“API 和服务 -> API 库”。
+2. 搜索并启用 **Google Play Android Developer API**。
+3. 等待数分钟后再验证包名。
+
+这是 Google Cloud 项目级开关。只要继续使用同一个项目，启用一次即可；新建 App、新增包名或更换同项目内的 service account 都不需要重复启用。只有更换 Google Cloud 项目、API 被人工关闭或项目被停用时才需要重新处理。
 
 把 Google Cloud 里创建好的 service account JSON 放到：
 
@@ -90,8 +133,44 @@ copy .env.example .env
 - `GOOGLE_PLAY_SERVICE_ACCOUNT_FILE`
 - `ANDROID_KEYSTORE_PATH`
 - `PACKAGE_POOL`
+- `PRIVACY_POLICY_URL`
+- `PRIVACY_CONTACT_EMAIL`
+- `API_TOKEN`
+
+隐私政策说明：
+
+- 当前云端公共地址是 `https://hcapply.npzsk.com.cn/privacy`。
+- 该地址不是只绑定某一个包名，而是供当前开发者账号下符合声明的本地工具 App 共用。
+- 只要 App 仍然是本地存储、无账号、无广告、无分析 SDK、无支付和云同步，就可以持续使用。
+- 如果未来 App 增加联网、登录、广告、分析、支付、订阅或云同步，必须先更新隐私政策和 Play 数据安全声明。
+- 正式运营应使用项目专用联系邮箱；当前测试邮箱不应作为长期商业联系地址。
+
+### 2.6 当前甲方云端已经完成的配置
+
+截至 2026-08-26，当前服务器已经完成：
+
+- Google Cloud 项目 `288325624096` 已启用 Google Play Android Developer API。
+- service account 凭据可以访问 Android Publisher API。
+- `com.hcap01.app` 至 `com.hcap05.app` 已通过 Play edit 和 internal 轨道读写验证。
+- 公网隐私政策 `https://hcapply.npzsk.com.cn/privacy` 可以访问。
+- Android release signing 已通过发布前检查。
+
+因此，在继续使用当前 Google Cloud 项目和当前服务器配置时，甲方不需要为每个 App 重复启用 API。但以下变化仍需要管理员处理：
+
+- 包名池用完：在 Play Console 创建新 App、设置新包名、授权并加入 `PACKAGE_POOL`。
+- 换到新的 Google Cloud 项目：新项目必须重新启用 Android Publisher API。
+- 更换 service account：替换 JSON；如果不是全账号授权，还要在 Play Console 授权。
+- API 被关闭、项目停用或权限被收回：按 Dashboard 的真实错误重新处理。
+- App 功能超出当前隐私政策范围：更新隐私政策和数据安全声明。
 
 ## 3. 启动前后端
+
+甲方云端已经由 `craftsman.service` 常驻运行，普通用户跳过 3.1 和 3.2，直接打开：
+
+- `https://hcapply.npzsk.com.cn/dashboard`
+- `https://hcapply.npzsk.com.cn/health`
+
+下面的安装和启动命令只用于首次部署或本地开发。
 
 ### 3.1 安装依赖
 
@@ -125,7 +204,7 @@ python .\scripts\serve_dashboard.py
 
 ### 第 1 步：开始真实需求发现
 
-在 Dashboard 的“机会发现”页点击开始。
+在 Dashboard 的“找机会”页填写关注方向，模式选择“一键自动生成并上架”，然后点击右上角同名按钮。
 
 这一步系统会做：
 
@@ -143,9 +222,9 @@ python .\scripts\serve_dashboard.py
 - 有没有竞品和评论证据。
 - 有没有候选进入需求池。
 
-### 第 2 步：人工挑一个候选
+### 第 2 步：系统选择或人工挑一个候选
 
-进入“需求池”页，看每个候选的：
+达到自动门槛时，系统会选一个候选进入生成；未达到时会停在“等待选择”。这时进入“可做的 App”页，看每个候选的：
 
 - App 名称
 - 细分领域
@@ -160,11 +239,11 @@ python .\scripts\serve_dashboard.py
 
 - 选一个最像真实产品机会的候选。
 - 不要选证据太弱、太空、太泛的方向。
-- 默认是人工确认后再进入生成。
+- 点击“选择这个需求”后进入生成。只要本轮最初选择的是“一键自动生成并上架”，人工选择候选后仍会保留自动发布意图。
 
 ### 第 3 步：开始代码生成
 
-点击“进入生成”后，系统会：
+自动选择成功或点击“选择这个需求”后，系统会：
 
 1. 生成 `implementation_plan.json`。
 2. 生成 Android 代码。
@@ -186,6 +265,7 @@ python .\scripts\serve_dashboard.py
 - 选包名池里的包名。
 - 检查签名。
 - 检查 metadata。
+- 检查隐私政策 URL 是否真实可访问并且不是占位地址。
 - 检查 Play 权限。
 - 构建 AAB。
 
@@ -217,18 +297,17 @@ python .\scripts\serve_dashboard.py
 
 ### 你需要做的
 
-- 预先创建 Play Console App。
-- 把包名放进 `PACKAGE_POOL`。
-- 配好 service account。
-- 配好 keystore。
-- 确保 release track 是 `internal`。
-- 发现失败时按提示修权限、包名或素材。
+- 管理员预先创建 Play Console App，并设置对应包名。
+- 管理员把包名加入 `PACKAGE_POOL`，同步并验证。
+- 管理员一次性启用 Android Publisher API、配置 service account、keystore 和隐私政策。
+- 应用负责人安装并检查生成 App，确认隐私政策与实际行为一致。
+- 发现失败时按页面提示处理权限、包名、素材或网络问题。
 
 ### 你不需要每次做的
 
 - 不需要手工打包 APK。
 - 不需要手工上传 AAB。
-- 不需要每次手工填 metadata。
+- internal 自动流程正常时，不需要每次手工填写名称、描述、图标和截图；上传后仍应在 Console 检查结果。
 - 不需要每次手工去 Play Console 点发布。
 
 ### 上传是传到哪里
@@ -239,6 +318,21 @@ python .\scripts\serve_dashboard.py
 - 它的 `Internal testing` 轨道
 
 不是传到别的服务器，也不是传到本地目录。
+
+### internal 之后仍需人工完成什么
+
+当前自动化目标是 Google Play `internal` 内部测试，不等于封闭测试或正式公开发布。进入更高轨道前，应用负责人仍需在 Play Console 完成并确认：
+
+- 数据安全声明：是否收集、共享、加密或删除用户数据。
+- 内容分级问卷。
+- 目标受众和儿童政策。
+- 是否包含广告。
+- App 访问权限说明；需要登录时提供审核账号。
+- 隐私政策是否与当前版本代码一致。
+- 测试人员、测试链接和测试反馈。
+- 发布国家/地区、价格和 production 发布范围。
+
+这些声明涉及法律和经营责任，系统可以生成建议和检查清单，但不能代替账号负责人确认事实。新注册的个人开发者账号还可能需要先满足 Google 要求的封闭测试人数和持续时间，再申请 production 权限。
 
 ## 6. 录演示视频时怎么讲
 
@@ -290,20 +384,34 @@ python .\scripts\serve_dashboard.py
 
 常见原因：
 
+- service account 所属 Google Cloud 项目没有启用 Android Publisher API。
 - 包名没在 Play Console 预创建。
 - service account 没权限。
+- 隐私政策仍是占位地址或公网不可访问。
 - versionCode 冲突。
 - metadata 不完整。
 - Play API 临时失败。
 
 处理：
 
+- `play_api_disabled`：在 service account 所属 Google Cloud 项目的 API 库启用 `androidpublisher.googleapis.com`，等待数分钟后重新验证。它不是 Play Console 的 App 权限问题。
 - `package_not_precreated`：先去 Play Console 创建 App。
 - `service_account_permission`：先补权限。
+- `metadata_incomplete`：检查真实隐私政策 URL、名称、描述、图标和截图。
 - `version_code_conflict`：提高 versionCode 后重试。
 - `play_api_transient`：稍后重试。
 
 ## 8. 你可以直接照着做的一套最短流程
+
+已经部署好的甲方云端直接打开：
+
+```text
+https://hcapply.npzsk.com.cn/dashboard
+```
+
+如果右上角显示“未设置访问令牌”，管理员在服务器读取 `/opt/hcapply/craftsman/secrets/API_TOKEN`，然后在“访问设置”保存。不要把令牌发到聊天、截图或文档中。
+
+只有首次部署或本地开发才需要下面的启动命令：
 
 ```powershell
 cd D:\A\hunter-craftsman\craftsman
@@ -318,10 +426,12 @@ python .\scripts\serve_dashboard.py
 然后在浏览器里：
 
 1. 打开 Dashboard。
-2. 启动机会发现。
-3. 选一个候选。
-4. 进入生成。
-5. 等待自动上传 internal testing。
+2. 先到“发布配置”同步并验证包名，确认“Play 可访问”。
+3. 回到“找机会”，选择“一键自动生成并上架”。
+4. 填写关注方向并点击右上角按钮。
+5. 如果停在“等待选择”，到“可做的 App”点击“选择这个需求”。
+6. 在“生成进度”等待质量检查和 internal 提交。
+7. 最终到 Play Console 对应 App 的 Internal testing 页面确认新版本。
 
 ## 9. 一句话总结
 
