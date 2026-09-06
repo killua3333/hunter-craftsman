@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from craftsman.callback import deliver_feedback
+from craftsman.coding import is_workspace_coding_enabled, run_workspace_coding_stage
 from craftsman.config import settings
 from craftsman.feedback import build_feedback
 from craftsman.gate import run_gate
@@ -19,6 +20,12 @@ from craftsman.models import AgentBStatus, CraftsmanFeedback, RequirementPayload
 from craftsman.orchestrator.alerts import evaluate_run_alerts
 from craftsman.orchestrator.failure_taxonomy import classify_build_failure, classify_runtime_exception
 from craftsman.orchestrator.quality import evaluate_app_quality, write_implementation_plan
+from craftsman.orchestrator.production import (
+    ProductionSession,
+    build_experience_spec,
+    build_product_brief,
+    write_json_artifact,
+)
 from craftsman.orchestrator.reflexion import apply_fixes, apply_gradle_fixes, save_build_log
 from craftsman.orchestrator.verify_gates import run_verify_hard_gates
 from craftsman.runtime import select_execution_backend
@@ -260,6 +267,16 @@ def _maybe_scope_retry(
     req: dict[str, Any],
     scope_retry_depth: int,
 ) -> CraftsmanFeedback:
+    if fb.agent_b_status == AgentBStatus.IMPLEMENTATION_FAILED:
+        store.fail_running_production_stage(
+            run_id,
+            user_message="本阶段未通过检查，正在根据问题决定是否重试",
+            acceptance={
+                "passed": False,
+                "reasons": fb.reasons,
+                "suggested_rules": fb.suggested_rules,
+            },
+        )
     if (
         fb.agent_b_status != AgentBStatus.IMPLEMENTATION_FAILED
         or scope_retry_depth > 0
@@ -332,6 +349,8 @@ def run_implementation(
     workspace = settings.workspace_root / run_id
     workspace.mkdir(parents=True, exist_ok=True)
     store.update_run(run_id, status="in_progress", workspace_path=str(workspace))
+    production = ProductionSession(store, run_id, workspace)
+    coding_runs: list[dict[str, Any]] = []
     phase_events: list[dict[str, Any]] = []
     enter_phase("spec_normalize", "normalized requirement")
 
@@ -360,12 +379,100 @@ def run_implementation(
                 f"磁盘空间不足：可用 {free_bytes // (1024 ** 3)} GB，"
                 f"需要至少 {settings.min_free_disk_bytes // (1024 ** 3)} GB"
             )
-        enter_phase("plan", "scaffold project and derive scheme")
+        production.start("product_definition", inputs={"requirement_revision": revision})
+        product_brief = build_product_brief(req)
+        product_brief_path = write_json_artifact(workspace, "product_brief.json", product_brief)
+        production.complete(
+            "product_definition",
+            outputs={"artifact": str(product_brief_path), "product_brief": product_brief},
+            acceptance={
+                "passed": bool(product_brief.get("primary_outcome")),
+                "core_feature_count": len(product_brief.get("core_features") or []),
+            },
+        )
+
+        enter_phase("plan", "正在设计产品使用流程")
         if time.monotonic() > deadline:
             raise TimeoutError(f"实现超时（>{settings.max_implementation_seconds}s）")
+        production.start("experience_design", inputs={"product_brief": product_brief})
         implementation_plan = write_implementation_plan(workspace, req)
+        experience_spec = build_experience_spec(req, implementation_plan)
+        experience_spec_path = write_json_artifact(workspace, "experience_spec.json", experience_spec)
+        production.complete(
+            "experience_design",
+            outputs={"artifact": str(experience_spec_path), "experience_spec": experience_spec},
+            acceptance={
+                "passed": bool(experience_spec.get("acceptance_actions")),
+                "acceptance_action_count": len(experience_spec.get("acceptance_actions") or []),
+            },
+        )
+
+        production.start(
+            "core_build",
+            inputs={"primary_user_flow": implementation_plan.get("primary_user_flow")},
+        )
         project_dir = scaffold_project(workspace, req)
-        enter_phase("codegen", "project scaffold/codegen complete")
+        if is_workspace_coding_enabled() and platform_target == "android":
+            coding_result = run_workspace_coding_stage(
+                project_dir=project_dir,
+                workspace=workspace,
+                stage="core_build",
+                requirement=req,
+                context={
+                    "product_brief": product_brief,
+                    "experience_spec": experience_spec,
+                    "acceptance_actions": implementation_plan.get("acceptance_actions") or [],
+                },
+            )
+            coding_runs.append(coding_result.as_dict())
+            if not coding_result.ok:
+                raise RuntimeError(coding_result.error or "核心功能制作未完成")
+            production.complete(
+                "core_build",
+                outputs={"coding_run": coding_result.as_dict(), "project": str(project_dir)},
+                acceptance={"passed": True, "source_changes": coding_result.changed_files},
+                message="核心功能已经完成，等待整体检查",
+            )
+            production.start(
+                "feature_expansion",
+                inputs={"planned_features": implementation_plan.get("core_features") or []},
+            )
+            feature_result = run_workspace_coding_stage(
+                project_dir=project_dir,
+                workspace=workspace,
+                stage="feature_expansion",
+                requirement=req,
+                context={
+                    "completed_stage": coding_result.as_dict(),
+                    "approved_features": implementation_plan.get("core_features") or [],
+                    "acceptance_actions": implementation_plan.get("acceptance_actions") or [],
+                },
+            )
+            coding_runs.append(feature_result.as_dict())
+            if not feature_result.ok:
+                raise RuntimeError(feature_result.error or "首版功能完善未完成")
+            production.complete(
+                "feature_expansion",
+                outputs={"coding_run": feature_result.as_dict()},
+                acceptance={"passed": True, "source_changes": feature_result.changed_files},
+                message="首版计划功能已经完成",
+            )
+            production.start("product_polish", inputs={"app_name": app_name})
+            polish_result = run_workspace_coding_stage(
+                project_dir=project_dir,
+                workspace=workspace,
+                stage="product_polish",
+                requirement=req,
+                context={
+                    "product_brief": product_brief,
+                    "experience_spec": experience_spec,
+                    "preserve_existing_behavior": True,
+                },
+            )
+            coding_runs.append(polish_result.as_dict())
+            if not polish_result.ok:
+                raise RuntimeError(polish_result.error or "使用体验完善未完成")
+        enter_phase("codegen", "正在制作 App 的核心功能")
         preview_path = str(web_demo_tool.ensure_windows_demo(workspace, req))
         manifest = json.loads((workspace / "manifest.json").read_text(encoding="utf-8"))
         scheme = manifest["scheme"]
@@ -397,7 +504,7 @@ def run_implementation(
         log = ""
         smoke_skip_reason = ""
         privacy_note = ""
-        enter_phase("verify", "start verification")
+        enter_phase("verify", "正在检查核心功能能否正常运行")
         if backend.mode == "macos_xcode" and can_build:
             exit_code = 1
             for round_num in range(1, settings.max_reflexion_rounds + 1):
@@ -464,9 +571,20 @@ def run_implementation(
                     last_errors = result.reasons or [
                         line for line in log.splitlines() if "error" in line.lower()
                     ][-3:]
-                changed, previous_fp = apply_gradle_fixes(
-                    req, project_dir, parsed, round_num, previous_fp
-                )
+                if is_workspace_coding_enabled():
+                    repair_result = run_workspace_coding_stage(
+                        project_dir=project_dir,
+                        workspace=workspace,
+                        stage="repair",
+                        requirement=req,
+                        context={"round": round_num, "build_errors": parsed},
+                    )
+                    coding_runs.append(repair_result.as_dict())
+                    changed = repair_result.ok
+                else:
+                    changed, previous_fp = apply_gradle_fixes(
+                        req, project_dir, parsed, round_num, previous_fp
+                    )
                 if not changed:
                     break
 
@@ -516,9 +634,20 @@ def run_implementation(
                     break
                 smoke_ok = False
                 parsed_smoke = parse_smoke_crash(smoke.log)
-                changed, previous_fp = apply_gradle_fixes(
-                    req, project_dir, parsed_smoke, smoke_round, previous_fp
-                )
+                if is_workspace_coding_enabled():
+                    repair_result = run_workspace_coding_stage(
+                        project_dir=project_dir,
+                        workspace=workspace,
+                        stage="repair",
+                        requirement=req,
+                        context={"round": smoke_round, "runtime_errors": parsed_smoke},
+                    )
+                    coding_runs.append(repair_result.as_dict())
+                    changed = repair_result.ok
+                else:
+                    changed, previous_fp = apply_gradle_fixes(
+                        req, project_dir, parsed_smoke, smoke_round, previous_fp
+                    )
                 if not changed:
                     break
                 result = backend.compile(project_dir, scheme)
@@ -614,6 +743,36 @@ def run_implementation(
                 deliver_feedback(fb)
                 store.update_run(run_id, status="failed", feedback=fb.to_agent_a_dict())
                 return _maybe_scope_retry(store, run_id, fb, req, scope_retry_depth)
+
+        if not is_workspace_coding_enabled():
+            production.complete(
+                "core_build",
+                outputs={
+                    "project": str(project_dir),
+                    "backend": backend.mode,
+                    "build_exit_code": exit_code,
+                },
+                acceptance={
+                    "passed": exit_code == 0 or not can_build,
+                    "native_build_performed": can_build,
+                    "smoke_test_skipped_reason": smoke_skip_reason,
+                },
+                message="核心功能已完成并通过当前环境检查" if exit_code == 0 else "核心功能已完成，当前环境未执行原生编译",
+            )
+            production.start(
+                "feature_expansion",
+                inputs={"planned_features": implementation_plan.get("core_features") or []},
+            )
+            production.complete(
+                "feature_expansion",
+                outputs={"implemented_features": implementation_plan.get("core_features") or []},
+                acceptance={
+                    "passed": True,
+                    "implemented_feature_count": len(implementation_plan.get("core_features") or []),
+                },
+                message="首版功能已集成到可运行工程",
+            )
+            production.start("product_polish", inputs={"app_name": app_name})
 
         if _platform_target(req) == "android":
             from craftsman.publisher.privacy_policy import ensure_privacy_url
@@ -711,7 +870,22 @@ def run_implementation(
         ):
             quality_repair_rounds += 1
             quality_report["quality_repair_round"] = quality_repair_rounds
-            if not repair_android_codegen_for_quality(project_dir, req, quality_report):
+            if is_workspace_coding_enabled():
+                repair_result = run_workspace_coding_stage(
+                    project_dir=project_dir,
+                    workspace=workspace,
+                    stage="repair",
+                    requirement=req,
+                    context={
+                        "round": quality_repair_rounds,
+                        "quality_report": quality_report,
+                        "acceptance_actions": implementation_plan.get("acceptance_actions") or [],
+                    },
+                )
+                coding_runs.append(repair_result.as_dict())
+                if not repair_result.ok:
+                    break
+            elif not repair_android_codegen_for_quality(project_dir, req, quality_report):
                 break
             enter_phase("quality_repair", f"repair Android MVP quality round {quality_repair_rounds}/3")
             if can_build:
@@ -743,6 +917,25 @@ def run_implementation(
             quality_report["quality_repair_rounds"] = quality_repair_rounds
             if quality_report.get("release_ready"):
                 break
+        production.complete(
+            "product_polish",
+            outputs={
+                "quality_score": quality_report.get("quality_score"),
+                "repair_rounds": quality_repair_rounds,
+                "icon": str(icon_path),
+                "screenshots": shots,
+            },
+            acceptance={
+                "passed": quality_report.get("quality_score", 0) >= 60,
+                "release_ready": bool(quality_report.get("release_ready")),
+                "failure_classes": quality_report.get("failure_classes") or [],
+            },
+            message="界面、文案和应用素材已完成检查",
+        )
+        production.start(
+            "validation",
+            inputs={"quality_score": quality_report.get("quality_score")},
+        )
         if not gate_result["ok"]:
             fb = build_feedback(
                 opportunity_id=opportunity_id,
@@ -789,6 +982,21 @@ def run_implementation(
             store.update_run(run_id, status="failed", feedback=fb.to_agent_a_dict())
             return _maybe_scope_retry(store, run_id, fb, req, scope_retry_depth)
 
+        production.complete(
+            "validation",
+            outputs={
+                "quality_report": quality_report,
+                "hard_gates": gate_result,
+                "verification": verification,
+            },
+            acceptance={
+                "passed": True,
+                "quality_score": quality_report.get("quality_score"),
+                "release_ready": bool(quality_report.get("release_ready")),
+            },
+            message="功能和质量检查已完成",
+        )
+
         status = (
             AgentBStatus.IMPLEMENTATION_COMPLETE
             if quality_report.get("release_ready")
@@ -805,6 +1013,10 @@ def run_implementation(
         if privacy_note:
             reasons.append(privacy_note)
 
+        production.start(
+            "release_candidate",
+            inputs={"release_ready": bool(quality_report.get("release_ready"))},
+        )
         debug_apk_path: Path | None = None
         if can_build and backend.mode in _ANDROID_BACKENDS and exit_code == 0:
             debug_apk_path = export_debug_apk(project_dir, artifacts_dir)
@@ -828,6 +1040,10 @@ def run_implementation(
             "demo_html": demo_html_uri,
             "phase_events": phase_events,
             "implementation_plan": implementation_plan,
+            "product_brief": product_brief,
+            "experience_spec": experience_spec,
+            "production_stages": store.list_production_stages(run_id),
+            "coding_runs": coding_runs,
             "quality_report": quality_report,
             "storage": {
                 "mode": settings.artifact_uri_mode,
@@ -842,6 +1058,9 @@ def run_implementation(
                 "preview_html": preview_path,
                 "demo_html": str(demo_html_path),
                 "implementation_plan": str(workspace / "implementation_plan.json"),
+                "product_brief": str(product_brief_path),
+                "experience_spec": str(experience_spec_path),
+                "production_session": str(workspace / "production_session.json"),
             },
         }
         if debug_apk_path:
@@ -879,6 +1098,25 @@ def run_implementation(
             quality_report=quality_report,
         )
         artifacts_payload["release_handoff"] = release_handoff
+        production.complete(
+            "release_candidate",
+            outputs={
+                "apk": str(debug_apk_path) if debug_apk_path else None,
+                "release_handoff_ready": True,
+                "release_ready": bool(quality_report.get("release_ready")),
+            },
+            acceptance={
+                "passed": bool(quality_report.get("release_ready")),
+                "preview_available": bool(preview_path),
+                "apk_available": bool(debug_apk_path),
+            },
+            message=(
+                "App 已达到建议发布标准"
+                if quality_report.get("release_ready")
+                else "App 已可预览，建议继续完善后发布"
+            ),
+        )
+        artifacts_payload["production_stages"] = store.list_production_stages(run_id)
 
         fb = build_feedback(
             opportunity_id=opportunity_id,
@@ -919,6 +1157,10 @@ def run_implementation(
         raise
     except Exception as exc:
         logger.exception("implementation failed")
+        production.fail(
+            "制作过程中出现问题，可从当前阶段继续处理",
+            details={"error": str(exc)},
+        )
         enter_phase("failed", "implementation failed")
         phase_durations["failed"] = round(time.monotonic() - last_phase_tick, 4)
         runtime_taxonomy = classify_runtime_exception(exc)

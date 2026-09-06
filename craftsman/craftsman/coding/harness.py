@@ -1,0 +1,176 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import subprocess
+import time
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any
+
+from craftsman.config import settings
+
+
+@dataclass
+class CodingRunResult:
+    ok: bool
+    provider: str
+    stage: str
+    exit_code: int
+    duration_seconds: float
+    changed_files: list[str]
+    log_path: str
+    error: str | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+def is_workspace_coding_enabled() -> bool:
+    return settings.coding_provider.strip().lower() in {"codex", "claude", "command"}
+
+
+def run_workspace_coding_stage(
+    *,
+    project_dir: Path,
+    workspace: Path,
+    stage: str,
+    requirement: dict[str, Any],
+    context: dict[str, Any],
+) -> CodingRunResult:
+    project = project_dir.resolve()
+    root = workspace.resolve()
+    if not project.is_relative_to(root):
+        raise ValueError("coding project must stay inside the run workspace")
+
+    command = _configured_command()
+    provider = settings.coding_provider.strip().lower()
+    _validate_executable(command[0])
+    coding_dir = workspace / "coding"
+    coding_dir.mkdir(parents=True, exist_ok=True)
+    attempt = len(list(coding_dir.glob(f"{stage}-*.json"))) + 1
+    stem = f"{stage}-{attempt:02d}"
+    prompt_path = coding_dir / f"{stem}.prompt.txt"
+    log_path = coding_dir / f"{stem}.log"
+    result_path = coding_dir / f"{stem}.json"
+    prompt = _build_prompt(stage, requirement, context)
+    prompt_path.write_text(prompt, encoding="utf-8")
+
+    before = _source_fingerprints(project)
+    started = time.monotonic()
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=str(project),
+            input=prompt,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            timeout=float(settings.coding_agent_timeout_seconds),
+            shell=False,
+            env=os.environ.copy(),
+        )
+        exit_code = int(completed.returncode)
+        output = (completed.stdout or "") + ("\n" + completed.stderr if completed.stderr else "")
+        error = None if exit_code == 0 else f"coding agent exited with code {exit_code}"
+    except subprocess.TimeoutExpired as exc:
+        exit_code = -1
+        output = _combine_process_output(exc.stdout, exc.stderr)
+        error = f"coding agent exceeded {settings.coding_agent_timeout_seconds:g} seconds"
+    except OSError as exc:
+        exit_code = -1
+        output = str(exc)
+        error = f"coding agent could not start: {exc}"
+    duration = round(time.monotonic() - started, 3)
+    log_path.write_text(output, encoding="utf-8")
+    after = _source_fingerprints(project)
+    changed = sorted(path for path, digest in after.items() if before.get(path) != digest)
+    changed.extend(sorted(path for path in before if path not in after))
+    result = CodingRunResult(
+        ok=exit_code == 0,
+        provider=provider,
+        stage=stage,
+        exit_code=exit_code,
+        duration_seconds=duration,
+        changed_files=sorted(set(changed)),
+        log_path=str(log_path),
+        error=error,
+    )
+    result_path.write_text(json.dumps(result.as_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+    return result
+
+
+def _combine_process_output(stdout: str | bytes | None, stderr: str | bytes | None) -> str:
+    def decode(value: str | bytes | None) -> str:
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace")
+        return value or ""
+
+    standard = decode(stdout)
+    error = decode(stderr)
+    return standard + ("\n" + error if error else "")
+
+
+def _configured_command() -> list[str]:
+    raw = (settings.coding_agent_command_json or "").strip()
+    if not raw:
+        raise ValueError("CODING_AGENT_COMMAND_JSON is required for workspace coding")
+    try:
+        command = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError("CODING_AGENT_COMMAND_JSON must be a JSON string array") from exc
+    if not isinstance(command, list) or not command or not all(isinstance(item, str) and item for item in command):
+        raise ValueError("CODING_AGENT_COMMAND_JSON must be a non-empty JSON string array")
+    return command
+
+
+def _validate_executable(executable: str) -> None:
+    allowed = {
+        item.strip().lower()
+        for item in settings.coding_agent_allowed_executables.split(",")
+        if item.strip()
+    }
+    name = Path(executable).name.lower()
+    if os.name == "nt" and name.endswith(".exe"):
+        name = name[:-4]
+    if name not in allowed:
+        raise ValueError(f"coding agent executable is not allowed: {name}")
+
+
+def _build_prompt(stage: str, requirement: dict[str, Any], context: dict[str, Any]) -> str:
+    stage_goals = {
+        "core_build": "Implement one complete primary user flow end to end. Keep scope small and make it buildable.",
+        "feature_expansion": "Add only the remaining approved MVP features without weakening the working primary flow.",
+        "product_polish": "Improve product-specific UI states, copy, accessibility, and edge cases without adding scope.",
+        "repair": "Fix the supplied verification failures and preserve already passing behavior.",
+    }
+    payload = {
+        "stage": stage,
+        "goal": stage_goals.get(stage, "Complete this bounded product-development stage."),
+        "requirement": requirement,
+        "context": context,
+    }
+    return (
+        "You are the implementation worker inside a supervised Android product pipeline.\n"
+        "Work only in the current project directory. Inspect existing files before editing.\n"
+        "Use Kotlin and Jetpack Compose. Do not publish, access credentials, or modify files outside this project.\n"
+        "Do not replace working functionality with placeholders. Run relevant local checks when available.\n"
+        "Finish the bounded stage below, then stop.\n\n"
+        + json.dumps(payload, ensure_ascii=False, indent=2)
+    )
+
+
+def _source_fingerprints(project: Path) -> dict[str, str]:
+    ignored_parts = {".git", ".gradle", "build", ".idea"}
+    allowed_suffixes = {".kt", ".kts", ".xml", ".toml", ".properties", ".json"}
+    result: dict[str, str] = {}
+    for path in project.rglob("*"):
+        if not path.is_file() or any(part in ignored_parts for part in path.parts):
+            continue
+        if path.suffix.lower() not in allowed_suffixes:
+            continue
+        rel = path.relative_to(project).as_posix()
+        result[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return result

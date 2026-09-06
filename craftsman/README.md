@@ -1,6 +1,8 @@
-# Craftsman（Agent B）— iOS 自动化车间
+# Craftsman（Agent B）— 分阶段 App 生产与发布车间
 
-接收 Agent A 的结构化需求 → **Gate 分析并反馈** → 生成 SwiftUI → **Reflexion 编译修复** → 生成上架物料 → Fastlane 上传。
+接收 Agent A 的结构化需求，按固定产品阶段生成 Android/iOS 工程，执行编译与质量修复，生成预览和 Agent C 发布交接材料。当前主目标为 Android。
+
+Agent B v3 将一次生成拆分为：产品定义、体验设计、核心功能、功能完善、体验完善、检测修复和发布候选。每个阶段均持久化，失败后可在同一工作区重试并保留检查记录。
 
 ## 同机无人值守架构
 
@@ -64,6 +66,10 @@ brew install xcodegen fastlane
 | `DEEPSEEK_API_KEY` | DeepSeek API Key |
 | `DEEPSEEK_CHAT_MODEL` | 反馈 Agent A（Gate 语义评审），默认 `deepseek-chat` |
 | `DEEPSEEK_PRO_MODEL` | 写 Swift 源码 + Reflexion 修错，默认 `deepseek-v4-pro` |
+| `CODING_PROVIDER` | `deepseek_json`（兼容默认）或 `codex`/`claude` 工作区执行器 |
+| `CODING_AGENT_COMMAND_JSON` | 工作区执行器的非交互命令参数 JSON 数组 |
+| `CODING_AGENT_ALLOWED_EXECUTABLES` | 允许启动的编码 CLI 白名单 |
+| `CODING_AGENT_TIMEOUT_SECONDS` | 单次编码阶段的最长执行时间 |
 | `CALLBACK_DIR` | 反馈 JSON 目录 |
 | `SKIP_XCODEBUILD` | Windows 上设为 `true` 走 Demo 产物模式 |
 | `API_TOKEN` | API 轻鉴权 token（可走 secret store） |

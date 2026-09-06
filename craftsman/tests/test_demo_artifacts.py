@@ -27,8 +27,10 @@ def test_windows_demo_mode_generates_artifacts(tmp_path, monkeypatch):
     fb = run_implementation(store, run_id)
     payload = fb.to_agent_a_dict()
 
-    assert payload["agent_b_status"] == "implementation_complete"
+    assert payload["agent_b_status"] == "needs_polish"
     assert payload.get("verification") == "demo"
+    assert payload["quality_report"]["release_ready"] is False
+    assert "native_verification_missing" in payload["quality_report"]["failure_classes"]
     artifacts = payload["artifacts"]
     assert artifacts["workspace"].startswith(("object://", "file://"))
     assert artifacts["demo_html"].startswith(("object://", "file://"))

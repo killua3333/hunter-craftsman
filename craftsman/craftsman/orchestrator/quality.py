@@ -18,6 +18,7 @@ FORBIDDEN_SCOPE_KEYWORDS = {
 
 RELEASE_QUALITY_THRESHOLD = 75
 RELEASE_HARD_BLOCKERS = frozenset({"build_failed", "empty_ui", "weak_core_flow"})
+NATIVE_VERIFICATION_BLOCKER = "native_verification_missing"
 
 
 def release_quality_gate(handoff: dict[str, Any]) -> dict[str, Any]:
@@ -126,6 +127,9 @@ def evaluate_app_quality(
         warnings.append("native verification skipped")
         manual_review_notes.append("Native verification was skipped; inspect the build manually before release.")
 
+    native_verification_required = backend_mode in {"android_gradle", "android_gradle_docker", "macos_xcode"}
+    native_verification_missing = native_verification_required and verification != "verified"
+
     core_flow_score = 100 - min(100, ui["core_flow_penalty"])
     ui_completeness_score = 100 - min(100, ui["ui_penalty"])
     persistence_score = 100 - min(100, ui["persistence_penalty"])
@@ -179,12 +183,21 @@ def evaluate_app_quality(
     )
     if build_score == 0:
         weighted = min(weighted, 55)
+    if native_verification_missing:
+        weighted = min(weighted, RELEASE_QUALITY_THRESHOLD - 1)
+        failure_classes.append(NATIVE_VERIFICATION_BLOCKER)
+        repair_suggestions.append("Build and run the native app before release")
+        manual_review_notes.append("当前版本仅可预览；完成原生编译和运行检查后才能发布。")
 
     # Scope findings are advisory; broad wording alone must not block a usable MVP.
     hard_blockers = RELEASE_HARD_BLOCKERS
     failure_classes = _dedupe(failure_classes)
     repair_suggestions = _dedupe(repair_suggestions)
-    release_ready = weighted >= RELEASE_QUALITY_THRESHOLD and not (set(failure_classes) & hard_blockers)
+    release_ready = (
+        weighted >= RELEASE_QUALITY_THRESHOLD
+        and not native_verification_missing
+        and not (set(failure_classes) & hard_blockers)
+    )
     polish_required = 60 <= weighted < RELEASE_QUALITY_THRESHOLD or (
         weighted >= RELEASE_QUALITY_THRESHOLD and not release_ready
     )

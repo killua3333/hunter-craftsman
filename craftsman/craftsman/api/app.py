@@ -142,6 +142,7 @@ def _build_pipeline_items(
     releases: list[dict[str, Any]],
     run_jobs: dict[str, dict[str, Any]],
     release_jobs: dict[str, dict[str, Any]],
+    production_by_run: dict[str, list[dict[str, Any]]] | None = None,
 ) -> list[dict[str, Any]]:
     releases_by_run: dict[str, dict[str, Any]] = {}
     for release in releases:
@@ -182,6 +183,7 @@ def _build_pipeline_items(
                     "quality_report": quality_report,
                     "quality_score": quality_report.get("quality_score") or feedback.get("quality_score"),
                     "release_ready": quality_report.get("release_ready") if quality_report else feedback.get("release_ready"),
+                    "production_stages": (production_by_run or {}).get(run_id, []),
                 },
                 "agent_c": {
                     "label": "内部测试上架",
@@ -1076,6 +1078,9 @@ def create_app() -> FastAPI:
             "capabilities": {
                 "async_implement": True,
                 "phase_events": True,
+                "agent_b_production_protocol": "v3",
+                "agent_b_stage_checkpoints": True,
+                "workspace_coding_provider": settings.coding_provider,
                 "release_handoff": True,
                 "release_handoff_validation": True,
                 "release_human_approval_checkpoint": True,
@@ -1215,7 +1220,18 @@ def create_app() -> FastAPI:
 
         discovery_candidates = _store.list_discovery_candidates(limit=100)
         opportunities = [_opportunity_from_candidate(candidate) for candidate in discovery_candidates]
-        pipeline = _build_pipeline_items(runs, releases, run_jobs, release_jobs)
+        production_by_run = {
+            str(row.get("run_id") or ""): _store.list_production_stages(str(row.get("run_id") or ""))
+            for row in runs
+            if row.get("run_id")
+        }
+        pipeline = _build_pipeline_items(
+            runs,
+            releases,
+            run_jobs,
+            release_jobs,
+            production_by_run,
+        )
         agent_status = _build_agent_status(runs, releases, run_jobs, release_jobs)
         package_pool = _package_pool_payload(_store)
         agent_status['agent_c']['package_pool_health'] = package_pool['summary']
@@ -1279,7 +1295,12 @@ def create_app() -> FastAPI:
             )
         events = _store.list_events(run_id, limit=500)
         audit = _store.list_audit_logs(run_id=run_id, limit=100)
-        return {"run": row, "events": events, "audit": audit}
+        return {
+            "run": row,
+            "events": events,
+            "audit": audit,
+            "production_stages": _store.list_production_stages(run_id),
+        }
 
     @app.get("/dashboard/api/earnings")
     def dashboard_earnings(
@@ -1865,6 +1886,7 @@ def create_app() -> FastAPI:
         }
         if row.get("feedback_json"):
             out["feedback"] = json.loads(row["feedback_json"])
+        out["production_stages"] = _store.list_production_stages(run_id)
         return _with_contract(out, contract_version)
 
     @app.get("/v1/runs/{run_id}/events")

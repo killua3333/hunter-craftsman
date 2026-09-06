@@ -12,6 +12,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from craftsman.config import ROOT
 from craftsman.llm import generate_code_llm
+from craftsman.coding import is_workspace_coding_enabled
 from craftsman.tools.shell import run_cmd
 
 logger = logging.getLogger(__name__)
@@ -113,17 +114,20 @@ def scaffold_project(workspace: Path, req: dict[str, Any]) -> Path:
             (project_dir / "project.yml").write_text(yml_tpl.render(**ctx), encoding="utf-8")
     else:
         _render_android_templates(project_dir, ctx, include_main_activity=False)
-        llm_files = _codegen_with_retry(req, platform="android", max_retries=3)
-        if llm_files:
-            _write_codegen_files(
-                project_dir, workspace, llm_files,
-                protected=_ANDROID_PROTECTED_PATHS,
-            )
-        else:
-            logger.warning(
-                "Android LLM codegen unavailable; falling back to template MainActivity for stable MVP"
-            )
+        if is_workspace_coding_enabled():
             _render_android_main_activity(project_dir, ctx)
+        else:
+            llm_files = _codegen_with_retry(req, platform="android", max_retries=3)
+            if llm_files:
+                _write_codegen_files(
+                    project_dir, workspace, llm_files,
+                    protected=_ANDROID_PROTECTED_PATHS,
+                )
+            else:
+                logger.warning(
+                    "Android LLM codegen unavailable; falling back to template MainActivity for stable MVP"
+                )
+                _render_android_main_activity(project_dir, ctx)
 
     manifest = {
         "app_name": app_name,

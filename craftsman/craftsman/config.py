@@ -28,6 +28,13 @@ class Settings(BaseSettings):
     # 写码 / Reflexion 修错
     deepseek_pro_model: str = "deepseek-v4-pro"
 
+    # Agent B coding engine. deepseek_json preserves the current behavior;
+    # codex/claude/command operate repeatedly inside the generated workspace.
+    coding_provider: str = "deepseek_json"
+    coding_agent_command_json: str | None = None
+    coding_agent_allowed_executables: str = "codex,claude"
+    coding_agent_timeout_seconds: float = 1800.0
+
     # 兼容旧配置名（未设 DEEPSEEK_* 时可回落）
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
@@ -130,4 +137,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-

@@ -56,3 +56,49 @@ def test_event_insert_returns_lastrowid_without_sqlite_returning(tmp_path):
     assert event_id > 0
     assert audit_id > 0
 
+
+def test_production_stages_are_persistent_and_retryable(tmp_path):
+    db_path = tmp_path / "runs.db"
+    store = RunStore(db_path=db_path)
+    run_id = store.create_run("opp-1", 1, {"opportunity_id": "opp-1"})
+    stages = [
+        {"key": "product_definition", "order": 10, "label": "整理产品方案"},
+        {"key": "core_build", "order": 20, "label": "制作核心功能"},
+    ]
+    store.ensure_production_stages(run_id, stages)
+    store.start_production_stage(
+        run_id,
+        "product_definition",
+        user_message="正在整理",
+        inputs={"revision": 1},
+    )
+    store.complete_production_stage(
+        run_id,
+        "product_definition",
+        user_message="产品方案已完成",
+        outputs={"artifact": "product_brief.json"},
+        acceptance={"passed": True},
+    )
+    store.start_production_stage(
+        run_id,
+        "core_build",
+        user_message="正在制作",
+        inputs={},
+    )
+    failed_key = store.fail_running_production_stage(
+        run_id,
+        user_message="本阶段未通过检查",
+        acceptance={"passed": False, "reason": "compile_failed"},
+    )
+
+    reloaded = RunStore(db_path=db_path)
+    rows = reloaded.list_production_stages(run_id)
+    assert failed_key == "core_build"
+    assert [row["status"] for row in rows] == ["completed", "failed"]
+    assert rows[0]["outputs"]["artifact"] == "product_brief.json"
+    assert rows[1]["attempt"] == 1
+
+    reloaded.start_production_stage(run_id, "core_build", user_message="重新制作", inputs={})
+    retried = reloaded.list_production_stages(run_id)[1]
+    assert retried["status"] == "running"
+    assert retried["attempt"] == 2

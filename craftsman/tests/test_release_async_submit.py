@@ -27,6 +27,13 @@ def test_release_submit_returns_immediately_and_worker_completes(tmp_path, monke
         handoff = dict(sync.json()["release_handoff"])
         release_id = f"rel-{handoff['run_id']}"
         handoff["release_id"] = release_id
+        handoff["quality_score"] = 90
+        handoff["release_ready"] = True
+        handoff["quality_report"] = {
+            "quality_score": 90,
+            "release_ready": True,
+            "failure_classes": [],
+        }
 
         prepare = client.post("/v1/releases/prepare", json=handoff)
         assert prepare.status_code == 200

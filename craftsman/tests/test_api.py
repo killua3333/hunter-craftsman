@@ -162,7 +162,7 @@ def test_sync_implement_endpoint():
         resp = client.post("/v1/runs/sync-implement", json={"requirement": req})
         assert resp.status_code == 200
         body = resp.json()
-        assert body["agent_b_status"] == "implementation_complete"
+        assert body["agent_b_status"] == "needs_polish"
         assert "release_handoff" in body
         assert body["release_handoff"]["platform"]["target"] == "android"
 
@@ -180,6 +180,13 @@ def test_release_endpoints_agent_c_android(tmp_path, monkeypatch):
         handoff = dict(sync.json()["release_handoff"])
         release_id = f"rel-{handoff['run_id']}"
         handoff["release_id"] = release_id
+        handoff["quality_score"] = 90
+        handoff["release_ready"] = True
+        handoff["quality_report"] = {
+            "quality_score": 90,
+            "release_ready": True,
+            "failure_classes": [],
+        }
 
         prepare = client.post("/v1/releases/prepare", json=handoff)
         assert prepare.status_code == 200
@@ -400,9 +407,16 @@ def test_dashboard_overview_and_requeue_endpoints(tmp_path, monkeypatch):
         assert overview.headers["cache-control"] == "no-store, no-cache, must-revalidate"
         body = overview.json()
         assert body["opportunities"] == []
-        pipeline = next(item for item in body["pipeline"] if item["technical"]["run_status"] == "implementation_complete")
+        pipeline = next(item for item in body["pipeline"] if item["technical"]["run_status"] == "needs_polish")
         assert pipeline["run_id"]
-        assert pipeline["stages"]["agent_b"]["status"] == "done"
+        assert pipeline["stages"]["agent_b"]["status"] == "needs_polish"
+        stages = pipeline["stages"]["agent_b"]["production_stages"]
+        assert len(stages) == 7
+        assert stages[0]["stage_key"] == "product_definition"
+        assert stages[-1]["stage_key"] == "release_candidate"
+        detail = client.get(f"/dashboard/api/runs/{pipeline['run_id']}")
+        assert detail.status_code == 200
+        assert len(detail.json()["production_stages"]) == 7
 
 def test_dashboard_requeue_run_endpoint(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "database_path", tmp_path / "runs.db")
@@ -463,6 +477,13 @@ def test_dashboard_release_approve_and_submit_endpoints(monkeypatch):
         handoff = dict(sync.json()["release_handoff"])
         release_id = f"rel-{handoff['run_id']}"
         handoff["release_id"] = release_id
+        handoff["quality_score"] = 90
+        handoff["release_ready"] = True
+        handoff["quality_report"] = {
+            "quality_score": 90,
+            "release_ready": True,
+            "failure_classes": [],
+        }
 
         prepare = client.post("/v1/releases/prepare", json=handoff)
         assert prepare.status_code == 200

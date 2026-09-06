@@ -19,7 +19,7 @@
 ## 三段智能体
 
 - [agent-a-demand-discovery.md](agent-a-demand-discovery.md)：Google Play 需求发现、证据和评分逻辑。
-- [agent-b-code-quality.md](agent-b-code-quality.md)：MVP 生成合约 v2、质量报告、发布门槛和自修复策略。
+- [agent-b-code-quality.md](agent-b-code-quality.md)：Agent B v3 七阶段生产协议、阶段检查点与重试、Coding Provider、质量门槛和后续设备验收计划。
 - [agent-c-internal-testing.md](agent-c-internal-testing.md)：包名池模型、internal track 发布状态、失败分类和操作原则。
 - [agent-c-architecture.md](agent-c-architecture.md)：Agent C 更详细的架构说明。
 

@@ -82,6 +82,25 @@ class RunStore:
                     created_at TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS idx_run_events_run_id ON run_events(run_id, id);
+                CREATE TABLE IF NOT EXISTS production_stages (
+                    run_id TEXT NOT NULL,
+                    stage_key TEXT NOT NULL,
+                    stage_order INTEGER NOT NULL,
+                    label TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    attempt INTEGER NOT NULL DEFAULT 0,
+                    user_message TEXT,
+                    inputs_json TEXT NOT NULL DEFAULT '{}',
+                    outputs_json TEXT NOT NULL DEFAULT '{}',
+                    acceptance_json TEXT NOT NULL DEFAULT '{}',
+                    started_at TEXT,
+                    completed_at TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (run_id, stage_key)
+                );
+                CREATE INDEX IF NOT EXISTS idx_production_stages_run
+                    ON production_stages(run_id, stage_order);
                 CREATE TABLE IF NOT EXISTS discovery_runs (
                     discovery_run_id TEXT PRIMARY KEY,
                     status TEXT NOT NULL,
@@ -710,6 +729,177 @@ class RunStore:
                 (run_id, max(after_id, 0), max(limit, 1)),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def ensure_production_stages(
+        self,
+        run_id: str,
+        stages: list[dict[str, Any]],
+    ) -> None:
+        now = _utc_now_iso()
+        with self._conn() as conn:
+            for stage in stages:
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO production_stages (
+                        run_id, stage_key, stage_order, label, status, attempt,
+                        inputs_json, outputs_json, acceptance_json, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, 'pending', 0, '{}', '{}', '{}', ?, ?)
+                    """,
+                    (
+                        run_id,
+                        str(stage["key"]),
+                        int(stage["order"]),
+                        str(stage["label"]),
+                        now,
+                        now,
+                    ),
+                )
+
+    def start_production_stage(
+        self,
+        run_id: str,
+        stage_key: str,
+        *,
+        user_message: str,
+        inputs: dict[str, Any],
+    ) -> None:
+        now = _utc_now_iso()
+        with self._conn() as conn:
+            updated = conn.execute(
+                """
+                UPDATE production_stages
+                SET status='running', attempt=attempt + 1, user_message=?,
+                    inputs_json=?, started_at=?, completed_at=NULL, updated_at=?
+                WHERE run_id=? AND stage_key=?
+                """,
+                (user_message, json.dumps(inputs, ensure_ascii=False), now, now, run_id, stage_key),
+            ).rowcount
+        if updated != 1:
+            raise ValueError(f"production stage not found: {run_id}/{stage_key}")
+
+    def complete_production_stage(
+        self,
+        run_id: str,
+        stage_key: str,
+        *,
+        user_message: str,
+        outputs: dict[str, Any],
+        acceptance: dict[str, Any],
+    ) -> None:
+        self._finish_production_stage(
+            run_id,
+            stage_key,
+            status="completed",
+            user_message=user_message,
+            outputs=outputs,
+            acceptance=acceptance,
+        )
+
+    def fail_production_stage(
+        self,
+        run_id: str,
+        stage_key: str,
+        *,
+        user_message: str,
+        acceptance: dict[str, Any],
+    ) -> None:
+        self._finish_production_stage(
+            run_id,
+            stage_key,
+            status="failed",
+            user_message=user_message,
+            outputs={},
+            acceptance=acceptance,
+        )
+
+    def _finish_production_stage(
+        self,
+        run_id: str,
+        stage_key: str,
+        *,
+        status: str,
+        user_message: str,
+        outputs: dict[str, Any],
+        acceptance: dict[str, Any],
+    ) -> None:
+        now = _utc_now_iso()
+        with self._conn() as conn:
+            updated = conn.execute(
+                """
+                UPDATE production_stages
+                SET status=?, user_message=?, outputs_json=?, acceptance_json=?,
+                    completed_at=?, updated_at=?
+                WHERE run_id=? AND stage_key=?
+                """,
+                (
+                    status,
+                    user_message,
+                    json.dumps(outputs, ensure_ascii=False),
+                    json.dumps(acceptance, ensure_ascii=False),
+                    now,
+                    now,
+                    run_id,
+                    stage_key,
+                ),
+            ).rowcount
+        if updated != 1:
+            raise ValueError(f"production stage not found: {run_id}/{stage_key}")
+
+    def list_production_stages(self, run_id: str) -> list[dict[str, Any]]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT run_id, stage_key, stage_order, label, status, attempt,
+                       user_message, inputs_json, outputs_json, acceptance_json,
+                       started_at, completed_at, created_at, updated_at
+                FROM production_stages
+                WHERE run_id=?
+                ORDER BY stage_order
+                """,
+                (run_id,),
+            ).fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            for source, target in (
+                ("inputs_json", "inputs"),
+                ("outputs_json", "outputs"),
+                ("acceptance_json", "acceptance"),
+            ):
+                raw = item.pop(source, "{}")
+                try:
+                    item[target] = json.loads(raw or "{}")
+                except json.JSONDecodeError:
+                    item[target] = {}
+            result.append(item)
+        return result
+
+    def fail_running_production_stage(
+        self,
+        run_id: str,
+        *,
+        user_message: str,
+        acceptance: dict[str, Any],
+    ) -> str | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                """
+                SELECT stage_key FROM production_stages
+                WHERE run_id=? AND status='running'
+                ORDER BY stage_order DESC LIMIT 1
+                """,
+                (run_id,),
+            ).fetchone()
+        if not row:
+            return None
+        stage_key = str(row["stage_key"])
+        self.fail_production_stage(
+            run_id,
+            stage_key,
+            user_message=user_message,
+            acceptance=acceptance,
+        )
+        return stage_key
 
     def requeue_run(self, run_id: str, *, max_attempts: int | None = None) -> bool:
         now = _utc_now_iso()
