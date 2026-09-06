@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
 
 from craftsman.config import settings
 from craftsman.runtime.docker_android import is_docker_available, run_smoke_in_container
@@ -14,6 +15,7 @@ class SmokeResult:
     skipped: bool
     reason: str
     log: str
+    screenshot_paths: list[str] = field(default_factory=list)
 
 
 def should_run_smoke() -> bool:
@@ -52,6 +54,11 @@ def run_android_smoke(project_dir, package_id: str) -> SmokeResult:
         return SmokeResult(ok=True, skipped=True, reason="smoke_skipped: package id missing", log="")
 
     result = run_smoke_in_container(project_dir, package_id)
+    report_dir = Path(project_dir) / "app" / "build" / "reports" / "device-acceptance"
+    screenshot_paths = [
+        str(path) for path in sorted(report_dir.glob("*.png"))
+        if path.is_file() and path.stat().st_size > 0
+    ]
     if "smoke_skipped" in result.reasons:
         if mode == "force":
             return SmokeResult(
@@ -67,5 +74,17 @@ def run_android_smoke(project_dir, package_id: str) -> SmokeResult:
             log=result.log,
         )
     if result.ok:
-        return SmokeResult(ok=True, skipped=False, reason="", log=result.log)
-    return SmokeResult(ok=False, skipped=False, reason="smoke test failed", log=result.log)
+        return SmokeResult(
+            ok=True,
+            skipped=False,
+            reason="",
+            log=result.log,
+            screenshot_paths=screenshot_paths,
+        )
+    return SmokeResult(
+        ok=False,
+        skipped=False,
+        reason="smoke test failed",
+        log=result.log,
+        screenshot_paths=screenshot_paths,
+    )

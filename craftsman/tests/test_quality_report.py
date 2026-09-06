@@ -6,6 +6,15 @@ from craftsman.generator.scaffold import repair_android_codegen_for_quality
 from craftsman.orchestrator.quality import evaluate_app_quality, write_implementation_plan
 
 
+DEVICE_VERIFIED = {
+    "status": "launch_verified",
+    "launch_verified": True,
+    "core_flow_verified": False,
+    "persistence_verified": False,
+    "device_screenshots": [],
+}
+
+
 def _android_project(tmp_path: Path, main_activity: str) -> tuple[Path, Path, Path]:
     workspace = tmp_path / "workspace"
     project = workspace / "project"
@@ -67,6 +76,7 @@ def test_quality_report_release_ready_for_interactive_local_app(tmp_path):
         screenshots=[str(shot)],
         metadata_root=metadata,
         verification="verified",
+        device_acceptance_report=DEVICE_VERIFIED,
     )
 
     assert report["quality_score"] >= 75
@@ -95,10 +105,49 @@ def test_quality_report_blocks_empty_ui(tmp_path):
         screenshots=[str(shot)],
         metadata_root=metadata,
         verification="verified",
+        device_acceptance_report=DEVICE_VERIFIED,
     )
 
     assert report["release_ready"] is False
     assert "empty_ui" in report["failure_classes"]
+
+
+def test_quality_report_blocks_compile_only_without_device_launch(tmp_path):
+    workspace, project, metadata = _android_project(
+        tmp_path,
+        """
+        package com.example
+        fun MainActivity() {
+            setContent {
+                val value = rememberSaveable { mutableStateOf("Focus timer") }
+                TextField(value = value.value, onValueChange = { value.value = it })
+                Button(onClick = { value.value = "Saved" }) { Text("Start focus timer") }
+            }
+        }
+        """,
+    )
+    icon = workspace / "icon.png"
+    shot = workspace / "shot.png"
+    icon.write_bytes(b"icon")
+    shot.write_bytes(b"shot")
+
+    report = evaluate_app_quality(
+        backend_mode="android_gradle",
+        compile_exit_code=0,
+        project_dir=project,
+        workspace=workspace,
+        requirement={"app": {"name": "Focus Timer"}, "features": [{"title": "Focus timer"}]},
+        icon_path=icon,
+        screenshots=[str(shot)],
+        metadata_root=metadata,
+        verification="verified",
+        device_acceptance_report={"status": "unavailable", "launch_verified": False},
+    )
+
+    assert report["quality_score"] == 74
+    assert report["release_ready"] is False
+    assert "device_verification_missing" in report["failure_classes"]
+    assert report["store_screenshot_source"] == "generated_marketing_mockup"
 
 
 def test_quality_report_penalizes_missing_persistence(tmp_path):
@@ -128,6 +177,7 @@ def test_quality_report_penalizes_missing_persistence(tmp_path):
         screenshots=[str(shot)],
         metadata_root=metadata,
         verification="verified",
+        device_acceptance_report=DEVICE_VERIFIED,
     )
 
     assert "no_persistence" in report["failure_classes"]
@@ -191,6 +241,7 @@ def test_quality_report_v2_contains_subscores_and_notes(tmp_path):
         screenshots=[str(shot)],
         metadata_root=metadata,
         verification="verified",
+        device_acceptance_report=DEVICE_VERIFIED,
     )
 
     assert report["schema_version"] == 2
@@ -264,6 +315,7 @@ def test_scope_detection_keeps_real_scope_as_advisory(tmp_path):
         screenshots=[str(shot)],
         metadata_root=metadata,
         verification="verified",
+        device_acceptance_report=DEVICE_VERIFIED,
     )
 
     assert "scope_too_large" in report["failure_classes"]

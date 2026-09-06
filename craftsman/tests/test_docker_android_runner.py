@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock
 
 from craftsman.runtime.docker_android import (
+    _smoke_docker_command,
     is_docker_available,
     run_gradle_in_container,
     should_use_docker_backend,
@@ -88,3 +89,29 @@ def test_should_use_docker_backend_modes(monkeypatch):
     assert should_use_docker_backend() is True
     monkeypatch.setattr(settings, "android_build_backend", "local")
     assert should_use_docker_backend() is False
+
+
+def test_smoke_command_maps_kvm_on_linux_when_available(monkeypatch, tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.setattr("craftsman.runtime.docker_android.os.name", "posix")
+    monkeypatch.setattr(
+        "craftsman.runtime.docker_android.Path.exists",
+        lambda path: str(path) == "/dev/kvm",
+    )
+    monkeypatch.setattr(settings, "docker_android_image", "test/android-builder")
+
+    command = _smoke_docker_command(project, "com.test.app")
+
+    assert command[-3:] == ["test/android-builder", "smoke", "com.test.app"]
+    assert ["--device", "/dev/kvm:/dev/kvm"] == command[command.index("--device"):command.index("--device") + 2]
+
+
+def test_smoke_command_does_not_map_kvm_on_windows(monkeypatch, tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.setattr("craftsman.runtime.docker_android.os.name", "nt")
+
+    command = _smoke_docker_command(project, "com.test.app")
+
+    assert "--device" not in command

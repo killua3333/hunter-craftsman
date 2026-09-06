@@ -22,6 +22,7 @@ def test_workspace_coding_stage_is_scoped_and_audited(tmp_path, monkeypatch):
         assert command == ["codex", "exec", "-"]
         assert kwargs["cwd"] == str(project.resolve())
         assert "Work only in the current project directory" in kwargs["input"]
+        assert "GOOGLE_PLAY_SERVICE_ACCOUNT_FILE" not in kwargs["env"]
         source.write_text("class After", encoding="utf-8")
         return CompletedProcess(command, 0, stdout="done", stderr="")
 
@@ -38,6 +39,7 @@ def test_workspace_coding_stage_is_scoped_and_audited(tmp_path, monkeypatch):
     assert result.changed_files == ["app/src/main/MainActivity.kt"]
     assert (workspace / "coding" / "core_build-01.prompt.txt").is_file()
     assert (workspace / "coding" / "core_build-01.log").read_text(encoding="utf-8") == "done"
+    assert (project / ".git").is_dir()
 
 
 def test_workspace_coding_rejects_project_outside_workspace(tmp_path, monkeypatch):
@@ -94,3 +96,90 @@ def test_workspace_coding_preserves_timeout_output(tmp_path, monkeypatch):
     assert (workspace / "coding" / "core_build-01.log").read_text(encoding="utf-8") == (
         "partial output\ntimed out"
     )
+
+
+def test_workspace_coding_filters_release_credentials(tmp_path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    project = workspace / "project"
+    project.mkdir(parents=True)
+    monkeypatch.setattr(settings, "coding_provider", "codex")
+    monkeypatch.setattr(settings, "coding_agent_command_json", json.dumps(["codex", "exec", "-"]))
+    monkeypatch.setenv("CODEX_API_KEY", "coding-key")
+    monkeypatch.setenv("CODEX_APP_TOOLS_PIPE_PATH", "local-codex-pipe")
+    monkeypatch.setenv("GOOGLE_PLAY_SERVICE_ACCOUNT_FILE", "publisher.json")
+    monkeypatch.setenv("ANDROID_KEYSTORE_PASSWORD", "publisher-secret")
+
+    def fake_run(command, **kwargs):
+        assert kwargs["env"]["CODEX_API_KEY"] == "coding-key"
+        assert kwargs["env"]["CODEX_APP_TOOLS_PIPE_PATH"] == "local-codex-pipe"
+        assert "GOOGLE_PLAY_SERVICE_ACCOUNT_FILE" not in kwargs["env"]
+        assert "ANDROID_KEYSTORE_PASSWORD" not in kwargs["env"]
+        return CompletedProcess(command, 0, stdout="done", stderr="")
+
+    monkeypatch.setattr("craftsman.coding.harness.subprocess.run", fake_run)
+    result = run_workspace_coding_stage(
+        project_dir=project,
+        workspace=workspace,
+        stage="product_polish",
+        requirement={},
+        context={},
+    )
+    assert result.ok
+
+
+def test_core_build_cannot_pass_without_source_changes(tmp_path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    project = workspace / "project"
+    project.mkdir(parents=True)
+    monkeypatch.setattr(settings, "coding_provider", "codex")
+    monkeypatch.setattr(settings, "coding_agent_command_json", json.dumps(["codex", "exec", "-"]))
+    monkeypatch.setattr(
+        "craftsman.coding.harness.subprocess.run",
+        lambda command, **kwargs: CompletedProcess(command, 0, stdout="done", stderr=""),
+    )
+
+    result = run_workspace_coding_stage(
+        project_dir=project,
+        workspace=workspace,
+        stage="core_build",
+        requirement={},
+        context={},
+    )
+
+    assert result.ok is False
+    assert result.exit_code == 3
+    assert "without changing source files" in (result.error or "")
+
+
+def test_workspace_coding_uses_live_log_runner_when_progress_is_requested(tmp_path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    project = workspace / "project"
+    source = project / "app" / "src" / "main" / "MainActivity.kt"
+    source.parent.mkdir(parents=True)
+    source.write_text("class Before", encoding="utf-8")
+    monkeypatch.setattr(settings, "coding_provider", "codex")
+    monkeypatch.setattr(settings, "coding_agent_command_json", json.dumps(["codex", "exec", "-"]))
+    observed: list[float] = []
+
+    def fake_live_runner(**kwargs):
+        kwargs["progress_callback"](65.0)
+        source.write_text("class After", encoding="utf-8")
+        kwargs["log_path"].write_text("working\ndone", encoding="utf-8")
+        return 0, "working\ndone", None
+
+    monkeypatch.setattr(
+        "craftsman.coding.harness._run_coding_process_with_live_log",
+        fake_live_runner,
+    )
+    result = run_workspace_coding_stage(
+        project_dir=project,
+        workspace=workspace,
+        stage="core_build",
+        requirement={},
+        context={},
+        progress_callback=observed.append,
+    )
+
+    assert result.ok is True
+    assert observed == [65.0]
+    assert (workspace / "coding" / "core_build-01.log").read_text(encoding="utf-8") == "working\ndone"

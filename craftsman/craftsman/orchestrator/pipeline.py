@@ -26,6 +26,11 @@ from craftsman.orchestrator.production import (
     build_product_brief,
     write_json_artifact,
 )
+from craftsman.orchestrator.device_acceptance import (
+    build_android_device_acceptance_report,
+    unavailable_android_device_report,
+    write_device_acceptance_report,
+)
 from craftsman.orchestrator.reflexion import apply_fixes, apply_gradle_fixes, save_build_log
 from craftsman.orchestrator.verify_gates import run_verify_hard_gates
 from craftsman.runtime import select_execution_backend
@@ -346,6 +351,18 @@ def run_implementation(
         last_phase_tick = now
         _record_phase(store, run_id, phase_events, phase=phase, detail=detail)
 
+    def coding_progress(detail: str) -> Callable[[float], None]:
+        def update(elapsed_seconds: float) -> None:
+            if elapsed_seconds < 60:
+                elapsed_text = f"{max(1, int(elapsed_seconds))} 秒"
+            else:
+                elapsed_text = f"{int(elapsed_seconds // 60)} 分钟"
+            store.update_run(
+                run_id,
+                phase_detail=f"{detail}，已运行 {elapsed_text}",
+            )
+        return update
+
     workspace = settings.workspace_root / run_id
     workspace.mkdir(parents=True, exist_ok=True)
     store.update_run(run_id, status="in_progress", workspace_path=str(workspace))
@@ -413,6 +430,7 @@ def run_implementation(
         )
         project_dir = scaffold_project(workspace, req)
         if is_workspace_coding_enabled() and platform_target == "android":
+            enter_phase("codegen_core", "正在制作核心功能")
             coding_result = run_workspace_coding_stage(
                 project_dir=project_dir,
                 workspace=workspace,
@@ -423,6 +441,7 @@ def run_implementation(
                     "experience_spec": experience_spec,
                     "acceptance_actions": implementation_plan.get("acceptance_actions") or [],
                 },
+                progress_callback=coding_progress("正在制作核心功能"),
             )
             coding_runs.append(coding_result.as_dict())
             if not coding_result.ok:
@@ -437,6 +456,7 @@ def run_implementation(
                 "feature_expansion",
                 inputs={"planned_features": implementation_plan.get("core_features") or []},
             )
+            enter_phase("codegen_features", "正在完成首版功能")
             feature_result = run_workspace_coding_stage(
                 project_dir=project_dir,
                 workspace=workspace,
@@ -447,6 +467,7 @@ def run_implementation(
                     "approved_features": implementation_plan.get("core_features") or [],
                     "acceptance_actions": implementation_plan.get("acceptance_actions") or [],
                 },
+                progress_callback=coding_progress("正在完成首版功能"),
             )
             coding_runs.append(feature_result.as_dict())
             if not feature_result.ok:
@@ -458,6 +479,7 @@ def run_implementation(
                 message="首版计划功能已经完成",
             )
             production.start("product_polish", inputs={"app_name": app_name})
+            enter_phase("codegen_polish", "正在完善界面和使用体验")
             polish_result = run_workspace_coding_stage(
                 project_dir=project_dir,
                 workspace=workspace,
@@ -468,11 +490,12 @@ def run_implementation(
                     "experience_spec": experience_spec,
                     "preserve_existing_behavior": True,
                 },
+                progress_callback=coding_progress("正在完善界面和使用体验"),
             )
             coding_runs.append(polish_result.as_dict())
             if not polish_result.ok:
                 raise RuntimeError(polish_result.error or "使用体验完善未完成")
-        enter_phase("codegen", "正在制作 App 的核心功能")
+        enter_phase("codegen_complete", "App 功能制作完成，正在准备检查")
         preview_path = str(web_demo_tool.ensure_windows_demo(workspace, req))
         manifest = json.loads((workspace / "manifest.json").read_text(encoding="utf-8"))
         scheme = manifest["scheme"]
@@ -503,6 +526,8 @@ def run_implementation(
         exit_code = 0
         log = ""
         smoke_skip_reason = ""
+        smoke_ok = False
+        smoke_skipped = True
         privacy_note = ""
         enter_phase("verify", "正在检查核心功能能否正常运行")
         if backend.mode == "macos_xcode" and can_build:
@@ -578,6 +603,7 @@ def run_implementation(
                         stage="repair",
                         requirement=req,
                         context={"round": round_num, "build_errors": parsed},
+                        progress_callback=coding_progress("正在修复编译问题"),
                     )
                     coding_runs.append(repair_result.as_dict())
                     changed = repair_result.ok
@@ -622,10 +648,11 @@ def run_implementation(
                 or (req.get("app") or {}).get("bundle_id")
                 or ""
             )
-            smoke_ok = True
             for smoke_round in range(1, settings.android_smoke_max_rounds + 1):
                 smoke = run_android_smoke(project_dir, package_id)
                 (workspace / "smoke.log").write_text(smoke.log, encoding="utf-8")
+                smoke_ok = smoke.ok
+                smoke_skipped = smoke.skipped
                 if smoke.skipped:
                     smoke_skip_reason = smoke.reason
                     break
@@ -641,6 +668,7 @@ def run_implementation(
                         stage="repair",
                         requirement=req,
                         context={"round": smoke_round, "runtime_errors": parsed_smoke},
+                        progress_callback=coding_progress("正在修复设备运行问题"),
                     )
                     coding_runs.append(repair_result.as_dict())
                     changed = repair_result.ok
@@ -788,6 +816,27 @@ def run_implementation(
             )
 
         verification = "verified" if can_build and exit_code == 0 else "demo"
+        acceptance_actions = implementation_plan.get("acceptance_actions") or []
+        if _platform_target(req) == "android":
+            if can_build:
+                device_acceptance = build_android_device_acceptance_report(
+                    project_dir=project_dir,
+                    build_verified=exit_code == 0,
+                    smoke_ok=smoke_ok,
+                    smoke_skipped=smoke_skipped,
+                    smoke_reason=smoke_skip_reason,
+                    acceptance_actions=acceptance_actions,
+                )
+            else:
+                device_acceptance = unavailable_android_device_report(
+                    build_verified=False,
+                    reason=build_skip_reason or "Android build environment unavailable",
+                    acceptance_actions=acceptance_actions,
+                )
+            device_acceptance_path = write_device_acceptance_report(workspace, device_acceptance)
+        else:
+            device_acceptance = {}
+            device_acceptance_path = None
         enter_phase("package", "collect implementation artifacts")
         branding = req.get("branding") or {}
         store_meta = req.get("store") or {}
@@ -861,6 +910,7 @@ def run_implementation(
             screenshots=shots,
             metadata_root=metadata_root,
             verification=verification,
+            device_acceptance_report=device_acceptance,
         )
         quality_repair_rounds = 0
         while (
@@ -881,6 +931,9 @@ def run_implementation(
                         "quality_report": quality_report,
                         "acceptance_actions": implementation_plan.get("acceptance_actions") or [],
                     },
+                    progress_callback=coding_progress(
+                        f"正在进行第 {quality_repair_rounds} 轮质量完善"
+                    ),
                 )
                 coding_runs.append(repair_result.as_dict())
                 if not repair_result.ok:
@@ -893,6 +946,28 @@ def run_implementation(
                 exit_code = result.exit_code
                 log = result.log
                 save_build_log(workspace, log, backend=backend.mode)
+                if exit_code == 0:
+                    smoke = run_android_smoke(project_dir, package_id)
+                    (workspace / "smoke.log").write_text(smoke.log, encoding="utf-8")
+                    smoke_ok = smoke.ok
+                    smoke_skipped = smoke.skipped
+                    smoke_skip_reason = smoke.reason if smoke.skipped else ""
+                else:
+                    smoke_ok = False
+                    smoke_skipped = True
+                    smoke_skip_reason = "rebuild failed before device verification"
+                device_acceptance = build_android_device_acceptance_report(
+                    project_dir=project_dir,
+                    build_verified=exit_code == 0,
+                    smoke_ok=smoke_ok,
+                    smoke_skipped=smoke_skipped,
+                    smoke_reason=smoke_skip_reason,
+                    acceptance_actions=acceptance_actions,
+                )
+                device_acceptance_path = write_device_acceptance_report(
+                    workspace,
+                    device_acceptance,
+                )
             gate_result = run_verify_hard_gates(
                 backend_mode=backend.mode,
                 compile_exit_code=exit_code,
@@ -913,6 +988,7 @@ def run_implementation(
                 screenshots=shots,
                 metadata_root=metadata_root,
                 verification="verified" if can_build and exit_code == 0 else verification,
+                device_acceptance_report=device_acceptance,
             )
             quality_report["quality_repair_rounds"] = quality_repair_rounds
             if quality_report.get("release_ready"):
@@ -988,6 +1064,7 @@ def run_implementation(
                 "quality_report": quality_report,
                 "hard_gates": gate_result,
                 "verification": verification,
+                "device_acceptance": device_acceptance,
             },
             acceptance={
                 "passed": True,
@@ -1044,6 +1121,7 @@ def run_implementation(
             "experience_spec": experience_spec,
             "production_stages": store.list_production_stages(run_id),
             "coding_runs": coding_runs,
+            "device_acceptance": device_acceptance,
             "quality_report": quality_report,
             "storage": {
                 "mode": settings.artifact_uri_mode,
@@ -1061,6 +1139,7 @@ def run_implementation(
                 "product_brief": str(product_brief_path),
                 "experience_spec": str(experience_spec_path),
                 "production_session": str(workspace / "production_session.json"),
+                "device_acceptance_report": str(device_acceptance_path) if device_acceptance_path else None,
             },
         }
         if debug_apk_path:

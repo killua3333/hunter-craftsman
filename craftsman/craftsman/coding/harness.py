@@ -7,7 +7,7 @@ import subprocess
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from craftsman.config import settings
 
@@ -38,6 +38,7 @@ def run_workspace_coding_stage(
     stage: str,
     requirement: dict[str, Any],
     context: dict[str, Any],
+    progress_callback: Callable[[float], None] | None = None,
 ) -> CodingRunResult:
     project = project_dir.resolve()
     root = workspace.resolve()
@@ -47,6 +48,8 @@ def run_workspace_coding_stage(
     command = _configured_command()
     provider = settings.coding_provider.strip().lower()
     _validate_executable(command[0])
+    if provider == "codex":
+        _ensure_project_git_boundary(project)
     coding_dir = workspace / "coding"
     coding_dir.mkdir(parents=True, exist_ok=True)
     attempt = len(list(coding_dir.glob(f"{stage}-*.json"))) + 1
@@ -60,21 +63,31 @@ def run_workspace_coding_stage(
     before = _source_fingerprints(project)
     started = time.monotonic()
     try:
-        completed = subprocess.run(
-            command,
-            cwd=str(project),
-            input=prompt,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            capture_output=True,
-            timeout=float(settings.coding_agent_timeout_seconds),
-            shell=False,
-            env=os.environ.copy(),
-        )
-        exit_code = int(completed.returncode)
-        output = (completed.stdout or "") + ("\n" + completed.stderr if completed.stderr else "")
-        error = None if exit_code == 0 else f"coding agent exited with code {exit_code}"
+        if progress_callback is None:
+            completed = subprocess.run(
+                command,
+                cwd=str(project),
+                input=prompt,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                capture_output=True,
+                timeout=float(settings.coding_agent_timeout_seconds),
+                shell=False,
+                env=_coding_environment(provider),
+            )
+            exit_code = int(completed.returncode)
+            output = (completed.stdout or "") + ("\n" + completed.stderr if completed.stderr else "")
+            error = None if exit_code == 0 else f"coding agent exited with code {exit_code}"
+        else:
+            exit_code, output, error = _run_coding_process_with_live_log(
+                command=command,
+                cwd=project,
+                prompt=prompt,
+                log_path=log_path,
+                provider=provider,
+                progress_callback=progress_callback,
+            )
     except subprocess.TimeoutExpired as exc:
         exit_code = -1
         output = _combine_process_output(exc.stdout, exc.stderr)
@@ -88,18 +101,70 @@ def run_workspace_coding_stage(
     after = _source_fingerprints(project)
     changed = sorted(path for path, digest in after.items() if before.get(path) != digest)
     changed.extend(sorted(path for path in before if path not in after))
+    changed = sorted(set(changed))
+    if exit_code == 0 and stage == "core_build" and not changed:
+        exit_code = 3
+        error = "coding agent completed core_build without changing source files"
     result = CodingRunResult(
         ok=exit_code == 0,
         provider=provider,
         stage=stage,
         exit_code=exit_code,
         duration_seconds=duration,
-        changed_files=sorted(set(changed)),
+        changed_files=changed,
         log_path=str(log_path),
         error=error,
     )
     result_path.write_text(json.dumps(result.as_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
     return result
+
+
+def _run_coding_process_with_live_log(
+    *,
+    command: list[str],
+    cwd: Path,
+    prompt: str,
+    log_path: Path,
+    provider: str,
+    progress_callback: Callable[[float], None],
+) -> tuple[int, str, str | None]:
+    """Stream CLI output to disk while reporting elapsed time to the run store."""
+    timeout = float(settings.coding_agent_timeout_seconds)
+    started = time.monotonic()
+    with log_path.open("w", encoding="utf-8", errors="replace") as log_file:
+        process = subprocess.Popen(
+            command,
+            cwd=str(cwd),
+            stdin=subprocess.PIPE,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            shell=False,
+            env=_coding_environment(provider),
+        )
+        if process.stdin is None:
+            process.kill()
+            process.wait()
+            return -1, "coding agent stdin unavailable", "coding agent could not receive its task"
+        process.stdin.write(prompt)
+        process.stdin.close()
+        while process.poll() is None:
+            elapsed = time.monotonic() - started
+            if elapsed >= timeout:
+                process.kill()
+                process.wait()
+                log_file.write("\n[coding agent timed out]\n")
+                log_file.flush()
+                output = log_path.read_text(encoding="utf-8", errors="replace")
+                return -1, output, f"coding agent exceeded {timeout:g} seconds"
+            progress_callback(elapsed)
+            time.sleep(min(10.0, max(0.1, timeout - elapsed)))
+        exit_code = int(process.returncode or 0)
+    output = log_path.read_text(encoding="utf-8", errors="replace")
+    error = None if exit_code == 0 else f"coding agent exited with code {exit_code}"
+    return exit_code, output, error
 
 
 def _combine_process_output(stdout: str | bytes | None, stderr: str | bytes | None) -> str:
@@ -111,6 +176,32 @@ def _combine_process_output(stdout: str | bytes | None, stderr: str | bytes | No
     standard = decode(stdout)
     error = decode(stderr)
     return standard + ("\n" + error if error else "")
+
+
+def _coding_environment(provider: str) -> dict[str, str]:
+    """Pass only process/runtime and coding-provider credentials to the coding CLI."""
+    shared = {
+        "PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "COMSPEC",
+        "HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH",
+        "TEMP", "TMP", "TMPDIR", "LOCALAPPDATA", "APPDATA",
+        "LANG", "LC_ALL", "TERM", "COLORTERM", "NO_COLOR",
+        "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+        "http_proxy", "https_proxy", "no_proxy",
+    }
+    provider_keys = {
+        "codex": {
+            "CODEX_HOME", "CODEX_API_KEY", "OPENAI_API_KEY",
+            "CODEX_APP_TOOLS_PIPE_PATH", "CODEX_CI",
+            "CODEX_INTERNAL_ORIGINATOR_OVERRIDE", "CODEX_SESSION_ID",
+            "CODEX_THREAD_ID", "CODEX_PERMISSION_PROFILE",
+            "CODEX_SANDBOX_NETWORK_DISABLED", "CODEX_SHELL",
+            "CODEX_MCP_NODE_PATH",
+        },
+        "claude": {"CLAUDE_CONFIG_DIR", "ANTHROPIC_API_KEY"},
+        "command": set(),
+    }
+    allowed = shared | provider_keys.get(provider, set())
+    return {key: value for key, value in os.environ.items() if key in allowed}
 
 
 def _configured_command() -> list[str]:
@@ -137,6 +228,24 @@ def _validate_executable(executable: str) -> None:
         name = name[:-4]
     if name not in allowed:
         raise ValueError(f"coding agent executable is not allowed: {name}")
+
+
+def _ensure_project_git_boundary(project: Path) -> None:
+    """Prevent Codex from treating the parent platform repository as the app workspace."""
+    if (project / ".git").exists():
+        return
+    try:
+        exit_code = subprocess.call(
+            ["git", "init", "--quiet"],
+            cwd=str(project),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            shell=False,
+        )
+    except OSError as exc:
+        raise RuntimeError("git is required to isolate the Codex app workspace") from exc
+    if exit_code != 0 or not (project / ".git").exists():
+        raise RuntimeError("failed to create an isolated Git boundary for the Codex app workspace")
 
 
 def _build_prompt(stage: str, requirement: dict[str, Any], context: dict[str, Any]) -> str:

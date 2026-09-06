@@ -60,6 +60,16 @@ if echo "$LOG" | grep -q "FATAL EXCEPTION"; then
   exit 1
 fi
 
+REPORT_DIR="app/build/reports/device-acceptance"
+mkdir -p "$REPORT_DIR"
+adb exec-out screencap -p >"$REPORT_DIR/after-interaction.png"
+
+echo "[smoke] relaunching app after force-stop"
+adb shell am force-stop "$PACKAGE_ID"
+adb shell monkey -p "$PACKAGE_ID" -c android.intent.category.LAUNCHER 1 >/dev/null
+sleep 2
+adb exec-out screencap -p >"$REPORT_DIR/after-relaunch.png"
+
 adb emu kill 2>/dev/null || true
 if [[ $MONKEY_EXIT -ne 0 ]]; then
   echo "[smoke] monkey exit code $MONKEY_EXIT"

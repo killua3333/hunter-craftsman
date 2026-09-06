@@ -48,6 +48,7 @@ Agent B 不再把“生成一个 App”视为一次模型请求。每个 App 固
 执行边界：
 
 - 工程目录必须位于当前 run 的 workspace 内。
+- 每个 App 工程创建独立 Git 边界，避免编码工具向上扫描平台主仓库。
 - 使用参数数组启动进程，不经过 shell。
 - 可执行文件必须位于 `CODING_AGENT_ALLOWED_EXECUTABLES` 白名单。
 - 每轮有独立超时。
@@ -60,12 +61,14 @@ Agent B 不再把“生成一个 App”视为一次模型请求。每个 App 固
 
 ```dotenv
 CODING_PROVIDER=codex
-CODING_AGENT_COMMAND_JSON=["codex","exec","--full-auto","-"]
+CODING_AGENT_COMMAND_JSON=["codex","exec","--ephemeral","--sandbox","workspace-write","--skip-git-repo-check","-"]
 CODING_AGENT_ALLOWED_EXECUTABLES=codex,claude
 CODING_AGENT_TIMEOUT_SECONDS=1800
 ```
 
-CLI 必须提前安装，并由运行 Craftsman 的系统账号完成合法认证。命令参数应以服务器实际安装版本为准，启用前必须在测试环境跑基准任务。
+CLI 必须提前安装，并由运行 Craftsman 的系统账号完成合法认证。命令参数应以服务器实际安装版本为准，启用前必须在测试环境跑基准任务。Codex 官方文档建议自动化任务显式使用 `--sandbox workspace-write`；`--full-auto` 仅保留为兼容参数，本项目不再把它作为推荐配置。
+
+编码阶段的标准输出和错误输出会持续写入当前 run 的 `coding/<stage>-<attempt>.log`。工作台只展示当前产品阶段和已运行时长，不展示虚构百分比。Codex Desktop 内再次启动 Codex CLI 可能受嵌套沙箱限制；生产验证应在独立服务器进程中进行，并使用运行 Craftsman 的同一系统账号完成 CLI 认证。
 
 ## 当前目标
 
@@ -125,7 +128,7 @@ Agent C 在提交前会再次检查质量门槛；低质量 handoff 会返回 `q
 2. 修主流程弱、文案模板化、功能不贴合需求。
 3. 缩小范围，只保留一个主功能。
 
-每轮修复后都会重新构建、重新评分、重新写质量报告。
+每轮修复后都会重新构建、重新执行设备启动检查、重新评分并写入质量报告。源码变化后不会沿用旧版本的设备证据。
 
 ## 验收建议
 
@@ -139,15 +142,14 @@ Agent C 在提交前会再次检查质量门槛；低质量 handoff 会返回 `q
 
 ## 当前边界与下一步
 
-v3 当前已经完成固定七阶段、阶段持久化、失败重试记录、Dashboard/API 展示，以及 Codex/Claude 工作区执行器边界。现有 Gradle 构建和 Android 启动冒烟检查继续复用。
+v3 当前已经完成固定七阶段、阶段持久化、失败重试记录、Dashboard/API 展示、Codex/Claude 工作区执行器边界，以及 Android 编译与设备启动证据分离。商店宣传截图不会再被当成设备截图；没有设备启动证据的 Android 产物不能通过发布门槛。Linux 验证主机需要提供 `/dev/kvm`，Windows Docker Desktop 通常只能完成原生编译。
 
-下一增量必须补齐真实设备级产品验收：
+下一增量必须补齐核心业务流程级产品验收：
 
-- 在 Android 模拟器或测试设备安装 APK。
 - 使用 Maestro 或 UIAutomator 执行 `acceptance_actions`。
 - 验证关闭并重启后的数据持久化。
 - 保存真实 App 页面截图，而不是商店宣传图。
 - 使用独立评审器检查遮挡、乱码、空页面和需求覆盖。
 - 将失败步骤作为结构化缺陷交回 Coding Harness，修复后进行回归。
 
-在上述设备级验收完成前，系统可以证明工程编译和基础启动，但不能仅凭源码特征宣称 App 已达到成熟商业产品质量。
+当前系统可以分别证明工程编译和基础设备启动；在上述核心流程验收完成前，仍不能仅凭随机 smoke 或源码特征宣称 App 已达到成熟商业产品质量。

@@ -17,8 +17,11 @@ FORBIDDEN_SCOPE_KEYWORDS = {
 }
 
 RELEASE_QUALITY_THRESHOLD = 75
-RELEASE_HARD_BLOCKERS = frozenset({"build_failed", "empty_ui", "weak_core_flow"})
+RELEASE_HARD_BLOCKERS = frozenset({
+    "build_failed", "empty_ui", "weak_core_flow", "device_verification_missing",
+})
 NATIVE_VERIFICATION_BLOCKER = "native_verification_missing"
+DEVICE_VERIFICATION_BLOCKER = "device_verification_missing"
 
 
 def release_quality_gate(handoff: dict[str, Any]) -> dict[str, Any]:
@@ -110,6 +113,7 @@ def evaluate_app_quality(
     screenshots: list[str],
     metadata_root: Path,
     verification: str,
+    device_acceptance_report: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     failure_classes: list[str] = []
     repair_suggestions: list[str] = []
@@ -129,6 +133,11 @@ def evaluate_app_quality(
 
     native_verification_required = backend_mode in {"android_gradle", "android_gradle_docker", "macos_xcode"}
     native_verification_missing = native_verification_required and verification != "verified"
+    device_report = device_acceptance_report or {}
+    device_verification_required = backend_mode in {"android_gradle", "android_gradle_docker"}
+    device_verification_missing = device_verification_required and not bool(
+        device_report.get("launch_verified")
+    )
 
     core_flow_score = 100 - min(100, ui["core_flow_penalty"])
     ui_completeness_score = 100 - min(100, ui["ui_penalty"])
@@ -188,6 +197,11 @@ def evaluate_app_quality(
         failure_classes.append(NATIVE_VERIFICATION_BLOCKER)
         repair_suggestions.append("Build and run the native app before release")
         manual_review_notes.append("当前版本仅可预览；完成原生编译和运行检查后才能发布。")
+    if device_verification_missing:
+        weighted = min(weighted, RELEASE_QUALITY_THRESHOLD - 1)
+        failure_classes.append(DEVICE_VERIFICATION_BLOCKER)
+        repair_suggestions.append("Install and launch the APK on an Android device or emulator")
+        manual_review_notes.append("当前版本尚无设备启动证据，不能标记为建议发布。")
 
     # Scope findings are advisory; broad wording alone must not block a usable MVP.
     hard_blockers = RELEASE_HARD_BLOCKERS
@@ -196,6 +210,7 @@ def evaluate_app_quality(
     release_ready = (
         weighted >= RELEASE_QUALITY_THRESHOLD
         and not native_verification_missing
+        and not device_verification_missing
         and not (set(failure_classes) & hard_blockers)
     )
     polish_required = 60 <= weighted < RELEASE_QUALITY_THRESHOLD or (
@@ -217,6 +232,12 @@ def evaluate_app_quality(
         "screenshots": screenshots,
         "main_interactions": main_interactions,
         "persistence_evidence": persistence_evidence,
+        "device_acceptance": device_report,
+        "device_launch_verified": bool(device_report.get("launch_verified")),
+        "core_flow_device_verified": bool(device_report.get("core_flow_verified")),
+        "persistence_device_verified": bool(device_report.get("persistence_verified")),
+        "store_screenshot_source": "generated_marketing_mockup",
+        "device_screenshots": list(device_report.get("device_screenshots") or []),
         "warnings": _dedupe(warnings),
         "manual_review_notes": _dedupe(manual_review_notes),
         "core_flow_score": core_flow_score,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -161,18 +162,7 @@ def run_smoke_in_container(
         )
 
     workspace_mount, container_workdir = _container_project_path(project_dir)
-    cmd = [
-        "docker",
-        "run",
-        "--rm",
-        "-v",
-        f"{workspace_mount}:/workspace",
-        "-w",
-        container_workdir,
-        settings.docker_android_image,
-        "smoke",
-        package_id,
-    ]
+    cmd = _smoke_docker_command(project_dir, package_id)
     try:
         proc = subprocess.run(
             cmd,
@@ -197,3 +187,20 @@ def run_smoke_in_container(
             reasons=["smoke test failed"],
         )
     return DockerGradleResult(ok=True, exit_code=0, log=log, reasons=[])
+
+
+def _smoke_docker_command(project_dir: Path, package_id: str) -> list[str]:
+    workspace_mount, container_workdir = _container_project_path(project_dir)
+    cmd = [
+        "docker",
+        "run",
+        "--rm",
+        "-v",
+        f"{workspace_mount}:/workspace",
+        "-w",
+        container_workdir,
+    ]
+    if os.name != "nt" and Path("/dev/kvm").exists():
+        cmd.extend(["--device", "/dev/kvm:/dev/kvm"])
+    cmd.extend([settings.docker_android_image, "smoke", package_id])
+    return cmd

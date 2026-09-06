@@ -51,7 +51,9 @@ ANDROID_SMOKE_MAX_ROUNDS=2
 
 容器内：`gradle-run.sh smoke {package_id}` → AVD + `adb install` + monkey 50。
 
-**Windows 限制**：Docker Desktop 无 `/dev/kvm` 时 emulator 可能极慢或失败；`auto` 会降级为 `smoke_skipped` 并仍保留 compile verified。
+**设备验收边界**：Linux 主机存在 `/dev/kvm` 时，系统会将 KVM 映射到 smoke 容器并运行模拟器。Windows Docker Desktop 通常无法提供该设备，因此 `auto` 会记录 `smoke_skipped`。原生编译成功仍会保留，但没有设备启动证据的产物不会通过发布质量门槛。
+
+Builder 镜像、Android 模板和 AGP 当前统一使用 API 34，避免构建时临时下载其他 SDK。修改 SDK 版本后必须同步更新镜像与模板并重新验证。
 
 ## 何时使用
 
