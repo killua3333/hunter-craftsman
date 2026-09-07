@@ -85,6 +85,45 @@ def test_quality_report_release_ready_for_interactive_local_app(tmp_path):
     assert report["persistence_evidence"]
 
 
+def test_compose_placeholder_parameter_is_not_a_generic_template(tmp_path):
+    workspace, project, metadata = _android_project(
+        tmp_path,
+        """
+        package com.example
+        fun MainActivity() {
+            setContent {
+                val value = rememberSaveable { mutableStateOf("Focus timer") }
+                OutlinedTextField(
+                    value = value.value,
+                    onValueChange = { value.value = it },
+                    placeholder = { Text("Name this focus session") },
+                )
+                Button(onClick = { value.value = "Session history" }) { Text("Start focus timer") }
+            }
+        }
+        """,
+    )
+    icon = workspace / "icon.png"
+    shot = workspace / "shot.png"
+    icon.write_bytes(b"icon")
+    shot.write_bytes(b"shot")
+
+    report = evaluate_app_quality(
+        backend_mode="android_gradle",
+        compile_exit_code=0,
+        project_dir=project,
+        workspace=workspace,
+        requirement={"app": {"name": "Focus Timer"}, "features": [{"title": "Focus timer"}]},
+        icon_path=icon,
+        screenshots=[str(shot)],
+        metadata_root=metadata,
+        verification="verified",
+        device_acceptance_report=DEVICE_VERIFIED,
+    )
+
+    assert "generic_template" not in report["failure_classes"]
+
+
 def test_quality_report_blocks_empty_ui(tmp_path):
     workspace, project, metadata = _android_project(
         tmp_path,

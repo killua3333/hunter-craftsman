@@ -5,7 +5,7 @@ from subprocess import CompletedProcess, TimeoutExpired
 
 import pytest
 
-from craftsman.coding.harness import run_workspace_coding_stage
+from craftsman.coding.harness import _build_prompt, run_workspace_coding_stage
 from craftsman.coding.deepseek_harness_runner import _notification_summary
 from craftsman.config import settings
 
@@ -311,3 +311,23 @@ def test_deepseek_harness_runner_drops_token_chunks_from_audit_log():
         payload = {"event": {"type": "assistant/chunk"}}
 
     assert _notification_summary(Notification()) is None
+
+
+def test_deepseek_harness_windows_prompt_delegates_build_to_supervisor(monkeypatch):
+    monkeypatch.setattr(settings, "coding_provider", "deepseek_harness")
+    monkeypatch.setattr("craftsman.coding.harness.os.name", "nt")
+
+    prompt = _build_prompt("core_build", {}, {})
+
+    assert "do not call pwsh" in prompt
+    assert "supervising pipeline performs the build" in prompt
+
+
+def test_deepseek_flash_prompt_prioritizes_bounded_implementation(monkeypatch):
+    monkeypatch.setattr(settings, "coding_provider", "deepseek_harness")
+    monkeypatch.setattr(settings, "deepseek_harness_model", "deepseek-v4-flash")
+
+    prompt = _build_prompt("core_build", {}, {})
+
+    assert "Keep analysis brief" in prompt
+    assert "Prefer a small complete implementation" in prompt

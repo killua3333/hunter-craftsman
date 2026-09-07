@@ -938,6 +938,8 @@ def run_implementation(
                 coding_runs.append(repair_result.as_dict())
                 if not repair_result.ok:
                     break
+                if not repair_result.changed_files:
+                    break
             elif not repair_android_codegen_for_quality(project_dir, req, quality_report):
                 break
             enter_phase("quality_repair", f"repair Android MVP quality round {quality_repair_rounds}/3")

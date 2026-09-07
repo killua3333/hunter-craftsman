@@ -337,12 +337,31 @@ def _build_prompt(stage: str, requirement: dict[str, Any], context: dict[str, An
         "requirement": requirement,
         "context": context,
     }
+    platform_tool_note = ""
+    if settings.coding_provider.strip().lower() == "deepseek_harness" and os.name == "nt":
+        platform_tool_note = (
+            "On this Windows runtime, do not call pwsh, bash, job_output, or any shell tool. "
+            "Use read, glob, and str_replace_editor for all inspection and edits. "
+            "Do not run Gradle or environment checks; the supervising pipeline performs the build after coding.\n"
+        )
+    execution_note = ""
+    if (
+        settings.coding_provider.strip().lower() == "deepseek_harness"
+        and settings.deepseek_harness_model.strip() == "deepseek-v4-flash"
+    ):
+        execution_note = (
+            "Keep analysis brief and implement the requested changes promptly. "
+            "Inspect only source and build files needed for this stage; do not inspect store metadata. "
+            "Prefer a small complete implementation over extended planning.\n"
+        )
     return (
         "You are the implementation worker inside a supervised Android product pipeline.\n"
         "Work only in the current project directory. Inspect existing files before editing.\n"
         "Use Kotlin and Jetpack Compose. Do not publish, access credentials, or modify files outside this project.\n"
         "Do not replace working functionality with placeholders. Run relevant local checks when available.\n"
-        "Finish the bounded stage below, then stop.\n\n"
+        + platform_tool_note
+        + execution_note
+        + "Finish the bounded stage below, then stop.\n\n"
         + json.dumps(payload, ensure_ascii=False, indent=2)
     )
 

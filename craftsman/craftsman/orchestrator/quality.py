@@ -412,7 +412,9 @@ def _looks_generic_template(project_dir: Path, requirement: dict[str, Any]) -> b
     feature_titles = [_feature_title(item).lower() for item in _safe_features(requirement)[:3]]
     if app_name and app_name in lower and any(title and title in lower for title in feature_titles):
         return False
-    generic_markers = ("core feature", "sample", "placeholder", "todo", "lorem", "generated app")
+    # `placeholder` is also a normal Compose TextField parameter. Treating the
+    # identifier itself as placeholder content incorrectly penalizes real forms.
+    generic_markers = ("core feature", "sample app", "todo:", "lorem ipsum", "generated app")
     return any(marker in lower for marker in generic_markers)
 
 
