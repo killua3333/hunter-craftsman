@@ -41,9 +41,40 @@ Agent B 不再把“生成一个 App”视为一次模型请求。每个 App 固
 
 ## Coding Provider
 
-默认 `CODING_PROVIDER=deepseek_json`，保持原有 DeepSeek JSON 文件生成兼容。
+推荐使用 `CODING_PROVIDER=deepseek_harness`：Agent B 通过 DeepSeek 官方 Python SDK 和随包运行时驱动官方 Harness，默认使用 `deepseek-v4-pro`。这不是项目自建的简化工具循环，也不是原有的一次性 JSON 生成。服务器安装项目依赖时会一并安装 Harness 运行时，平台用户无需安装 Codex、Node.js 或额外客户端。
 
-当配置为 `codex`、`claude` 或 `command` 时，Agent B 使用工作区型 Coding Harness。编码执行器会在同一个 Android 工程中依次处理核心功能、功能补充、体验完善和问题修复，而不是每轮返回一个全新工程。
+`CODING_PROVIDER=deepseek_json` 仅保留原有 DeepSeek JSON 文件生成兼容。
+
+当配置为 `deepseek_harness`、`codex_deepseek`、`codex`、`claude` 或 `command` 时，Agent B 使用工作区型 Coding Harness。编码执行器会在同一个 Android 工程中依次处理核心功能、功能补充、体验完善和问题修复，而不是每轮返回一个全新工程。
+
+使用 DeepSeek 官方 Harness：
+
+```dotenv
+CODING_PROVIDER=deepseek_harness
+DEEPSEEK_API_KEY=
+DEEPSEEK_HARNESS_MODEL=deepseek-v4-pro
+DEEPSEEK_HARNESS_REASONING_EFFORT=high
+DEEPSEEK_HARNESS_MAX_TOKENS=49152
+DEEPSEEK_HARNESS_PROFILE=sdk
+```
+
+项目固定使用完整 `sdk` profile，其默认权限为 `workspace-write`。不会使用官方 `sdk-minimal` profile，因为后者固定为 `danger-full-access`。Harness 在隔离的内部 Python 进程中运行，该进程只继承运行所需的系统变量、网络代理和 DeepSeek Key，不继承 Google Play、Android 签名或平台 API 凭据。遥测在该进程中明确关闭。
+
+Android Gradle 构建容器同样不会挂载平台 `secrets` 目录。发布签名与 Google Play 上传仍由 Agent C 的受控发布阶段处理，不交给 Agent B 生成的工程或构建脚本。
+
+DeepSeek Harness 当前仍由官方标记为开发者预览，版本可能发生不兼容变更，因此依赖固定为已验证的 `0.1.2rc1`。升级 SDK 前必须重新执行最小文件修改、Android 编译和完整回归测试。
+
+备选方案：使用 DeepSeek 驱动 Codex Harness：
+
+```dotenv
+CODING_PROVIDER=codex_deepseek
+DEEPSEEK_API_KEY=
+DEEPSEEK_API_BASE=https://api.deepseek.com/v1
+CODEX_DEEPSEEK_MODEL=deepseek-v4-pro
+CODEX_DEEPSEEK_REASONING_EFFORT=high
+```
+
+要求 Codex CLI 版本不低于 DeepSeek 模型目录声明的 `0.144.0`。项目使用 `--ignore-user-config` 和独立 Provider 参数，不读取或覆盖操作者桌面 Codex 的模型服务配置。DeepSeek Key 通过受限子进程环境注入，不写入命令参数和模型目录。Agent C 的 Play 与签名凭据不会传给 Codex。
 
 执行边界：
 
@@ -66,9 +97,11 @@ CODING_AGENT_ALLOWED_EXECUTABLES=codex,claude
 CODING_AGENT_TIMEOUT_SECONDS=1800
 ```
 
-CLI 必须提前安装，并由运行 Craftsman 的系统账号完成合法认证。命令参数应以服务器实际安装版本为准，启用前必须在测试环境跑基准任务。Codex 官方文档建议自动化任务显式使用 `--sandbox workspace-write`；`--full-auto` 仅保留为兼容参数，本项目不再把它作为推荐配置。
+CLI 必须提前安装。通用 `codex`、`claude` Provider 需要由运行 Craftsman 的系统账号完成相应认证；`codex_deepseek` 只读取 DeepSeek API Key。命令参数应以服务器实际安装版本为准，启用前必须在测试环境跑基准任务。Codex 官方文档建议自动化任务显式使用 `--sandbox workspace-write`；`--full-auto` 仅保留为兼容参数，本项目不再把它作为推荐配置。
 
-编码阶段的标准输出和错误输出会持续写入当前 run 的 `coding/<stage>-<attempt>.log`。工作台只展示当前产品阶段和已运行时长，不展示虚构百分比。Codex Desktop 内再次启动 Codex CLI 可能受嵌套沙箱限制；生产验证应在独立服务器进程中进行，并使用运行 Craftsman 的同一系统账号完成 CLI 认证。
+`codex_deepseek` 不要求登录 ChatGPT，但必须配置有效的 DeepSeek API Key。通用 `codex` Provider 仍按其实际 OpenAI或自定义服务完成认证。
+
+编码阶段的标准输出和错误输出会持续写入当前 run 的 `coding/<stage>-<attempt>.log`。工作台只展示当前产品阶段和已运行时长，不展示虚构百分比。Codex Desktop 内再次启动 Codex CLI 可能受嵌套沙箱限制；生产验证应由普通终端或独立服务进程运行。
 
 ## 当前目标
 

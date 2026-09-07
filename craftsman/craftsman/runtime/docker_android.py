@@ -105,9 +105,6 @@ def run_gradle_in_container(
         "-e",
         "GRADLE_USER_HOME=/tmp/gradle",
     ]
-    secrets_dir = settings.secret_store_dir
-    if secrets_dir.is_dir():
-        cmd.extend(["-v", f"{secrets_dir.resolve()}:/secrets:ro"])
     if extra_env:
         for key, value in extra_env.items():
             cmd.extend(["-e", f"{key}={value}"])

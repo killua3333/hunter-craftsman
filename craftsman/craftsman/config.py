@@ -28,9 +28,15 @@ class Settings(BaseSettings):
     # 写码 / Reflexion 修错
     deepseek_pro_model: str = "deepseek-v4-pro"
 
-    # Agent B coding engine. deepseek_json preserves the current behavior;
-    # codex/claude/command operate repeatedly inside the generated workspace.
+    # Agent B coding engine. deepseek_harness uses DeepSeek's official SDK;
+    # deepseek_json preserves the old one-shot behavior.
     coding_provider: str = "deepseek_json"
+    deepseek_harness_model: str = "deepseek-v4-pro"
+    deepseek_harness_reasoning_effort: str = "high"
+    deepseek_harness_max_tokens: int = 49152
+    deepseek_harness_profile: str = "sdk"
+    codex_deepseek_model: str = "deepseek-v4-pro"
+    codex_deepseek_reasoning_effort: str = "high"
     coding_agent_command_json: str | None = None
     coding_agent_allowed_executables: str = "codex,claude"
     coding_agent_timeout_seconds: float = 1800.0
@@ -117,10 +123,15 @@ class Settings(BaseSettings):
     def resolved_api_key(self) -> str | None:
         from craftsman.secret_store import resolve_secret_value
 
-        key = resolve_secret_value("DEEPSEEK_API_KEY", self.deepseek_api_key)
+        key = self.resolved_deepseek_api_key()
         if key:
             return key
         return resolve_secret_value("OPENAI_API_KEY", self.openai_api_key)
+
+    def resolved_deepseek_api_key(self) -> str | None:
+        from craftsman.secret_store import resolve_secret_value
+
+        return resolve_secret_value("DEEPSEEK_API_KEY", self.deepseek_api_key)
 
     def resolved_api_base(self) -> str:
         return self.deepseek_api_base.rstrip("/")

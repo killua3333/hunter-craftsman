@@ -32,12 +32,16 @@ def test_run_gradle_in_container_invokes_docker(monkeypatch, tmp_path):
     monkeypatch.setattr("craftsman.runtime.docker_android.is_docker_available", lambda: True)
     monkeypatch.setattr("craftsman.runtime.docker_android.subprocess.run", fake_run)
     monkeypatch.setattr(settings, "docker_android_image", "test/android-builder")
+    secret_dir = tmp_path / "secrets"
+    secret_dir.mkdir()
+    monkeypatch.setattr(settings, "secret_store_dir", secret_dir)
 
     result = run_gradle_in_container(project, "assembleDebug")
     assert result.ok is True
     assert calls
     assert "docker" in calls[0]
     assert "assembleDebug" in calls[0]
+    assert "/secrets:ro" not in " ".join(calls[0])
 
 
 def test_run_gradle_in_container_passes_multiple_tasks_separately(monkeypatch, tmp_path):

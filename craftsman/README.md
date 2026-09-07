@@ -66,7 +66,12 @@ brew install xcodegen fastlane
 | `DEEPSEEK_API_KEY` | DeepSeek API Key |
 | `DEEPSEEK_CHAT_MODEL` | 反馈 Agent A（Gate 语义评审），默认 `deepseek-chat` |
 | `DEEPSEEK_PRO_MODEL` | 写 Swift 源码 + Reflexion 修错，默认 `deepseek-v4-pro` |
-| `CODING_PROVIDER` | `deepseek_json`（兼容默认）或 `codex`/`claude` 工作区执行器 |
+| `CODING_PROVIDER` | 推荐 `deepseek_harness`（DeepSeek 官方 Harness SDK）；`deepseek_json` 为旧兼容模式 |
+| `DEEPSEEK_HARNESS_MODEL` | 官方 Harness 使用的模型，默认 `deepseek-v4-pro` |
+| `DEEPSEEK_HARNESS_REASONING_EFFORT` | 推理强度：`off`、`low`、`high` 或 `max` |
+| `DEEPSEEK_HARNESS_MAX_TOKENS` | 每个编码阶段的最大输出 token 数 |
+| `CODEX_DEEPSEEK_MODEL` | Codex Harness 使用的 DeepSeek 模型，默认 `deepseek-v4-pro` |
+| `CODEX_DEEPSEEK_REASONING_EFFORT` | 推理强度：`low`、`high` 或 `max` |
 | `CODING_AGENT_COMMAND_JSON` | 工作区执行器的非交互命令参数 JSON 数组 |
 | `CODING_AGENT_ALLOWED_EXECUTABLES` | 允许启动的编码 CLI 白名单 |
 | `CODING_AGENT_TIMEOUT_SECONDS` | 单次编码阶段的最长执行时间 |

@@ -4,12 +4,16 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Callable
 
 from craftsman.config import settings
+
+
+_DEEPSEEK_MODEL_CATALOG = Path(__file__).with_name("deepseek_models.json")
 
 
 @dataclass
@@ -28,7 +32,9 @@ class CodingRunResult:
 
 
 def is_workspace_coding_enabled() -> bool:
-    return settings.coding_provider.strip().lower() in {"codex", "claude", "command"}
+    return settings.coding_provider.strip().lower() in {
+        "deepseek_harness", "codex_deepseek", "codex", "claude", "command",
+    }
 
 
 def run_workspace_coding_stage(
@@ -45,10 +51,11 @@ def run_workspace_coding_stage(
     if not project.is_relative_to(root):
         raise ValueError("coding project must stay inside the run workspace")
 
-    command = _configured_command()
     provider = settings.coding_provider.strip().lower()
-    _validate_executable(command[0])
-    if provider == "codex":
+    command = _configured_command(workspace=root, stage=stage)
+    if provider != "deepseek_harness":
+        _validate_executable(command[0])
+    if provider in {"deepseek_harness", "codex", "codex_deepseek"}:
         _ensure_project_git_boundary(project)
     coding_dir = workspace / "coding"
     coding_dir.mkdir(parents=True, exist_ok=True)
@@ -197,14 +204,83 @@ def _coding_environment(provider: str) -> dict[str, str]:
             "CODEX_SANDBOX_NETWORK_DISABLED", "CODEX_SHELL",
             "CODEX_MCP_NODE_PATH",
         },
+        "codex_deepseek": {"DEEPSEEK_API_KEY"},
+        "deepseek_harness": {"DEEPSEEK_API_KEY"},
         "claude": {"CLAUDE_CONFIG_DIR", "ANTHROPIC_API_KEY"},
         "command": set(),
     }
     allowed = shared | provider_keys.get(provider, set())
-    return {key: value for key, value in os.environ.items() if key in allowed}
+    environment = {key: value for key, value in os.environ.items() if key in allowed}
+    if provider in {"codex_deepseek", "deepseek_harness"}:
+        api_key = settings.resolved_deepseek_api_key()
+        if api_key:
+            environment["DEEPSEEK_API_KEY"] = api_key
+    if provider == "deepseek_harness":
+        environment.update({
+            "DSH_TELEMETRY_MODE": "DISABLED",
+            "DSH_TELEMETRY_DISABLED": "1",
+            "PYTHONIOENCODING": "utf-8",
+            "PYTHONUTF8": "1",
+        })
+    return environment
 
 
-def _configured_command() -> list[str]:
+def _configured_command(*, workspace: Path, stage: str) -> list[str]:
+    provider = settings.coding_provider.strip().lower()
+    if provider == "deepseek_harness":
+        model = settings.deepseek_harness_model.strip()
+        effort = settings.deepseek_harness_reasoning_effort.strip().lower()
+        profile = settings.deepseek_harness_profile.strip()
+        if model not in {"deepseek-v4-flash", "deepseek-v4-pro"}:
+            raise ValueError(f"unsupported DeepSeek Harness model: {model}")
+        if effort not in {"off", "low", "high", "max"}:
+            raise ValueError(f"unsupported DeepSeek Harness reasoning effort: {effort}")
+        if profile != "sdk":
+            raise ValueError("DeepSeek Harness profile must be sdk")
+        if settings.deepseek_harness_max_tokens <= 0:
+            raise ValueError("DeepSeek Harness max tokens must be positive")
+        dsh_home = workspace / "coding" / "dsh-home"
+        session_id = f"{workspace.name}-{stage}-{time.time_ns()}"
+        return [
+            sys.executable,
+            str(Path(__file__).with_name("deepseek_harness_runner.py").resolve()),
+            "--dsh-home",
+            str(dsh_home.resolve()),
+            "--model",
+            model,
+            "--reasoning-effort",
+            effort,
+            "--max-tokens",
+            str(settings.deepseek_harness_max_tokens),
+            "--timeout-seconds",
+            str(settings.coding_agent_timeout_seconds),
+            "--session-id",
+            session_id,
+        ]
+    if provider == "codex_deepseek":
+        if not _DEEPSEEK_MODEL_CATALOG.is_file():
+            raise ValueError("DeepSeek Codex model catalog is missing")
+        model = settings.codex_deepseek_model.strip()
+        effort = settings.codex_deepseek_reasoning_effort.strip().lower()
+        if model not in {"deepseek-v4-flash", "deepseek-v4-pro"}:
+            raise ValueError(f"unsupported Codex DeepSeek model: {model}")
+        if effort not in {"low", "high", "max"}:
+            raise ValueError(f"unsupported Codex DeepSeek reasoning effort: {effort}")
+        catalog = _DEEPSEEK_MODEL_CATALOG.resolve().as_posix()
+        return [
+            "codex", "exec", "--ignore-user-config", "--ephemeral",
+            "--sandbox", "workspace-write", "--skip-git-repo-check",
+            "-c", 'model_provider="deepseek"',
+            "-c", f'model="{model}"',
+            "-c", f'model_reasoning_effort="{effort}"',
+            "-c", f'model_catalog_json="{catalog}"',
+            "-c", 'model_providers.deepseek.name="deepseek"',
+            "-c", 'model_providers.deepseek.base_url="https://api.deepseek.com/"',
+            "-c", 'model_providers.deepseek.wire_api="responses"',
+            "-c", 'model_providers.deepseek.env_key="DEEPSEEK_API_KEY"',
+            "-c", "model_providers.deepseek.requires_openai_auth=false",
+            "-",
+        ]
     raw = (settings.coding_agent_command_json or "").strip()
     if not raw:
         raise ValueError("CODING_AGENT_COMMAND_JSON is required for workspace coding")
