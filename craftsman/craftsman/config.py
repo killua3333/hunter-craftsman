@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -19,6 +20,11 @@ class Settings(BaseSettings):
     webhook_mandatory: bool = False
     secret_provider: str = "env_file_fallback"
     secret_store_dir: Path = ROOT / "secrets"
+
+    # Optional outbound proxy for Google Play discovery and dependency access.
+    http_proxy: str | None = None
+    https_proxy: str | None = None
+    no_proxy: str = "127.0.0.1,localhost"
 
     # DeepSeek（OpenAI 兼容接口）
     deepseek_api_key: str | None = None
@@ -148,3 +154,21 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def _configure_network_environment() -> None:
+    for name, value in (
+        ("HTTP_PROXY", settings.http_proxy),
+        ("HTTPS_PROXY", settings.https_proxy),
+    ):
+        if value and not os.environ.get(name, "").strip():
+            os.environ[name] = value.strip()
+
+    configured = [item.strip() for item in settings.no_proxy.split(",") if item.strip()]
+    inherited = [item.strip() for item in os.environ.get("NO_PROXY", "").split(",") if item.strip()]
+    merged = list(dict.fromkeys([*inherited, *configured, "127.0.0.1", "localhost"]))
+    os.environ["NO_PROXY"] = ",".join(merged)
+    os.environ["no_proxy"] = os.environ["NO_PROXY"]
+
+
+_configure_network_environment()

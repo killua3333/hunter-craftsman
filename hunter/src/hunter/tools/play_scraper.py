@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from typing import Any
 
 try:
@@ -70,6 +71,20 @@ def _play_access_error(prefix: str, exc: Exception, **context: str) -> str:
     payload = {"error": f"{prefix}: {detail}{hint}"}
     payload.update(context)
     return json.dumps(payload, ensure_ascii=False)
+
+
+def _retry_play_request(operation, *, attempts: int = 3):
+    """Retry transient Play HTML fetch failures without manufacturing results."""
+    last_error: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return operation()
+        except Exception as exc:
+            last_error = exc
+            if attempt < attempts:
+                time.sleep(0.6 * attempt)
+    assert last_error is not None
+    raise last_error
 
 
 # google-play-scraper 常量
@@ -157,11 +172,13 @@ def _play_search_apps_impl(query, category, collection, count, page):
         cat = None
 
     if query.strip():
-        results = google_play_scraper.search(
-            query.strip(),
-            lang="en",
-            country="us",
-            n_hits=count,
+        results = _retry_play_request(
+            lambda: google_play_scraper.search(
+                query.strip(),
+                lang="en",
+                country="us",
+                n_hits=count,
+            )
         )
     elif collection.strip().upper() in PLAY_COLLECTIONS:
         results = google_play_scraper.collection(
@@ -476,9 +493,13 @@ def play_competitive_analysis(
 
         # 1. 搜索
         try:
-            search_results = google_play_scraper.search(query.strip(), lang="en", country="us", n_hits=count)
-        except Exception:
-            return json.dumps({"error": f"搜索失败: {query}", "query": query.strip()}, ensure_ascii=False)
+            search_results = _retry_play_request(
+                lambda: google_play_scraper.search(
+                    query.strip(), lang="en", country="us", n_hits=count
+                )
+            )
+        except Exception as exc:
+            return _play_access_error("Play Store 搜索失败", exc, query=query.strip())
 
         # 2. 取每个 app 的详情
         competitive_matrix = []
@@ -487,7 +508,9 @@ def play_competitive_analysis(
             if not app_id:
                 continue
             try:
-                detail = google_play_scraper.app(app_id, lang="en", country="us")
+                detail = _retry_play_request(
+                    lambda: google_play_scraper.app(app_id, lang="en", country="us")
+                )
             except Exception:
                 detail = {}
             # 收集信息

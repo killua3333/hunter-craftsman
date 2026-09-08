@@ -39,3 +39,31 @@ def test_play_access_error_mentions_explicit_proxy_only_when_needed(monkeypatch)
 
     assert "无需配置代理" in payload["error"]
     assert payload["query"] == "timer"
+
+
+def test_retry_play_request_recovers_from_transient_failure(monkeypatch):
+    monkeypatch.setattr(play_scraper.time, "sleep", lambda _seconds: None)
+    calls = []
+
+    def operation():
+        calls.append(1)
+        if len(calls) < 3:
+            raise ConnectionResetError("temporary reset")
+        return ["app"]
+
+    assert play_scraper._retry_play_request(operation) == ["app"]
+    assert len(calls) == 3
+
+
+def test_retry_play_request_preserves_final_error(monkeypatch):
+    monkeypatch.setattr(play_scraper.time, "sleep", lambda _seconds: None)
+
+    def operation():
+        raise RuntimeError("last network error")
+
+    try:
+        play_scraper._retry_play_request(operation)
+    except RuntimeError as exc:
+        assert str(exc) == "last network error"
+    else:
+        raise AssertionError("expected final request error")
