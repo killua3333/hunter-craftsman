@@ -6,8 +6,8 @@ import os
 import subprocess
 from collections.abc import Sequence
 from dataclasses import dataclass
-from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 from craftsman.config import settings
 
@@ -20,8 +20,8 @@ class DockerGradleResult:
     reasons: list[str]
 
 
-@lru_cache(maxsize=1)
 def is_docker_available() -> bool:
+    """Probe Docker each time so a startup failure does not poison the process."""
     try:
         proc = subprocess.run(
             ["docker", "info"],
@@ -32,6 +32,56 @@ def is_docker_available() -> bool:
         return proc.returncode == 0
     except (OSError, subprocess.TimeoutExpired):
         return False
+
+
+def _container_proxy_url(value: str) -> str:
+    """Translate a host-loopback proxy into an address Docker can reach."""
+    raw = value.strip()
+    if os.name != "nt" or not raw:
+        return raw
+    parsed = urlsplit(raw)
+    if parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
+        return raw
+    userinfo = ""
+    if parsed.username:
+        userinfo = parsed.username
+        if parsed.password:
+            userinfo += f":{parsed.password}"
+        userinfo += "@"
+    port = f":{parsed.port}" if parsed.port else ""
+    return urlunsplit(
+        (parsed.scheme, f"{userinfo}host.docker.internal{port}", parsed.path, parsed.query, parsed.fragment)
+    )
+
+
+def _docker_proxy_environment() -> dict[str, str]:
+    """Return only proxies that the container can actually reach.
+
+    HTTP_PROXY/HTTPS_PROXY are commonly configured for Play discovery and may
+    point at a host-loopback client. Docker cannot use a proxy bound only to
+    127.0.0.1, so builds use direct networking unless a dedicated build proxy
+    is configured.
+    """
+    explicit_http = os.environ.get("ANDROID_BUILD_HTTP_PROXY", "").strip()
+    explicit_https = os.environ.get("ANDROID_BUILD_HTTPS_PROXY", "").strip()
+    if explicit_http or explicit_https:
+        http = explicit_http or explicit_https
+        https = explicit_https or explicit_http
+        return {
+            "HTTP_PROXY": _container_proxy_url(http),
+            "HTTPS_PROXY": _container_proxy_url(https),
+        }
+
+    result: dict[str, str] = {}
+    for key in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
+        value = os.environ.get(key, "").strip()
+        if not value:
+            continue
+        parsed = urlsplit(value)
+        if parsed.hostname in {"127.0.0.1", "localhost", "::1"}:
+            continue
+        result[key] = value
+    return result
 
 
 def should_use_docker_backend() -> bool:
@@ -109,11 +159,8 @@ def run_gradle_in_container(
         for key, value in extra_env.items():
             cmd.extend(["-e", f"{key}={value}"])
     # Pass host proxy settings into the container (essential for network-restricted envs)
-    import os as _os
-    for _proxy_var in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
-        _proxy_val = _os.environ.get(_proxy_var)
-        if _proxy_val:
-            cmd.extend(["-e", f"{_proxy_var}={_proxy_val}"])
+    for proxy_var, proxy_value in _docker_proxy_environment().items():
+        cmd.extend(["-e", f"{proxy_var}={proxy_value}"])
     cmd.extend(
         [
             "--entrypoint",

@@ -18,7 +18,7 @@ FORBIDDEN_SCOPE_KEYWORDS = {
 
 RELEASE_QUALITY_THRESHOLD = 75
 RELEASE_HARD_BLOCKERS = frozenset({
-    "build_failed", "empty_ui", "weak_core_flow", "device_verification_missing",
+    "build_failed", "empty_ui", "weak_core_flow",
 })
 NATIVE_VERIFICATION_BLOCKER = "native_verification_missing"
 DEVICE_VERIFICATION_BLOCKER = "device_verification_missing"
@@ -198,10 +198,9 @@ def evaluate_app_quality(
         repair_suggestions.append("Build and run the native app before release")
         manual_review_notes.append("当前版本仅可预览；完成原生编译和运行检查后才能发布。")
     if device_verification_missing:
-        weighted = min(weighted, RELEASE_QUALITY_THRESHOLD - 1)
         failure_classes.append(DEVICE_VERIFICATION_BLOCKER)
-        repair_suggestions.append("Install and launch the APK on an Android device or emulator")
-        manual_review_notes.append("当前版本尚无设备启动证据，不能标记为建议发布。")
+        repair_suggestions.append("Install and launch the APK on an Android device or emulator when available")
+        manual_review_notes.append("尚未执行真机或模拟器启动检查；可提交内部测试，由测试人员安装验证。")
 
     # Scope findings are advisory; broad wording alone must not block a usable MVP.
     hard_blockers = RELEASE_HARD_BLOCKERS
@@ -210,7 +209,6 @@ def evaluate_app_quality(
     release_ready = (
         weighted >= RELEASE_QUALITY_THRESHOLD
         and not native_verification_missing
-        and not device_verification_missing
         and not (set(failure_classes) & hard_blockers)
     )
     polish_required = 60 <= weighted < RELEASE_QUALITY_THRESHOLD or (

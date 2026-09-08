@@ -151,7 +151,7 @@ def test_quality_report_blocks_empty_ui(tmp_path):
     assert "empty_ui" in report["failure_classes"]
 
 
-def test_quality_report_blocks_compile_only_without_device_launch(tmp_path):
+def test_quality_report_allows_internal_candidate_without_device_launch(tmp_path):
     workspace, project, metadata = _android_project(
         tmp_path,
         """
@@ -183,10 +183,28 @@ def test_quality_report_blocks_compile_only_without_device_launch(tmp_path):
         device_acceptance_report={"status": "unavailable", "launch_verified": False},
     )
 
-    assert report["quality_score"] == 74
-    assert report["release_ready"] is False
+    assert report["quality_score"] >= 75
+    assert report["release_ready"] is True
     assert "device_verification_missing" in report["failure_classes"]
+    assert report["device_launch_verified"] is False
     assert report["store_screenshot_source"] == "generated_marketing_mockup"
+
+
+def test_device_verification_missing_is_advisory_at_release_gate():
+    from craftsman.orchestrator.quality import release_quality_gate
+
+    decision = release_quality_gate({
+        "quality_score": 90,
+        "release_ready": True,
+        "quality_report": {
+            "quality_score": 90,
+            "release_ready": True,
+            "failure_classes": ["device_verification_missing"],
+        },
+    })
+
+    assert decision["passed"] is True
+    assert decision["hard_failure_classes"] == []
 
 
 def test_quality_report_penalizes_missing_persistence(tmp_path):
