@@ -18,6 +18,7 @@
 craftsman/workspace/
 craftsman/callbacks/
 craftsman/*.db
+/callbacks/
 
 # Hunter 反馈（保留 examples）
 hunter/feedback/*.json

@@ -1492,11 +1492,16 @@ class RunStore:
         ]
         with self._conn() as conn:
             requirement_clauses = ["requirement_json LIKE ?" for _ in patterns]
-            where = "archived_at IS NULL AND (opportunity_id LIKE 'autopilot-%' OR opportunity_id LIKE 'manual-%') AND (" + " OR ".join(requirement_clauses) + ")"
+            legacy_discovery = (
+                "((opportunity_id LIKE 'autopilot-%' OR opportunity_id LIKE 'manual-%') AND ("
+                + " OR ".join(requirement_clauses)
+                + "))"
+            )
+            where = f"archived_at IS NULL AND ({legacy_discovery} OR opportunity_id='calc-001')"
             updated = conn.execute(
                 f"""
                 UPDATE runs
-                SET archived_at=?, archive_reason='legacy demo/fallback discovery archived'
+                SET archived_at=?, archive_reason='legacy demo/test run archived'
                 WHERE {where}
                 """,
                 [now, *patterns],

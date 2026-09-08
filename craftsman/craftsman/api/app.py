@@ -1123,7 +1123,9 @@ def create_app() -> FastAPI:
                 actor="system",
                 payload={"count": archived},
             )
-        runs = _store.list_runs(limit=100)
+        all_runs = _store.list_runs(limit=100)
+        archived_runs = [row for row in all_runs if row.get("archived_at")]
+        runs = [row for row in all_runs if not row.get("archived_at")]
         run_jobs = {row["run_id"]: row for row in _store.list_jobs(limit=50)}
         releases = _store.list_release_states(limit=100)
         release_jobs = {row["release_id"]: row for row in _store.list_release_jobs(limit=50)}
@@ -1275,6 +1277,7 @@ def create_app() -> FastAPI:
             "pipeline": pipeline,
             "agent_status": agent_status,
             "runs": run_payload,
+            "archived_runs": archived_runs,
             "releases": release_payload,
             "audit": recent_audit,
         }
@@ -1497,6 +1500,86 @@ def create_app() -> FastAPI:
             payload={"source": "dashboard"},
         )
         return {"accepted": True, "run_id": run_id, "status": "queued"}
+
+    @app.post("/dashboard/api/runs/{run_id}/publish-internal")
+    def dashboard_publish_run_internal(
+        run_id: str,
+        body: DashboardReleaseActionBody = Body(default_factory=DashboardReleaseActionBody),
+        x_api_token: str | None = Header(default=None, alias="X-API-Token"),
+    ) -> dict[str, Any]:
+        """Prepare, approve, and enqueue one generated app for internal testing."""
+        _require_api_token(x_api_token)
+        assert _store is not None
+        row = _store.get_run(run_id)
+        if not row:
+            raise HTTPException(404, detail=_error_detail(code="run_not_found", message="run not found"))
+        feedback = _safe_json_obj(row.get("feedback_json"))
+        handoff = feedback.get("release_handoff")
+        if not isinstance(handoff, dict):
+            raise HTTPException(
+                409,
+                detail=_error_detail(
+                    code="release_handoff_missing",
+                    message="应用尚未完成生成和质量检查。",
+                    details={"run_id": run_id},
+                ),
+            )
+        release_id = str(handoff.get("release_id") or handoff.get("run_id") or run_id)
+        quality_blocker = _release_quality_blocker(handoff)
+        policy = check_release_compliance_metadata(handoff)
+        _store.record_release_policy_check(
+            release_id,
+            passed=bool(policy["passed"]),
+            issues=list(policy["issues"]),
+        )
+        details = {
+            "policy_passed": bool(policy["passed"]),
+            "issues": list(policy["issues"]),
+            "release_handoff": handoff,
+            "platform_target": "android",
+        }
+        if quality_blocker or not policy["passed"]:
+            operator_action = (
+                quality_blocker["operator_action"]
+                if quality_blocker
+                else "发布资料不完整，请先配置有效的隐私政策网址后重试。"
+            )
+            _store.upsert_release_state(
+                release_id,
+                status="needs_manual_action",
+                details={**details, "quality_blocker": quality_blocker, "message": operator_action},
+                updated_by=body.approved_by.strip(),
+            )
+            return {
+                "accepted": False,
+                "release_id": release_id,
+                "status": "needs_manual_action",
+                "issues": list(policy["issues"]),
+                "operator_action": operator_action,
+            }
+
+        actor = body.approved_by.strip()
+        _store.record_release_approval(
+            release_id,
+            decision="approved",
+            approved_by=actor,
+            note=body.note or "用户从工作台确认发布到内部测试",
+        )
+        _store.upsert_release_state(
+            release_id,
+            status="submitting",
+            details={**details, "approval": {"decision": "approved", "approved_by": actor}},
+            updated_by=actor,
+        )
+        _store.enqueue_release_submit(release_id, max_attempts=max(settings.job_retry_limit + 1, 1))
+        _store.append_audit_log(
+            event_type="release_submit_queued",
+            release_id=release_id,
+            run_id=run_id,
+            actor=actor,
+            payload={"platform_target": "android", "source": "dashboard_publish_internal"},
+        )
+        return {"accepted": True, "release_id": release_id, "status": "submitting"}
 
     @app.post("/dashboard/api/releases/{release_id}/requeue")
     def dashboard_requeue_release(

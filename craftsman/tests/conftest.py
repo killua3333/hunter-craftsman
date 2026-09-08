@@ -6,6 +6,16 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def _isolate_runtime_storage(monkeypatch, tmp_path):
+    """Keep API and pipeline tests out of the operator's local database."""
+    from craftsman.config import settings
+
+    monkeypatch.setattr(settings, "database_path", tmp_path / "craftsman-test.db")
+    monkeypatch.setattr(settings, "workspace_root", tmp_path / "workspace")
+    monkeypatch.setattr(settings, "callback_dir", tmp_path / "callbacks")
+
+
+@pytest.fixture(autouse=True)
 def _skip_native_builds_in_tests(monkeypatch):
     from craftsman.config import settings
 

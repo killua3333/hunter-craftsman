@@ -386,6 +386,7 @@ def test_audit_replay_endpoint():
 def test_dashboard_overview_and_requeue_endpoints(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "database_path", tmp_path / "runs.db")
     req = json.loads(SAMPLE.read_text(encoding="utf-8"))
+    req["opportunity_id"] = "test-dashboard-001"
     with TestClient(create_app()) as client:
         page = client.get("/dashboard")
         assert page.status_code == 200
@@ -527,6 +528,82 @@ def test_dashboard_release_reject_endpoint(monkeypatch):
         detail = client.get(f"/dashboard/api/releases/{release_id}")
         assert detail.status_code == 200
         assert detail.json()["approval"]["decision"] == "rejected"
+
+
+def test_dashboard_publish_internal_prepares_approves_and_queues(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "database_path", tmp_path / "runs.db")
+    monkeypatch.setattr(api_app.BackgroundWorker, "start", lambda self: None)
+    with TestClient(create_app()) as client:
+        assert api_app._store is not None
+        run_id = api_app._store.create_run(
+            "opp-publish-button",
+            1,
+            {"app": {"name": "Ready App"}},
+            status="implementation_complete",
+        )
+        handoff = {
+            "run_id": run_id,
+            "platform": {"target": "android"},
+            "quality_score": 90,
+            "release_ready": True,
+            "quality_report": {
+                "quality_score": 90,
+                "release_ready": True,
+                "failure_classes": ["device_verification_missing"],
+            },
+            "compliance_metadata": {
+                "subtitle": "A useful local tool",
+                "description": "A complete description for the generated app.",
+                "keywords": ["local", "tool"],
+                "privacy_url": "https://privacy.example.test/ready-app",
+            },
+        }
+        api_app._store.update_run(run_id, feedback={"release_handoff": handoff})
+
+        response = client.post(
+            f"/dashboard/api/runs/{run_id}/publish-internal",
+            json={"approved_by": "operator", "decision": "approved"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "submitting"
+        assert api_app._store.get_release_approval(run_id)["decision"] == "approved"
+        assert api_app._store.get_release_state(run_id)["status"] == "submitting"
+
+
+def test_dashboard_publish_internal_blocks_placeholder_privacy_url(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "database_path", tmp_path / "runs.db")
+    monkeypatch.setattr(api_app.BackgroundWorker, "start", lambda self: None)
+    with TestClient(create_app()) as client:
+        assert api_app._store is not None
+        run_id = api_app._store.create_run(
+            "opp-placeholder-privacy",
+            1,
+            {"app": {"name": "Blocked App"}},
+            status="implementation_complete",
+        )
+        handoff = {
+            "run_id": run_id,
+            "platform": {"target": "android"},
+            "quality_score": 90,
+            "release_ready": True,
+            "quality_report": {"quality_score": 90, "release_ready": True, "failure_classes": []},
+            "compliance_metadata": {
+                "subtitle": "A useful local tool",
+                "description": "A complete description for the generated app.",
+                "keywords": ["local", "tool"],
+                "privacy_url": "https://example.com/privacy",
+            },
+        }
+        api_app._store.update_run(run_id, feedback={"release_handoff": handoff})
+
+        response = client.post(f"/dashboard/api/runs/{run_id}/publish-internal")
+
+        assert response.status_code == 200
+        assert response.json()["accepted"] is False
+        assert response.json()["status"] == "needs_manual_action"
+        assert "compliance_metadata.privacy_url_placeholder" in response.json()["issues"]
+        assert api_app._store.get_release_state(run_id)["status"] == "needs_manual_action"
 
 
 def test_dashboard_package_pool_api_sync_and_release(tmp_path, monkeypatch):
