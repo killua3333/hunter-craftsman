@@ -5,7 +5,7 @@ from subprocess import CompletedProcess, TimeoutExpired
 
 import pytest
 
-from craftsman.coding.harness import _build_prompt, run_workspace_coding_stage
+from craftsman.coding.harness import _build_prompt, _coding_environment, run_workspace_coding_stage
 from craftsman.coding.deepseek_harness_runner import _notification_summary
 from craftsman.config import settings
 
@@ -126,6 +126,29 @@ def test_workspace_coding_filters_release_credentials(tmp_path, monkeypatch):
         context={},
     )
     assert result.ok
+
+
+def test_coding_environment_preserves_windows_architecture(monkeypatch):
+    monkeypatch.setenv("PROCESSOR_ARCHITECTURE", "AMD64")
+    monkeypatch.setenv("PROCESSOR_ARCHITEW6432", "AMD64")
+    monkeypatch.setenv("NUMBER_OF_PROCESSORS", "4")
+
+    environment = _coding_environment("deepseek_harness")
+
+    assert environment["PROCESSOR_ARCHITECTURE"] == "AMD64"
+    assert environment["PROCESSOR_ARCHITEW6432"] == "AMD64"
+    assert environment["NUMBER_OF_PROCESSORS"] == "4"
+
+
+def test_deepseek_harness_enables_configured_proxy(monkeypatch):
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:10808")
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:10808")
+
+    environment = _coding_environment("deepseek_harness")
+
+    assert environment["HTTP_PROXY"] == "http://127.0.0.1:10808"
+    assert environment["HTTPS_PROXY"] == "http://127.0.0.1:10808"
+    assert environment["NODE_USE_ENV_PROXY"] == "1"
 
 
 def test_core_build_cannot_pass_without_source_changes(tmp_path, monkeypatch):

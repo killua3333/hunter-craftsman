@@ -189,6 +189,7 @@ def _coding_environment(provider: str) -> dict[str, str]:
     """Pass only process/runtime and coding-provider credentials to the coding CLI."""
     shared = {
         "PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "COMSPEC",
+        "PROCESSOR_ARCHITECTURE", "PROCESSOR_ARCHITEW6432", "NUMBER_OF_PROCESSORS",
         "HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH",
         "TEMP", "TMP", "TMPDIR", "LOCALAPPDATA", "APPDATA",
         "LANG", "LC_ALL", "TERM", "COLORTERM", "NO_COLOR",
@@ -219,6 +220,7 @@ def _coding_environment(provider: str) -> dict[str, str]:
         environment.update({
             "DSH_TELEMETRY_MODE": "DISABLED",
             "DSH_TELEMETRY_DISABLED": "1",
+            "NODE_USE_ENV_PROXY": "1",
             "PYTHONIOENCODING": "utf-8",
             "PYTHONUTF8": "1",
         })

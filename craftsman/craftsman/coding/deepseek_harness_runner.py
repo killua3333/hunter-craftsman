@@ -7,6 +7,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
+try:
+    from .deepseek_proxy_bridge import deepseek_proxy_bridge
+except ImportError:  # Executed directly by the workspace coding subprocess.
+    from deepseek_proxy_bridge import deepseek_proxy_bridge
+
 
 def _notification_summary(notification: Any) -> str | None:
     method = str(getattr(notification, "method", "notification"))
@@ -60,26 +65,28 @@ def main() -> int:
             if summary is not None:
                 print(summary, flush=True)
 
-        with DeepSeekHarness(
-            dsh_home=str(args.dsh_home.resolve()),
-            cwd=str(Path.cwd().resolve()),
-            provider="deepseek-official",
-            model=args.model,
-            reasoning_effort=args.reasoning_effort,
-            max_tokens=args.max_tokens,
-            profile="sdk",
-            api_key=api_key,
-            request_timeout_seconds=args.timeout_seconds,
-            env={
-                "DSH_TELEMETRY_MODE": "DISABLED",
-                "DSH_TELEMETRY_DISABLED": "1",
-            },
-        ) as harness:
-            result = harness.run(
-                prompt,
-                session_id=args.session_id,
-                on_notification=report,
-            )
+        with deepseek_proxy_bridge() as local_base_url:
+            with DeepSeekHarness(
+                dsh_home=str(args.dsh_home.resolve()),
+                cwd=str(Path.cwd().resolve()),
+                provider="deepseek-official",
+                model=args.model,
+                reasoning_effort=args.reasoning_effort,
+                max_tokens=args.max_tokens,
+                profile="sdk",
+                api_key=api_key,
+                base_url=local_base_url,
+                request_timeout_seconds=args.timeout_seconds,
+                env={
+                    "DSH_TELEMETRY_MODE": "DISABLED",
+                    "DSH_TELEMETRY_DISABLED": "1",
+                },
+            ) as harness:
+                result = harness.run(
+                    prompt,
+                    session_id=args.session_id,
+                    on_notification=report,
+                )
         print(json.dumps({
             "source": "deepseek_harness",
             "finish_reason": result.finish_reason,
