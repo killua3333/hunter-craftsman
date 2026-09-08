@@ -126,6 +126,9 @@ def test_dashboard_api_token_auth_and_page_support(monkeypatch, tmp_path):
         assert "TOKEN_STORAGE_KEY" in page.text
         assert 'id="authBtn"' in page.text
         assert "X-API-Token" in page.text
+        assert "本地访问，无需令牌" in page.text
+        assert "正在连接应用商店，请稍候" in page.text
+        assert "启动失败" in page.text
 
         denied = client.get("/dashboard/api/overview")
         assert denied.status_code == 401
