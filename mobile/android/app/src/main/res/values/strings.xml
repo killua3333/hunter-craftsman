@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">ai帮我赚钱</string>
+    <string name="title_activity_main">ai帮我赚钱</string>
+    <string name="package_name">com.huntercraftsman.mobile</string>
+    <string name="custom_url_scheme">com.huntercraftsman.mobile</string>
+</resources>

@@ -1,0 +1,7 @@
+node_modules/
+.android-sdk/
+dist/
+.vite/
+release/*.apk
+android/.gradle/
+android/**/build/
