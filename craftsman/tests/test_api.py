@@ -606,6 +606,48 @@ def test_dashboard_publish_internal_blocks_placeholder_privacy_url(tmp_path, mon
         assert api_app._store.get_release_state(run_id)["status"] == "needs_manual_action"
 
 
+def test_dashboard_publish_internal_retries_with_new_configured_privacy_url(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "database_path", tmp_path / "runs.db")
+    monkeypatch.setattr(settings, "privacy_policy_url", "https://apps.example.test/privacy")
+    monkeypatch.setattr(api_app.BackgroundWorker, "start", lambda self: None)
+    with TestClient(create_app()) as client:
+        assert api_app._store is not None
+        run_id = api_app._store.create_run(
+            "opp-privacy-retry",
+            1,
+            {"app": {"name": "Ready After Config"}},
+            status="implementation_complete",
+        )
+        handoff = {
+            "run_id": run_id,
+            "platform": {"target": "android"},
+            "quality_score": 90,
+            "release_ready": True,
+            "quality_report": {"quality_score": 90, "release_ready": True, "failure_classes": []},
+            "compliance_metadata": {
+                "subtitle": "A useful local tool",
+                "description": "A complete description for the generated app.",
+                "keywords": ["local", "tool"],
+                "privacy_url": "https://example.com/privacy",
+            },
+        }
+        api_app._store.update_run(run_id, feedback={"release_handoff": handoff})
+        api_app._store.upsert_release_state(
+            run_id,
+            status="needs_manual_action",
+            details={"release_handoff": handoff},
+            updated_by="operator",
+        )
+
+        response = client.post(f"/dashboard/api/runs/{run_id}/publish-internal")
+
+        assert response.status_code == 200
+        assert response.json()["accepted"] is True
+        assert response.json()["status"] == "submitting"
+        saved = json.loads(api_app._store.get_run(run_id)["feedback_json"])
+        assert saved["release_handoff"]["compliance_metadata"]["privacy_url"] == settings.privacy_policy_url
+
+
 def test_dashboard_downloads_exported_apk(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "database_path", tmp_path / "runs.db")
     monkeypatch.setattr(settings, "workspace_root", tmp_path / "workspace")

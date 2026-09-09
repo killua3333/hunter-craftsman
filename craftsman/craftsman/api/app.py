@@ -20,7 +20,7 @@ from craftsman.models import AgentBStatus
 from craftsman.orchestrator.quality import release_quality_gate
 from craftsman.orchestrator.policy_checks import check_release_compliance_metadata
 from craftsman.orchestrator.pipeline import analyze_requirement, run_implementation
-from craftsman.publisher.privacy_policy import render_public_privacy_html
+from craftsman.publisher.privacy_policy import is_placeholder_privacy_url, render_public_privacy_html
 from craftsman.publisher.preflight import verify_play_package_access
 from craftsman.schema_validate import validate_feedback, validate_release_handoff
 from craftsman.store.db import RunStore
@@ -1567,6 +1567,20 @@ def create_app() -> FastAPI:
                     details={"run_id": run_id},
                 ),
             )
+        configured_privacy_url = str(settings.privacy_policy_url or "").strip()
+        compliance = handoff.get("compliance_metadata")
+        if not isinstance(compliance, dict):
+            compliance = {}
+            handoff["compliance_metadata"] = compliance
+        current_privacy_url = str(compliance.get("privacy_url") or "").strip()
+        if (
+            is_placeholder_privacy_url(current_privacy_url)
+            and configured_privacy_url.startswith(("https://", "http://"))
+            and not is_placeholder_privacy_url(configured_privacy_url)
+        ):
+            compliance["privacy_url"] = configured_privacy_url
+            feedback["release_handoff"] = handoff
+            _store.update_run(run_id, feedback=feedback)
         release_id = str(handoff.get("release_id") or handoff.get("run_id") or run_id)
         quality_blocker = _release_quality_blocker(handoff)
         policy = check_release_compliance_metadata(handoff)
