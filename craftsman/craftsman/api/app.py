@@ -6,10 +6,11 @@ import threading
 import time
 from collections import defaultdict
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 from fastapi import Body, FastAPI, Header, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from craftsman.callback import deliver_feedback
@@ -160,6 +161,9 @@ def _build_pipeline_items(
         run_status = str(row.get("status") or "")
         feedback = _safe_json_obj(row.get("feedback_json"))
         quality_report = feedback.get("quality_report") if isinstance(feedback.get("quality_report"), dict) else {}
+        artifacts = feedback.get("artifacts") if isinstance(feedback.get("artifacts"), dict) else {}
+        local_paths = artifacts.get("local_paths") if isinstance(artifacts.get("local_paths"), dict) else {}
+        apk_path = Path(str(local_paths.get("apk") or ""))
         release_status = str((release or {}).get("status") or "")
         run_job = run_jobs.get(run_id) or {}
         release_job = release_jobs.get(str((release or {}).get("release_id") or "")) or {}
@@ -184,6 +188,7 @@ def _build_pipeline_items(
                     "quality_score": quality_report.get("quality_score") or feedback.get("quality_score"),
                     "release_ready": quality_report.get("release_ready") if quality_report else feedback.get("release_ready"),
                     "production_stages": (production_by_run or {}).get(run_id, []),
+                    "apk_available": bool(apk_path.is_file()),
                 },
                 "agent_c": {
                     "label": "内部测试上架",
@@ -1304,6 +1309,44 @@ def create_app() -> FastAPI:
             "audit": audit,
             "production_stages": _store.list_production_stages(run_id),
         }
+
+    @app.get("/dashboard/api/runs/{run_id}/artifacts/apk")
+    def dashboard_download_apk(
+        run_id: str,
+        x_api_token: str | None = Header(default=None, alias="X-API-Token"),
+    ) -> FileResponse:
+        if settings.resolved_api_token():
+            _require_api_token(x_api_token)
+        assert _store is not None
+        row = _store.get_run(run_id)
+        if not row:
+            raise HTTPException(404, detail=_error_detail(code="run_not_found", message="run not found"))
+        feedback = _safe_json_obj(row.get("feedback_json"))
+        artifacts = feedback.get("artifacts") if isinstance(feedback.get("artifacts"), dict) else {}
+        local_paths = artifacts.get("local_paths") if isinstance(artifacts.get("local_paths"), dict) else {}
+        raw_path = str(local_paths.get("apk") or "").strip()
+        if not raw_path:
+            raise HTTPException(
+                404,
+                detail=_error_detail(code="apk_not_found", message="该任务尚未生成可安装 APK。"),
+            )
+        apk_path = Path(raw_path).resolve()
+        run_root = (settings.workspace_root / run_id).resolve()
+        try:
+            apk_path.relative_to(run_root)
+        except ValueError as exc:
+            raise HTTPException(
+                409,
+                detail=_error_detail(code="artifact_path_invalid", message="APK 产物路径无效。"),
+            ) from exc
+        if apk_path.name != "app-debug.apk" or not apk_path.is_file():
+            raise HTTPException(
+                404,
+                detail=_error_detail(code="apk_not_found", message="该任务尚未生成可安装 APK。"),
+            )
+        app = _safe_json_obj(row.get("requirement_json")).get("app") or {}
+        filename = f"{str(app.get('name') or 'generated-app').strip()}-debug.apk"
+        return FileResponse(apk_path, media_type="application/vnd.android.package-archive", filename=filename)
 
     @app.get("/dashboard/api/earnings")
     def dashboard_earnings(

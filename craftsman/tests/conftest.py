@@ -27,6 +27,7 @@ def _skip_native_builds_in_tests(monkeypatch):
 def _no_real_llm(monkeypatch, request):
     if request.module.__name__ == "test_llm_routing":
         return
+    monkeypatch.setattr("craftsman.config.settings.coding_provider", "deepseek_json")
     noop_analyze = lambda req: None
     noop_generate = lambda req, platform="ios": None
     noop_fix = lambda *args, **kwargs: None

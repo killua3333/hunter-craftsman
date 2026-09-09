@@ -606,6 +606,62 @@ def test_dashboard_publish_internal_blocks_placeholder_privacy_url(tmp_path, mon
         assert api_app._store.get_release_state(run_id)["status"] == "needs_manual_action"
 
 
+def test_dashboard_downloads_exported_apk(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "database_path", tmp_path / "runs.db")
+    monkeypatch.setattr(settings, "workspace_root", tmp_path / "workspace")
+    with TestClient(create_app()) as client:
+        assert api_app._store is not None
+        run_id = api_app._store.create_run(
+            "opp-download-apk",
+            1,
+            {"app": {"name": "Useful Tool"}},
+            status="implementation_complete",
+        )
+        apk = settings.workspace_root / run_id / "artifacts" / "app-debug.apk"
+        apk.parent.mkdir(parents=True)
+        apk.write_bytes(b"real-apk-artifact")
+        api_app._store.update_run(
+            run_id,
+            feedback={
+                "quality_report": {"quality_score": 90, "release_ready": True},
+                "artifacts": {"local_paths": {"apk": str(apk)}},
+            },
+        )
+
+        overview = client.get("/dashboard/api/overview")
+        item = next(value for value in overview.json()["pipeline"] if value["run_id"] == run_id)
+        assert item["stages"]["agent_b"]["apk_available"] is True
+
+        response = client.get(f"/dashboard/api/runs/{run_id}/artifacts/apk")
+        assert response.status_code == 200
+        assert response.content == b"real-apk-artifact"
+        assert response.headers["content-type"] == "application/vnd.android.package-archive"
+        assert "Useful%20Tool-debug.apk" in response.headers["content-disposition"]
+
+
+def test_dashboard_rejects_apk_path_outside_run_workspace(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "database_path", tmp_path / "runs.db")
+    monkeypatch.setattr(settings, "workspace_root", tmp_path / "workspace")
+    with TestClient(create_app()) as client:
+        assert api_app._store is not None
+        run_id = api_app._store.create_run(
+            "opp-invalid-apk",
+            1,
+            {"app": {"name": "Invalid"}},
+            status="implementation_complete",
+        )
+        outside = tmp_path / "app-debug.apk"
+        outside.write_bytes(b"must-not-download")
+        api_app._store.update_run(
+            run_id,
+            feedback={"artifacts": {"local_paths": {"apk": str(outside)}}},
+        )
+
+        response = client.get(f"/dashboard/api/runs/{run_id}/artifacts/apk")
+        assert response.status_code == 409
+        assert response.json()["detail"]["error"]["code"] == "artifact_path_invalid"
+
+
 def test_dashboard_package_pool_api_sync_and_release(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "database_path", tmp_path / "runs.db")
     monkeypatch.setattr(settings, "package_pool", "com.pool.one,com.pool.two")

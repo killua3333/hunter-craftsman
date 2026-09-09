@@ -109,6 +109,19 @@ def _platform_target(req: dict[str, Any]) -> str:
     return "android"
 
 
+def _coding_provenance() -> dict[str, str]:
+    provider = settings.coding_provider.strip().lower() or "deepseek_json"
+    if provider == "deepseek_harness":
+        model = settings.deepseek_harness_model.strip()
+    elif provider == "codex_deepseek":
+        model = settings.codex_deepseek_model.strip()
+    elif provider in {"codex", "command"}:
+        model = "external-command"
+    else:
+        model = settings.deepseek_pro_model.strip()
+    return {"codegen_provider": provider, "codegen_model": model}
+
+
 def _quality_repair_needed(report: dict[str, Any]) -> bool:
     failures = set(report.get("failure_classes") or [])
     return bool(failures & {"empty_ui", "weak_core_flow", "no_persistence", "generic_template"})
@@ -194,7 +207,7 @@ def _build_release_handoff(
             "backend": backend_mode,
             "backend_target": backend_target,
             "craftsman_version": "0.1.0",
-            "codegen_model": settings.deepseek_pro_model,
+            **_coding_provenance(),
             "platform_note": platform_note,
             "verification": verification,
         },
